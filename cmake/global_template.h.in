@@ -1,0 +1,24 @@
+/****************************************************************************
+**
+**  @PROJECT_NAME@ Export Header
+**
+**  本文件定义了 @TARGET_NAME@ 模块的导入导出宏。
+**  在构建动态库时，@TARGET_NAME@_LIBRARY 会被定义，
+**  此时 @TARGET_NAME@_EXPORT 用于导出符号。
+**  在使用该库时，没有定义 @TARGET_NAME@_LIBRARY，
+**  此时 @TARGET_NAME@_EXPORT 用于导入符号。
+**
+**  适用于跨平台 (Windows/Linux/macOS) 的 Qt 动态库构建。
+****************************************************************************/
+#ifndef @TARGET_NAME@_EXPORT_H
+#define @TARGET_NAME@_EXPORT_H
+
+#include <QtCore/qglobal.h>
+
+#if defined(@TARGET_NAME@_LIBRARY)
+#  define @TARGET_NAME@_EXPORT Q_DECL_EXPORT
+#else
+#  define @TARGET_NAME@_EXPORT Q_DECL_IMPORT
+#endif
+
+#endif // @PROJECT_NAME@_EXPORT_H
