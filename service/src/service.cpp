@@ -19,6 +19,15 @@ void fplayer::Service::initCamera(MediaBackendType backend)
 	}
 }
 
+void fplayer::Service::initPlayer(MediaBackendType backend)
+{
+	this->m_player = m_runtime->createPlayer(backend);
+	if (this->m_player == nullptr)
+	{
+		LOG_WARN("fplayer::Service::initPlayer(MediaBackend backend) ==> 播放器获取失败");
+	}
+}
+
 void fplayer::Service::bindCameraPreview(fplayer::IFVideoView* videoView)
 {
 	if (!videoView || !m_runtime)
@@ -38,6 +47,25 @@ void fplayer::Service::bindCameraPreview(fplayer::IFVideoView* videoView)
 	// 	this->bindCameraPreviewFFmpeg(widget);
 	// 	break;
 	// }
+}
+
+void fplayer::Service::bindPlayerPreview(fplayer::IFVideoView* videoView)
+{
+	if (!videoView || !m_runtime)
+	{
+		return;
+	}
+	const auto target = videoView->previewTarget();
+	m_runtime->bindPlayerPreview(target);
+}
+
+bool fplayer::Service::openMediaFile(const QString& filePath)
+{
+	if (!m_player)
+	{
+		return false;
+	}
+	return m_player->openFile(filePath);
 }
 
 void fplayer::Service::selectCamera(int index)
@@ -92,17 +120,85 @@ QList<QString> fplayer::Service::getCameraFormats(int index) const
 
 void fplayer::Service::cameraPause()
 {
-	this->m_camera->pause();
+	if (this->m_camera)
+	{
+		this->m_camera->pause();
+	}
 }
 
 void fplayer::Service::cameraResume()
 {
-	this->m_camera->resume();
+	if (this->m_camera)
+	{
+		this->m_camera->resume();
+	}
 }
 
 bool fplayer::Service::cameraIsPlaying()
 {
-	return this->m_camera->isPlaying();
+	return this->m_camera && this->m_camera->isPlaying();
+}
+
+void fplayer::Service::playerPause()
+{
+	if (m_player)
+	{
+		m_player->pause();
+	}
+}
+
+void fplayer::Service::playerResume()
+{
+	if (m_player)
+	{
+		m_player->play();
+	}
+}
+
+void fplayer::Service::playerStop()
+{
+	if (m_player)
+	{
+		m_player->stop();
+	}
+}
+
+bool fplayer::Service::playerIsPlaying()
+{
+	return m_player && m_player->isPlaying();
+}
+
+qint64 fplayer::Service::playerDurationMs() const
+{
+	return m_player ? m_player->durationMs() : 0;
+}
+
+qint64 fplayer::Service::playerPositionMs() const
+{
+	return m_player ? m_player->positionMs() : 0;
+}
+
+bool fplayer::Service::playerSeekMs(qint64 positionMs)
+{
+	return m_player && m_player->seekMs(positionMs);
+}
+
+void fplayer::Service::playerSetPlaybackRate(double rate)
+{
+	if (m_player)
+	{
+		m_player->setPlaybackRate(rate);
+	}
+}
+
+double fplayer::Service::playerPlaybackRate() const
+{
+	return m_player ? m_player->playbackRate() : 1.0;
+}
+
+QString fplayer::Service::playerDebugStats() const
+{
+	return m_player ? m_player->debugStats() : QStringLiteral("n/a");
 }
 
 // void fplayer::Service::bindCameraPreviewQt6(QWidget* widget)

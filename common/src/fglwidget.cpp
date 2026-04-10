@@ -2,6 +2,7 @@
 #include <QtOpenGLWidgets/QOpenGLWidget>
 #include <QOpenGLFunctions>
 #include <QOpenGLShader>
+#include <QSurfaceFormat>
 #include <QDebug>
 #include <QtAlgorithms>
 #include <cstring>
@@ -45,6 +46,12 @@ namespace fplayer
 
 	FGLWidget::FGLWidget(QWidget* parent) : QOpenGLWidget(parent), QOpenGLFunctions()
 	{
+		QSurfaceFormat fmt = format();
+		if (fmt.swapInterval() != 1)
+		{
+			fmt.setSwapInterval(1);
+			setFormat(fmt);
+		}
 	}
 
 	FGLWidget::~FGLWidget()
@@ -94,31 +101,34 @@ namespace fplayer
 
 		if (!m_program)
 		{
-			qDebug() << "[FGLWidget::paintGL] No shader program";
+			static int noProgramLogCounter = 0;
+			if (++noProgramLogCounter % 300 == 0)
+			{
+				qDebug() << "[FGLWidget::paintGL] No shader program";
+			}
 			return;
 		}
 
-		if (!m_yuvData.hasData)
+		YUVData frameSnap;
 		{
-			qDebug() << "[FGLWidget::paintGL] No YUV data";
-			return;
+			QMutexLocker locker(&m_mutex);
+			if (!m_yuvData.hasData)
+			{
+				return;
+			}
+			frameSnap = m_yuvData;
 		}
 
 		m_program->bind();
 
-		// 锁保护 CPU 侧帧缓存，避免 updateYUVFrame 与 paintGL 并发读写。
-		QMutexLocker locker(&m_mutex);
-
-		updateYUVTextures();
+		updateYUVTextures(frameSnap);
 
 		if (!m_texY || !m_texU || !m_texV)
 		{
-			locker.unlock();
 			m_program->release();
 			return;
 		}
 
-		// 绑定纹理单元
 		glActiveTexture(GL_TEXTURE0);
 		m_texY->bind();
 		glActiveTexture(GL_TEXTURE1);
@@ -126,11 +136,9 @@ namespace fplayer
 		glActiveTexture(GL_TEXTURE2);
 		m_texV->bind();
 
-		locker.unlock();
-
 		// 每帧按当前窗口/图像比例计算顶点，实现 contain 等比显示（黑边而非拉伸）。
 		GLfloat vertices[16];
-		calculateVertices(vertices, width(), height(), m_yuvData.width, m_yuvData.height);
+		calculateVertices(vertices, width(), height(), frameSnap.width, frameSnap.height);
 
 		GLint positionLocation = m_program->attributeLocation("position");
 		GLint texCoordLocation = m_program->attributeLocation("texCoord");
@@ -155,16 +163,16 @@ namespace fplayer
 		m_program->release();
 	}
 
-	void FGLWidget::updateYUVTextures()
+	void FGLWidget::updateYUVTextures(const YUVData& src)
 	{
-		if (!m_yuvData.hasData)
+		if (!src.hasData)
 		{
 			return;
 		}
 
 		// YUV420P: Y 平面全分辨率，U/V 平面各为 1/2 宽高。
-		int yWidth = m_yuvData.width;
-		int yHeight = m_yuvData.height;
+		int yWidth = src.width;
+		int yHeight = src.height;
 		int uvWidth = yWidth / 2;
 		int uvHeight = yHeight / 2;
 
@@ -210,18 +218,21 @@ namespace fplayer
 		// 单通道纹理上传时，使用 1 字节对齐避免行对齐导致的错位。
 		glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 
-		// 使用 GL_RED + R8_UNorm，兼容性优于旧的 GL_LUMINANCE 路径。
-		// 上传 Y 数据
+		// 使用行跨度直接上传，避免在 CPU 上把 stride 重打包成紧密缓冲区（高分辨率下曾占满 UI 线程导致卡顿）。
 		m_texY->bind();
-		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, yWidth, yHeight, GL_RED, GL_UNSIGNED_BYTE, m_yuvData.yBuffer.constData());
+		glPixelStorei(GL_UNPACK_ROW_LENGTH, src.yStride > 0 ? src.yStride : yWidth);
+		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, yWidth, yHeight, GL_RED, GL_UNSIGNED_BYTE, src.yBuffer.constData());
+		glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
 
-		// 上传 U 数据
 		m_texU->bind();
-		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, uvWidth, uvHeight, GL_RED, GL_UNSIGNED_BYTE, m_yuvData.uBuffer.constData());
+		glPixelStorei(GL_UNPACK_ROW_LENGTH, src.uStride > 0 ? src.uStride : uvWidth);
+		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, uvWidth, uvHeight, GL_RED, GL_UNSIGNED_BYTE, src.uBuffer.constData());
+		glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
 
-		// 上传 V 数据
 		m_texV->bind();
-		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, uvWidth, uvHeight, GL_RED, GL_UNSIGNED_BYTE, m_yuvData.vBuffer.constData());
+		glPixelStorei(GL_UNPACK_ROW_LENGTH, src.vStride > 0 ? src.vStride : uvWidth);
+		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, uvWidth, uvHeight, GL_RED, GL_UNSIGNED_BYTE, src.vBuffer.constData());
+		glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
 	}
 
 	void FGLWidget::updateYUVFrame(const QByteArray& yData, const QByteArray& uData, const QByteArray& vData,
@@ -232,41 +243,39 @@ namespace fplayer
 			qDebug() << "[FGLWidget::updateYUVFrame] Invalid parameters";
 			return;
 		}
+		if (yStride <= 0 || uStride <= 0 || vStride <= 0)
+		{
+			qDebug() << "[FGLWidget::updateYUVFrame] Invalid stride";
+			return;
+		}
+		const int uvWidth = width / 2;
+		const int uvHeight = height / 2;
+		const qsizetype yNeed = static_cast<qsizetype>(yStride) * (height - 1) + width;
+		const qsizetype uNeed = static_cast<qsizetype>(uStride) * (uvHeight - 1) + uvWidth;
+		const qsizetype vNeed = static_cast<qsizetype>(vStride) * (uvHeight - 1) + uvWidth;
+		if (yData.size() < yNeed || uData.size() < uNeed || vData.size() < vNeed)
+		{
+			qDebug() << "[FGLWidget::updateYUVFrame] Buffer smaller than stride*size";
+			return;
+		}
 
 		QMutexLocker locker(&m_mutex);
 		const bool formatChanged = (m_yuvData.width != width) ||
 		                           (m_yuvData.height != height) ||
-		                           (m_yuvData.yStride != width) ||
-		                           (m_yuvData.uStride != (width / 2)) ||
-		                           (m_yuvData.vStride != (width / 2));
+		                           (m_yuvData.yStride != yStride) ||
+		                           (m_yuvData.uStride != uStride) ||
+		                           (m_yuvData.vStride != vStride);
 		const bool firstFrame = !m_yuvData.hasData;
 
-		// 复制 YUV 数据
 		m_yuvData.width = width;
 		m_yuvData.height = height;
-		const int uvWidth = width / 2;
-		const int uvHeight = height / 2;
-
-		// 重打包为紧密内存（stride == width / uvWidth）：
-		// 这样渲染阶段不依赖 GL_UNPACK_ROW_LENGTH，兼容更多驱动/上下文。
-		m_yuvData.yStride = width;
-		m_yuvData.uStride = uvWidth;
-		m_yuvData.vStride = uvWidth;
-
-		m_yuvData.yBuffer.resize(width * height);
-		m_yuvData.uBuffer.resize(uvWidth * uvHeight);
-		m_yuvData.vBuffer.resize(uvWidth * uvHeight);
-
-		for (int row = 0; row < height; ++row)
-		{
-			memcpy(m_yuvData.yBuffer.data() + row * width, yData.constData() + row * yStride, width);
-		}
-		for (int row = 0; row < uvHeight; ++row)
-		{
-			memcpy(m_yuvData.uBuffer.data() + row * uvWidth, uData.constData() + row * uStride, uvWidth);
-			memcpy(m_yuvData.vBuffer.data() + row * uvWidth, vData.constData() + row * vStride, uvWidth);
-		}
-		
+		m_yuvData.yStride = yStride;
+		m_yuvData.uStride = uStride;
+		m_yuvData.vStride = vStride;
+		// Qt 隐式共享：多数情况下不拷贝像素，仅占引用计数；paintGL 快照再与 GL 上传配合 UNPACK_ROW_LENGTH。
+		m_yuvData.yBuffer = yData;
+		m_yuvData.uBuffer = uData;
+		m_yuvData.vBuffer = vData;
 		m_yuvData.hasData = true;
 		// 仅在首帧、格式变化、低频心跳时打印，避免逐帧日志拖慢 UI 线程。
 		static int heartbeatCounter = 0;

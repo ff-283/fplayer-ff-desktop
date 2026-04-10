@@ -24,6 +24,13 @@ class QCameraDevice;
 class QCamera;
 class QMediaCaptureSession;
 class QVideoWidget;
+class QSlider;
+class QLabel;
+class QTimer;
+class QComboBox;
+class QMenuBar;
+class QToolButton;
+class QResizeEvent;
 QT_BEGIN_NAMESPACE
 
 namespace Ui
@@ -47,6 +54,7 @@ public:
 	// 	bool selectCamera(int index);
 
 private:
+	void resizeEvent(QResizeEvent* event) override;
 	Ui::CaptureWindow* ui;
 	// QVideoWidget* m_view = nullptr;
 	// QMediaCaptureSession* m_session = nullptr;
@@ -55,6 +63,26 @@ private:
 
 	fplayer::Service* m_service = nullptr;
 	void togglePlayPause();
+	bool chooseAndPlayFile();
+	void updateFileProgressUi();
+	QString formatTimeMs(qint64 ms) const;
+	void updateDebugStatsUi();
+	void updateTitleMarqueeText();
+	void relocateTitleWidget();
+	bool m_isFileMode = false;
+	fplayer::MediaBackendType m_cameraBackendType = fplayer::MediaBackendType::Qt6;
+	QMenuBar* m_modeMenuBar = nullptr;
+	QToolButton* m_fileTitleButton = nullptr;
+	QTimer* m_titleMarqueeTimer = nullptr;
+	QString m_currentFileTitle;
+	int m_titleMarqueeOffset = 0;
+	QSlider* m_fileProgress = nullptr;
+	QLabel* m_fileProgressLabel = nullptr;
+	QLabel* m_debugStatsLabel = nullptr;
+	QComboBox* m_speedCombo = nullptr;
+	QTimer* m_fileProgressTimer = nullptr;
+	QTimer* m_debugStatsTimer = nullptr;
+	bool m_progressDragging = false;
 };
 
 

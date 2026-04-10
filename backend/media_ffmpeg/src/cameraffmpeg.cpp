@@ -164,7 +164,7 @@ namespace fplayer
 
 			if (captureThread && captureThread->isRunning())
 			{
-				// 2) 先尝试正常退出线程事件循环
+				// 2) QThread::create 无默认事件循环时 quit() 无操作；协作式退出靠 isCapturing + 中断回调
 				captureThread->quit();
 				captureThread->wait(500);// 等待最多0.5秒
 				if (captureThread->isRunning())
@@ -377,12 +377,11 @@ namespace fplayer
 			return false;
 		}
 
-		// 启动采集线程；captureLoop 返回后主动 quit 线程事件循环。
+		// 用 QThread::create 在工作线程执行 captureLoop()：默认 connect(started, λ) 可能把槽排到 GUI 线程，
+		// 导致采集阻塞主线程，且 QThread::currentThread()->quit() 若落在主线程会直接结束应用事件循环。
 		m_impl->isCapturing.store(true);
-		m_impl->captureThread = new QThread();
-		QObject::connect(m_impl->captureThread, &QThread::started, [this]() {
+		m_impl->captureThread = QThread::create([this]() {
 			captureLoop();
-			QThread::currentThread()->quit();
 		});
 		m_impl->captureThread->start();
 

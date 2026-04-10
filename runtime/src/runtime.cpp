@@ -1,6 +1,7 @@
 #include <fplayer/runtime/runtime.h>
 
 #include <fplayer/backend/media_ffmpeg/cameraffmpeg.h>
+#include <fplayer/backend/media_ffmpeg/playerffmpeg.h>
 
 #include <fplayer/backend/media_qt6/cameraqt6.h>
 
@@ -21,6 +22,22 @@ std::shared_ptr<fplayer::ICamera> fplayer::RunTime::createCamera(MediaBackendTyp
 	return m_camera;
 }
 
+std::shared_ptr<fplayer::IPlayer> fplayer::RunTime::createPlayer(MediaBackendType backend)
+{
+	m_player.reset();
+	switch (backend)
+	{
+	case MediaBackendType::Qt6:
+		break;
+	case MediaBackendType::FFmpeg:
+		m_player = std::make_shared<fplayer::PlayerFFmpeg>();
+		break;
+	default:
+		break;
+	}
+	return m_player;
+}
+
 void fplayer::RunTime::bindCameraPreview(const fplayer::PreviewTarget& target)
 {
 	if (!m_camera)
@@ -28,4 +45,13 @@ void fplayer::RunTime::bindCameraPreview(const fplayer::PreviewTarget& target)
 		return;
 	}
 	this->m_camera->setPreviewTarget(target);
+}
+
+void fplayer::RunTime::bindPlayerPreview(const fplayer::PreviewTarget& target)
+{
+	if (!m_player)
+	{
+		return;
+	}
+	this->m_player->setPreviewTarget(target);
 }

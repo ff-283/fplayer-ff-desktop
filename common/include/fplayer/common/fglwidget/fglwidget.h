@@ -35,17 +35,6 @@ namespace fplayer
 		void paintGL() override;
 
 	private:
-		void setupShaders();
-		void calculateVertices(float* vertices, int windowWidth, int windowHeight, int imageWidth, int imageHeight);
-		void updateYUVTextures();
-
-		// OpenGL 资源
-		QOpenGLShaderProgram* m_program = nullptr;
-		QOpenGLTexture* m_texY = nullptr;
-		QOpenGLTexture* m_texU = nullptr;
-		QOpenGLTexture* m_texV = nullptr;
-		
-		// YUV 数据
 		struct YUVData {
 			QByteArray yBuffer;
 			QByteArray uBuffer;
@@ -56,8 +45,19 @@ namespace fplayer
 			int uStride = 0;
 			int vStride = 0;
 			bool hasData = false;
-		} m_yuvData;
-		
+		};
+
+		void setupShaders();
+		void calculateVertices(float* vertices, int windowWidth, int windowHeight, int imageWidth, int imageHeight);
+		void updateYUVTextures(const YUVData& src);
+
+		// OpenGL 资源
+		QOpenGLShaderProgram* m_program = nullptr;
+		QOpenGLTexture* m_texY = nullptr;
+		QOpenGLTexture* m_texU = nullptr;
+		QOpenGLTexture* m_texV = nullptr;
+
+		YUVData m_yuvData;
 		QMutex m_mutex;
 		bool m_initialized = false;
 	};

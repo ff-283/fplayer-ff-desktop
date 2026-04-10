@@ -11,6 +11,7 @@
 
 #include <memory>
 #include <fplayer/api/media/icamera.h>
+#include <fplayer/api/media/iplayer.h>
 #include <fplayer/api/media/previewtarget.h>
 #include <fplayer/runtime/export.h>
 
@@ -20,10 +21,13 @@ namespace fplayer
 	{
 	public:
 		std::shared_ptr<ICamera> createCamera(MediaBackendType backend);
+		std::shared_ptr<IPlayer> createPlayer(MediaBackendType backend);
 		void bindCameraPreview(const fplayer::PreviewTarget& target);
+		void bindPlayerPreview(const fplayer::PreviewTarget& target);
 
 	private:
 		std::shared_ptr<ICamera> m_camera;
+		std::shared_ptr<IPlayer> m_player;
 	};
 
 
