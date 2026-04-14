@@ -22,8 +22,6 @@ namespace fplayer
 
 class QCameraDevice;
 class QCamera;
-class QMediaCaptureSession;
-class QVideoWidget;
 class QSlider;
 class QLabel;
 class QTimer;
@@ -54,6 +52,12 @@ public:
 	// 	bool selectCamera(int index);
 
 private:
+	enum class CaptureMode
+	{
+		Camera,
+		File,
+		Screen,
+	};
 	void resizeEvent(QResizeEvent* event) override;
 	Ui::CaptureWindow* ui;
 	// QVideoWidget* m_view = nullptr;
@@ -69,7 +73,12 @@ private:
 	void updateDebugStatsUi();
 	void updateTitleMarqueeText();
 	void relocateTitleWidget();
+	void refreshCameraDeviceUi();
+	void refreshScreenDeviceUi();
+	bool selectScreen(int index);
+	void stopScreenCapture();
 	bool m_isFileMode = false;
+	CaptureMode m_captureMode = CaptureMode::Camera;
 	fplayer::MediaBackendType m_cameraBackendType = fplayer::MediaBackendType::Qt6;
 	QMenuBar* m_modeMenuBar = nullptr;
 	QToolButton* m_fileTitleButton = nullptr;
@@ -83,6 +92,8 @@ private:
 	QTimer* m_fileProgressTimer = nullptr;
 	QTimer* m_debugStatsTimer = nullptr;
 	bool m_progressDragging = false;
+	int m_lastScreenIndex = 0;
+	fplayer::MediaBackendType m_screenBackendType = fplayer::MediaBackendType::Qt6;
 };
 
 

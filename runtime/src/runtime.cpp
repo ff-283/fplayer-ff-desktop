@@ -2,8 +2,10 @@
 
 #include <fplayer/backend/media_ffmpeg/cameraffmpeg.h>
 #include <fplayer/backend/media_ffmpeg/playerffmpeg.h>
+#include <fplayer/backend/media_ffmpeg/screencaptureffmpeg.h>
 
 #include <fplayer/backend/media_qt6/cameraqt6.h>
+#include <fplayer/backend/media_qt6/screencaptureqt6.h>
 
 std::shared_ptr<fplayer::ICamera> fplayer::RunTime::createCamera(MediaBackendType backend)
 {
@@ -38,6 +40,23 @@ std::shared_ptr<fplayer::IPlayer> fplayer::RunTime::createPlayer(MediaBackendTyp
 	return m_player;
 }
 
+std::shared_ptr<fplayer::IScreenCapture> fplayer::RunTime::createScreenCapture(MediaBackendType backend)
+{
+	m_screenCapture.reset();
+	switch (backend)
+	{
+	case MediaBackendType::Qt6:
+		m_screenCapture = std::make_shared<fplayer::ScreenCaptureQt6>();
+		break;
+	case MediaBackendType::FFmpeg:
+		m_screenCapture = std::make_shared<fplayer::ScreenCaptureFFmpeg>();
+		break;
+	default:
+		break;
+	}
+	return m_screenCapture;
+}
+
 void fplayer::RunTime::bindCameraPreview(const fplayer::PreviewTarget& target)
 {
 	if (!m_camera)
@@ -54,4 +73,13 @@ void fplayer::RunTime::bindPlayerPreview(const fplayer::PreviewTarget& target)
 		return;
 	}
 	this->m_player->setPreviewTarget(target);
+}
+
+void fplayer::RunTime::bindScreenPreview(const fplayer::PreviewTarget& target)
+{
+	if (!m_screenCapture)
+	{
+		return;
+	}
+	this->m_screenCapture->setPreviewTarget(target);
 }

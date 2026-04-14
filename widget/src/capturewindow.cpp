@@ -4,10 +4,8 @@
 #include <fplayer/service/service.h>
 #include <fplayer/widget/fvideoview.h>
 
-#include <QVideoWidget>
 #include <QVBoxLayout>
 #include <QCamera>
-#include <QMediaCaptureSession>
 #include <QMediaDevices>
 #include <logger/logger.h>
 #include <QDebug>
@@ -26,9 +24,12 @@
 #include <QLabel>
 #include <QTimer>
 #include <QComboBox>
+#include <QCheckBox>
 #include <QToolButton>
 #include <QFileInfo>
 #include <QResizeEvent>
+#include <QFontMetrics>
+#include <QAbstractItemView>
 
 CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendType) :
 	QWidget(parent),
@@ -46,8 +47,11 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 	actionCameraMode->setCheckable(true);
 	auto* actionFileMode = modeMenu->addAction(tr("文件播放模式"));
 	actionFileMode->setCheckable(true);
+	auto* actionScreenMode = modeMenu->addAction(tr("屏幕捕获模式"));
+	actionScreenMode->setCheckable(true);
 	actionGroup->addAction(actionCameraMode);
 	actionGroup->addAction(actionFileMode);
+	actionGroup->addAction(actionScreenMode);
 	actionCameraMode->setChecked(true);
 
 	m_fileTitleButton = new QToolButton(m_modeMenuBar);
@@ -69,6 +73,7 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 	this->ui->btnCast->setFocusPolicy(Qt::NoFocus);
 	this->ui->btnSettings->setFocusPolicy(Qt::NoFocus);
 	this->ui->btnFullscreen->setFocusPolicy(Qt::NoFocus);
+	this->ui->chkCaptureCursor->setVisible(false);
 
 	m_fileProgress = new QSlider(Qt::Horizontal, this);
 	m_fileProgress->setMinimum(0);
@@ -130,17 +135,17 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 	m_service->initCamera(backendType);
 	// 文件播放模块当前仅实现 FFmpeg 后端，固定用 FFmpeg 初始化播放器。
 	m_service->initPlayer(fplayer::MediaBackendType::FFmpeg);
+	m_screenBackendType = fplayer::MediaBackendType::FFmpeg;
+	m_service->initScreenCapture(m_screenBackendType);
 	this->ui->wgtView->setBackendType(backendType);
 
 	// 2) 绑定预览窗口
 	m_service->bindCameraPreview(this->ui->wgtView);
 	m_service->bindPlayerPreview(this->ui->wgtView);
+	m_service->bindScreenPreview(this->ui->wgtView);
 
 	// 3) 获取摄像头列表
-	auto cameraList = m_service->getCameraList();
-	QStringList list;
-	list << cameraList;
-	this->ui->cmbDevices->addItems(list);
+	this->refreshCameraDeviceUi();
 
 	// 4) 连接信号槽
 	// 摄像头变更
@@ -149,7 +154,11 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		{
 			return;
 		}
-
+		if (m_captureMode == CaptureMode::Screen)
+		{
+			this->selectScreen(index);
+			return;
+		}
 		this->m_service->selectCamera(index);
 		QStringList formats(this->m_service->getCameraFormats(index));
 		this->ui->cmbFormats->clear();
@@ -157,9 +166,27 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		this->ui->cmbFormats->setCurrentIndex(0);
 
 	});
+	connect(this->ui->chkCaptureCursor, &QCheckBox::toggled, this, [this](const bool checked) {
+		if (m_captureMode != CaptureMode::Screen)
+		{
+			return;
+		}
+		if (!m_service->screenSetCursorCaptureEnabled(checked))
+		{
+			this->ui->chkCaptureCursor->setToolTip(tr("当前屏幕采集后端不支持切换鼠标指针捕获。"));
+		}
+		else
+		{
+			this->ui->chkCaptureCursor->setToolTip(QString());
+		}
+	});
 
 	// 摄像头格式变更
 	connect(this->ui->cmbFormats, &QComboBox::currentIndexChanged, [this](int index) {
+		if (m_captureMode != CaptureMode::Camera)
+		{
+			return;
+		}
 		if (index < 0)
 		{
 			return;
@@ -171,7 +198,7 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 
 
 	// 5) 选择第一个摄像头（此时预览已经设置好了）
-	if (!list.isEmpty())
+	if (this->ui->cmbDevices->count() > 0)
 	{
 		this->ui->cmbDevices->setCurrentIndex(0);
 		this->m_service->selectCamera(0);
@@ -188,7 +215,11 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 
 	auto switchToCameraMode = [this]() {
 		m_isFileMode = false;
+		m_captureMode = CaptureMode::Camera;
+		stopScreenCapture();
 		this->ui->wgtDevices->setVisible(true);
+		this->ui->cmbFormats->setVisible(true);
+		this->ui->chkCaptureCursor->setVisible(false);
 		this->m_fileProgress->setVisible(false);
 		this->m_fileProgressLabel->setVisible(false);
 		this->m_speedCombo->setVisible(false);
@@ -200,10 +231,17 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		this->m_speedCombo->setCurrentIndex(0);
 		this->ui->wgtView->setBackendType(m_cameraBackendType);
 		this->m_service->bindCameraPreview(this->ui->wgtView);
+		this->refreshCameraDeviceUi();
+		if (this->ui->cmbDevices->count() > 0)
+		{
+			this->ui->cmbDevices->setCurrentIndex(0);
+		}
 		this->ui->btnPlay->setIcon(QIcon::fromTheme(
 			this->m_service->cameraIsPlaying() ? QIcon::ThemeIcon::MediaPlaybackPause : QIcon::ThemeIcon::MediaPlaybackStart));
 	};
 	auto switchToFileMode = [this]() -> bool {
+		m_captureMode = CaptureMode::File;
+		stopScreenCapture();
 		this->ui->wgtView->setBackendType(fplayer::MediaBackendType::FFmpeg);
 		this->m_service->bindPlayerPreview(this->ui->wgtView);
 		if (!this->chooseAndPlayFile())
@@ -225,6 +263,31 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		this->ui->btnPlay->setIcon(QIcon::fromTheme(QIcon::ThemeIcon::MediaPlaybackPause));
 		return true;
 	};
+	auto switchToScreenMode = [this]() -> bool {
+		m_isFileMode = false;
+		m_captureMode = CaptureMode::Screen;
+		this->m_service->playerPause();
+		this->m_service->cameraPause();
+		this->m_fileProgress->setVisible(false);
+		this->m_fileProgressLabel->setVisible(false);
+		this->m_speedCombo->setVisible(false);
+		this->m_debugStatsLabel->setVisible(false);
+		this->m_fileProgressTimer->stop();
+		this->m_debugStatsTimer->stop();
+		this->ui->wgtDevices->setVisible(true);
+		this->ui->cmbFormats->setVisible(false);
+		this->ui->chkCaptureCursor->setVisible(true);
+		this->ui->wgtView->setBackendType(m_screenBackendType);
+		this->m_service->bindScreenPreview(this->ui->wgtView);
+		this->refreshScreenDeviceUi();
+		if (this->ui->cmbDevices->count() <= 0)
+		{
+			return false;
+		}
+		const int preferredIndex = qBound(0, m_lastScreenIndex, this->ui->cmbDevices->count() - 1);
+		this->ui->cmbDevices->setCurrentIndex(preferredIndex);
+		return this->selectScreen(preferredIndex);
+	};
 	connect(actionCameraMode, &QAction::triggered, this, [actionCameraMode, switchToCameraMode]() {
 		actionCameraMode->setChecked(true);
 		switchToCameraMode();
@@ -236,6 +299,15 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 			actionFileMode->setChecked(false);
 		}
 	});
+	connect(actionScreenMode, &QAction::triggered, this,
+	        [actionCameraMode, actionScreenMode, switchToScreenMode, switchToCameraMode]() {
+		        if (!switchToScreenMode())
+		        {
+			        actionCameraMode->setChecked(true);
+			        actionScreenMode->setChecked(false);
+			        switchToCameraMode();
+		        }
+	        });
 	connect(m_fileTitleButton, &QToolButton::clicked, this, [this, actionFileMode]() {
 		if (!m_isFileMode)
 		{
@@ -327,7 +399,7 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 
 void CaptureWindow::togglePlayPause()
 {
-	if (m_isFileMode)
+	if (m_captureMode == CaptureMode::File)
 	{
 		if (this->m_service->playerIsPlaying())
 		{
@@ -339,6 +411,18 @@ void CaptureWindow::togglePlayPause()
 			this->m_service->playerResume();
 			this->ui->btnPlay->setIcon(QIcon::fromTheme(QIcon::ThemeIcon::MediaPlaybackPause));
 		}
+		return;
+	}
+	if (m_captureMode == CaptureMode::Screen)
+	{
+		if (!m_service)
+		{
+			return;
+		}
+		const bool active = m_service->screenIsActive();
+		m_service->screenSetActive(!active);
+		this->ui->btnPlay->setIcon(QIcon::fromTheme(
+			!active ? QIcon::ThemeIcon::MediaPlaybackPause : QIcon::ThemeIcon::MediaPlaybackStart));
 		return;
 	}
 
@@ -384,6 +468,7 @@ bool CaptureWindow::chooseAndPlayFile()
 
 CaptureWindow::~CaptureWindow()
 {
+	stopScreenCapture();
 	if (m_service)
 	{
 		if (m_fileProgressTimer)
@@ -485,4 +570,80 @@ void CaptureWindow::resizeEvent(QResizeEvent* event)
 {
 	QWidget::resizeEvent(event);
 	relocateTitleWidget();
+}
+
+void CaptureWindow::refreshCameraDeviceUi()
+{
+	this->ui->cmbDevices->blockSignals(true);
+	this->ui->cmbFormats->blockSignals(true);
+	this->ui->cmbDevices->clear();
+	this->ui->cmbFormats->clear();
+	this->ui->cmbDevices->addItems(QStringList(this->m_service->getCameraList()));
+	this->ui->cmbDevices->blockSignals(false);
+	this->ui->cmbFormats->blockSignals(false);
+}
+
+void CaptureWindow::refreshScreenDeviceUi()
+{
+	this->ui->cmbDevices->blockSignals(true);
+	this->ui->cmbDevices->clear();
+	const auto items = m_service ? m_service->getScreenList() : QList<QString>{};
+	for (const auto& item : items)
+	{
+		this->ui->cmbDevices->addItem(item);
+	}
+	this->ui->cmbDevices->setSizeAdjustPolicy(QComboBox::AdjustToContents);
+	int maxTextWidth = 0;
+	const QFontMetrics fm(this->ui->cmbDevices->font());
+	for (const auto& item : items)
+	{
+		maxTextWidth = qMax(maxTextWidth, fm.horizontalAdvance(item));
+	}
+	const int expectWidth = maxTextWidth + 72;
+	this->ui->cmbDevices->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+	this->ui->cmbDevices->setMinimumContentsLength(qMax(24, expectWidth / qMax(1, fm.averageCharWidth())));
+	this->ui->cmbDevices->setMinimumWidth(expectWidth);
+	this->ui->cmbDevices->setMaximumWidth(expectWidth + 24);
+	if (this->ui->cmbDevices->view())
+	{
+		this->ui->cmbDevices->view()->setMinimumWidth(expectWidth + 40);
+	}
+	this->ui->cmbDevices->blockSignals(false);
+}
+
+bool CaptureWindow::selectScreen(int index)
+{
+	if (!m_service || index < 0 || index >= this->ui->cmbDevices->count())
+	{
+		return false;
+	}
+	m_lastScreenIndex = index;
+	this->ui->wgtView->setBackendType(m_screenBackendType);
+	this->m_service->bindScreenPreview(this->ui->wgtView);
+	if (!m_service->selectScreen(index))
+	{
+		return false;
+	}
+	m_service->screenSetActive(true);
+	if (!m_service->screenSetCursorCaptureEnabled(this->ui->chkCaptureCursor->isChecked()))
+	{
+		this->ui->chkCaptureCursor->setChecked(false);
+		this->ui->chkCaptureCursor->setEnabled(false);
+		this->ui->chkCaptureCursor->setToolTip(tr("当前屏幕采集后端不支持捕获鼠标指针。"));
+	}
+	else
+	{
+		this->ui->chkCaptureCursor->setEnabled(true);
+		this->ui->chkCaptureCursor->setToolTip(QString());
+	}
+	this->ui->btnPlay->setIcon(QIcon::fromTheme(QIcon::ThemeIcon::MediaPlaybackPause));
+	return true;
+}
+
+void CaptureWindow::stopScreenCapture()
+{
+	if (m_service)
+	{
+		m_service->screenSetActive(false);
+	}
 }

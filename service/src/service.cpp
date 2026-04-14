@@ -28,6 +28,15 @@ void fplayer::Service::initPlayer(MediaBackendType backend)
 	}
 }
 
+void fplayer::Service::initScreenCapture(MediaBackendType backend)
+{
+	this->m_screenCapture = m_runtime->createScreenCapture(backend);
+	if (this->m_screenCapture == nullptr)
+	{
+		LOG_WARN("fplayer::Service::initScreenCapture(MediaBackend backend) ==> 屏幕采集获取失败");
+	}
+}
+
 void fplayer::Service::bindCameraPreview(fplayer::IFVideoView* videoView)
 {
 	if (!videoView || !m_runtime)
@@ -57,6 +66,16 @@ void fplayer::Service::bindPlayerPreview(fplayer::IFVideoView* videoView)
 	}
 	const auto target = videoView->previewTarget();
 	m_runtime->bindPlayerPreview(target);
+}
+
+void fplayer::Service::bindScreenPreview(fplayer::IFVideoView* videoView)
+{
+	if (!videoView || !m_runtime)
+	{
+		return;
+	}
+	const auto target = videoView->previewTarget();
+	m_runtime->bindScreenPreview(target);
 }
 
 bool fplayer::Service::openMediaFile(const QString& filePath)
@@ -199,6 +218,57 @@ double fplayer::Service::playerPlaybackRate() const
 QString fplayer::Service::playerDebugStats() const
 {
 	return m_player ? m_player->debugStats() : QStringLiteral("n/a");
+}
+
+QList<QString> fplayer::Service::getScreenList() const
+{
+	QList<QString> screenList;
+	if (!m_screenCapture)
+	{
+		return screenList;
+	}
+	const auto descriptions = m_screenCapture->getDescriptions();
+	for (const auto& d : descriptions)
+	{
+		screenList.push_back(QString("%1 (%2, %3x%4)")
+		                     .arg(d.name, d.isPrimary ? QStringLiteral("主屏") : QStringLiteral("副屏"))
+		                     .arg(d.width)
+		                     .arg(d.height));
+	}
+	return screenList;
+}
+
+bool fplayer::Service::selectScreen(int index)
+{
+	return m_screenCapture && m_screenCapture->selectScreen(index);
+}
+
+void fplayer::Service::screenSetActive(bool active)
+{
+	if (m_screenCapture)
+	{
+		m_screenCapture->setActive(active);
+	}
+}
+
+bool fplayer::Service::screenIsActive() const
+{
+	return m_screenCapture && m_screenCapture->isActive();
+}
+
+bool fplayer::Service::screenSetCursorCaptureEnabled(bool enabled)
+{
+	return m_screenCapture && m_screenCapture->setCursorCaptureEnabled(enabled);
+}
+
+bool fplayer::Service::screenCanControlCursorCapture() const
+{
+	return m_screenCapture && m_screenCapture->canControlCursorCapture();
+}
+
+fplayer::MediaBackendType fplayer::Service::screenBackendType() const
+{
+	return m_screenCapture ? m_screenCapture->backendType() : MediaBackendType::Qt6;
 }
 
 // void fplayer::Service::bindCameraPreviewQt6(QWidget* widget)

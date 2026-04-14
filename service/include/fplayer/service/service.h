@@ -26,6 +26,7 @@ namespace fplayer
 
 		void initCamera(MediaBackendType backend);
 		void initPlayer(MediaBackendType backend);
+		void initScreenCapture(MediaBackendType backend);
 
 		/**
 		 * 初始化摄像头视频播放窗口
@@ -33,6 +34,7 @@ namespace fplayer
 		 */
 		void bindCameraPreview(fplayer::IFVideoView* videoView);
 		void bindPlayerPreview(fplayer::IFVideoView* videoView);
+		void bindScreenPreview(fplayer::IFVideoView* videoView);
 
 		bool openMediaFile(const QString& filePath);
 
@@ -65,6 +67,13 @@ namespace fplayer
 		void playerSetPlaybackRate(double rate);
 		double playerPlaybackRate() const;
 		QString playerDebugStats() const;
+		QList<QString> getScreenList() const;
+		bool selectScreen(int index);
+		void screenSetActive(bool active);
+		bool screenIsActive() const;
+		bool screenSetCursorCaptureEnabled(bool enabled);
+		bool screenCanControlCursorCapture() const;
+		MediaBackendType screenBackendType() const;
 
 	private:
 		// void bindCameraPreviewQt6(QWidget* widget);
@@ -74,6 +83,7 @@ namespace fplayer
 		fplayer::RunTime* m_runtime;
 		std::shared_ptr<fplayer::ICamera> m_camera;
 		std::shared_ptr<fplayer::IPlayer> m_player;
+		std::shared_ptr<fplayer::IScreenCapture> m_screenCapture;
 		int m_cameraIndex;// 摄像头索引
 	};
 }
