@@ -9,6 +9,49 @@
 
 namespace fplayer
 {
+	namespace
+	{
+		static QByteArray repackPlaneTight(const QByteArray& src, int width, int height, int stride)
+		{
+			if (width <= 0 || height <= 0 || stride <= 0 || src.isEmpty())
+			{
+				return {};
+			}
+			if (stride == width)
+			{
+				return src;
+			}
+			QByteArray packed;
+			packed.resize(width * height);
+			const char* srcPtr = src.constData();
+			char* dstPtr = packed.data();
+			for (int row = 0; row < height; ++row)
+			{
+				std::memcpy(dstPtr + row * width, srcPtr + row * stride, static_cast<size_t>(width));
+			}
+			return packed;
+		}
+
+		static bool canUseUnpackRowLength()
+		{
+			const QOpenGLContext* ctx = QOpenGLContext::currentContext();
+			if (!ctx)
+			{
+				return false;
+			}
+			if (!ctx->isOpenGLES())
+			{
+				return true;
+			}
+			const QSurfaceFormat fmt = ctx->format();
+			if (fmt.majorVersion() >= 3)
+			{
+				return true;
+			}
+			return ctx->hasExtension(QByteArrayLiteral("GL_EXT_unpack_subimage"));
+		}
+	}
+
 	// YUV 渲染着色器
 	static const char* vertexShaderSource = R"(
 		attribute vec2 position;
@@ -173,8 +216,8 @@ namespace fplayer
 		// YUV420P: Y 平面全分辨率，U/V 平面各为 1/2 宽高。
 		int yWidth = src.width;
 		int yHeight = src.height;
-		int uvWidth = yWidth / 2;
-		int uvHeight = yHeight / 2;
+		int uvWidth = (yWidth + 1) / 2;
+		int uvHeight = (yHeight + 1) / 2;
 
 		// 创建或更新 Y 纹理
 		if (!m_texY || m_texY->width() != yWidth || m_texY->height() != yHeight)
@@ -217,22 +260,47 @@ namespace fplayer
 
 		// 单通道纹理上传时，使用 1 字节对齐避免行对齐导致的错位。
 		glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+		const bool useRowLength = canUseUnpackRowLength();
 
-		// 使用行跨度直接上传，避免在 CPU 上把 stride 重打包成紧密缓冲区（高分辨率下曾占满 UI 线程导致卡顿）。
+		const QByteArray yTight = useRowLength ? QByteArray() : repackPlaneTight(src.yBuffer, yWidth, yHeight, src.yStride > 0 ? src.yStride : yWidth);
+		const QByteArray uTight = useRowLength ? QByteArray() : repackPlaneTight(src.uBuffer, uvWidth, uvHeight, src.uStride > 0 ? src.uStride : uvWidth);
+		const QByteArray vTight = useRowLength ? QByteArray() : repackPlaneTight(src.vBuffer, uvWidth, uvHeight, src.vStride > 0 ? src.vStride : uvWidth);
+
 		m_texY->bind();
-		glPixelStorei(GL_UNPACK_ROW_LENGTH, src.yStride > 0 ? src.yStride : yWidth);
-		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, yWidth, yHeight, GL_RED, GL_UNSIGNED_BYTE, src.yBuffer.constData());
-		glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+		if (useRowLength)
+		{
+			glPixelStorei(GL_UNPACK_ROW_LENGTH, src.yStride > 0 ? src.yStride : yWidth);
+			glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, yWidth, yHeight, GL_RED, GL_UNSIGNED_BYTE, src.yBuffer.constData());
+			glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+		}
+		else
+		{
+			glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, yWidth, yHeight, GL_RED, GL_UNSIGNED_BYTE, yTight.constData());
+		}
 
 		m_texU->bind();
-		glPixelStorei(GL_UNPACK_ROW_LENGTH, src.uStride > 0 ? src.uStride : uvWidth);
-		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, uvWidth, uvHeight, GL_RED, GL_UNSIGNED_BYTE, src.uBuffer.constData());
-		glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+		if (useRowLength)
+		{
+			glPixelStorei(GL_UNPACK_ROW_LENGTH, src.uStride > 0 ? src.uStride : uvWidth);
+			glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, uvWidth, uvHeight, GL_RED, GL_UNSIGNED_BYTE, src.uBuffer.constData());
+			glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+		}
+		else
+		{
+			glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, uvWidth, uvHeight, GL_RED, GL_UNSIGNED_BYTE, uTight.constData());
+		}
 
 		m_texV->bind();
-		glPixelStorei(GL_UNPACK_ROW_LENGTH, src.vStride > 0 ? src.vStride : uvWidth);
-		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, uvWidth, uvHeight, GL_RED, GL_UNSIGNED_BYTE, src.vBuffer.constData());
-		glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+		if (useRowLength)
+		{
+			glPixelStorei(GL_UNPACK_ROW_LENGTH, src.vStride > 0 ? src.vStride : uvWidth);
+			glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, uvWidth, uvHeight, GL_RED, GL_UNSIGNED_BYTE, src.vBuffer.constData());
+			glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+		}
+		else
+		{
+			glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, uvWidth, uvHeight, GL_RED, GL_UNSIGNED_BYTE, vTight.constData());
+		}
 	}
 
 	void FGLWidget::updateYUVFrame(const QByteArray& yData, const QByteArray& uData, const QByteArray& vData,
@@ -248,8 +316,8 @@ namespace fplayer
 			qDebug() << "[FGLWidget::updateYUVFrame] Invalid stride";
 			return;
 		}
-		const int uvWidth = width / 2;
-		const int uvHeight = height / 2;
+		const int uvWidth = (width + 1) / 2;
+		const int uvHeight = (height + 1) / 2;
 		const qsizetype yNeed = static_cast<qsizetype>(yStride) * (height - 1) + width;
 		const qsizetype uNeed = static_cast<qsizetype>(uStride) * (uvHeight - 1) + uvWidth;
 		const qsizetype vNeed = static_cast<qsizetype>(vStride) * (uvHeight - 1) + uvWidth;

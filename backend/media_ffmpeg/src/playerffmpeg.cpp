@@ -82,6 +82,7 @@ namespace fplayer
 		std::atomic<qint64> durationMs{0};
 		std::atomic<qint64> currentPosMs{0};
 		std::atomic<qint64> seekRequestMs{-1};
+		std::atomic<qint64> timelineOriginMs{-1};
 		std::atomic<double> playbackRate{1.0};
 		std::atomic<bool> audioResampleDirty{false};
 		std::atomic<qint64> audioClockMs{-1};
@@ -91,6 +92,10 @@ namespace fplayer
 		std::atomic<qint64> statAudioBytes2s{0};
 		std::atomic<qint64> statAudioFrames2s{0};
 		std::atomic<qint64> statDroppedVideo2s{0};
+		std::atomic<qint64> avSyncVideoBaseMs{-1};
+		std::atomic<qint64> avSyncAudioBaseMs{-1};
+		std::atomic<bool> eofReached{false};
+		std::atomic<bool> eofLoopQueued{false};
 		std::atomic<uint64_t> syncVersion{0};
 		std::atomic<qint64> seekTargetMs{-1};
 		std::atomic<bool> audioSinkResetPending{false};
@@ -247,6 +252,7 @@ static bool seekToMs(AVFormatContext* fmt, int streamIndex, qint64 positionMs)
 			m_impl->durationMs.store(0);
 		}
 		m_impl->currentPosMs.store(0);
+		m_impl->timelineOriginMs.store(-1);
 		if (!openCodecContext(m_impl->formatContext, AVMEDIA_TYPE_VIDEO, m_impl->videoStreamIndex, m_impl->videoCodecContext))
 		{
 			LOG_ERROR("PlayerFFmpeg::openFile failed: video codec");
@@ -322,6 +328,10 @@ static bool seekToMs(AVFormatContext* fmt, int streamIndex, qint64 positionMs)
 				m_impl->audioClockBasePtsMs.store(-1);
 				m_impl->audioClockBaseProcessedUs.store(0);
 				m_impl->avSyncBiasMs.store(0);
+				m_impl->avSyncVideoBaseMs.store(-1);
+				m_impl->avSyncAudioBaseMs.store(-1);
+				m_impl->eofReached.store(false);
+				m_impl->eofLoopQueued.store(false);
 				m_impl->syncVersion.fetch_add(1);
 				// 丢弃设备里旧的 PCM，避免 seek 后先播放过期音频造成卡顿/错位。
 				m_impl->audioSinkResetPending.store(true);
@@ -332,28 +342,9 @@ static bool seekToMs(AVFormatContext* fmt, int streamIndex, qint64 positionMs)
 			{
 				if (ret == AVERROR_EOF)
 				{
-					// 默认行为：循环播放（EOF 自动回到开头）。不得 exit demux 线程，否则后续无法继续读包。
-					seekToMs(m_impl->formatContext, m_impl->videoStreamIndex, 0);
-					{
-						std::lock_guard<std::mutex> vlock(m_impl->videoCodecMutex);
-						avcodec_flush_buffers(m_impl->videoCodecContext);
-					}
-					if (m_impl->audioCodecContext)
-					{
-						std::lock_guard<std::mutex> alock(m_impl->audioCodecMutex);
-						avcodec_flush_buffers(m_impl->audioCodecContext);
-					}
-					m_impl->clearVideoPackets();
-					m_impl->clearAudioPackets();
-					m_impl->firstVideoPtsMs = -1;
-					m_impl->startClockUs = 0;
-					m_impl->audioClockMs.store(-1);
-					m_impl->audioClockBasePtsMs.store(-1);
-					m_impl->audioClockBaseProcessedUs.store(0);
-					m_impl->avSyncBiasMs.store(0);
-					m_impl->seekTargetMs.store(-1);
-					m_impl->syncVersion.fetch_add(1);
-					m_impl->audioSinkResetPending.store(true);
+					// 到达 EOF 先标记，等待已解复用/已解码数据尽量播放完，再由解码侧触发循环。
+					m_impl->eofReached.store(true);
+					QThread::msleep(2);
 					continue;
 				}
 				QThread::msleep(2);
@@ -374,21 +365,34 @@ static bool seekToMs(AVFormatContext* fmt, int streamIndex, qint64 positionMs)
 			}
 			if (clonePacket->stream_index == m_impl->videoStreamIndex)
 			{
-				std::lock_guard<std::mutex> lock(m_impl->videoQueueMutex);
-				// 普通播放时：队列满丢新包，避免 demux 被阻塞进而拖垮音频供给。
-				// seek 期间：改为丢旧包保新包，尽快推进到目标时间点。
-				if (m_impl->videoPackets.size() >= 120)
+				std::unique_lock<std::mutex> lock(m_impl->videoQueueMutex);
+				// 正常播放时不能丢压缩包：丢包会破坏参考帧链，表现为宏块/花屏。
+				// 队列满时短等待背压，让 demux 跟随解码节奏。
+				if (m_impl->videoPackets.size() >= 120 && m_impl->seekTargetMs.load() < 0)
 				{
-					if (m_impl->seekTargetMs.load() >= 0 && !m_impl->videoPackets.empty())
+					m_impl->videoQueueCv.wait_for(lock, std::chrono::milliseconds(20), [this]() {
+						return m_impl->stopRequested.load() || m_impl->seekRequestMs.load() >= 0 || m_impl->videoPackets.size() < 120;
+					});
+				}
+				if (m_impl->stopRequested.load())
+				{
+					av_packet_free(&clonePacket);
+					break;
+				}
+				// seek 请求到来时，放弃当前包，尽快回到循环顶部处理 seek。
+				if (m_impl->seekRequestMs.load() >= 0)
+				{
+					av_packet_free(&clonePacket);
+					continue;
+				}
+				// seek 期间：队列满时丢旧包保新包，尽快推进到目标时间点。
+				if (m_impl->seekTargetMs.load() >= 0 && m_impl->videoPackets.size() >= 120)
+				{
+					if (!m_impl->videoPackets.empty())
 					{
 						AVPacket* oldPacket = m_impl->videoPackets.front();
 						m_impl->videoPackets.pop_front();
 						av_packet_free(&oldPacket);
-					}
-					else
-					{
-						av_packet_free(&clonePacket);
-						continue;
 					}
 				}
 				m_impl->videoPackets.push_back(clonePacket);
@@ -469,6 +473,29 @@ static bool seekToMs(AVFormatContext* fmt, int streamIndex, qint64 positionMs)
 				}
 				if (m_impl->videoPackets.empty())
 				{
+					if (m_impl->eofReached.load())
+					{
+						bool audioEmpty = false;
+						{
+							std::lock_guard<std::mutex> alock(m_impl->audioQueueMutex);
+							audioEmpty = m_impl->audioPackets.empty();
+						}
+						if (audioEmpty)
+						{
+							const qint64 total = m_impl->durationMs.load();
+							if (total > 0)
+							{
+								m_impl->currentPosMs.store(total);
+							}
+							bool expected = false;
+							if (m_impl->eofLoopQueued.compare_exchange_strong(expected, true))
+							{
+								m_impl->seekRequestMs.store(0);
+								m_impl->videoQueueCv.notify_all();
+								m_impl->audioQueueCv.notify_all();
+							}
+						}
+					}
 					continue;
 				}
 				packet = m_impl->videoPackets.front();
@@ -525,7 +552,12 @@ static bool seekToMs(AVFormatContext* fmt, int streamIndex, qint64 positionMs)
 				}
 				const AVStream* stream = m_impl->formatContext->streams[m_impl->videoStreamIndex];
 				const qint64 videoPtsMsRaw = framePtsMs(frame, stream);
-				const qint64 videoPtsMs = qMax<qint64>(0, videoPtsMsRaw);
+				if (m_impl->timelineOriginMs.load() < 0)
+				{
+					m_impl->timelineOriginMs.store(videoPtsMsRaw);
+				}
+				const qint64 timelineOrigin = m_impl->timelineOriginMs.load();
+				const qint64 videoPtsMs = qMax<qint64>(0, videoPtsMsRaw - qMax<qint64>(0, timelineOrigin));
 				m_impl->currentPosMs.store(videoPtsMs);
 				const qint64 seekTargetMs = m_impl->seekTargetMs.load();
 				if (seekTargetMs >= 0)
@@ -547,7 +579,19 @@ static bool seekToMs(AVFormatContext* fmt, int streamIndex, qint64 positionMs)
 				// 有音频时以音频时钟为主（Matroska 等容器里音轨与时间基更容易与设备时钟一致）。
 				if (audioClockMs >= 0)
 				{
-					const qint64 driftMs = videoPtsMsRaw - audioClockMs;
+					if (m_impl->avSyncVideoBaseMs.load() < 0)
+					{
+						m_impl->avSyncVideoBaseMs.store(videoPtsMsRaw);
+					}
+					const qint64 videoBaseMs = m_impl->avSyncVideoBaseMs.load();
+					const qint64 audioBaseMs = m_impl->avSyncAudioBaseMs.load();
+					qint64 driftMs = videoPtsMsRaw - audioClockMs;
+					if (videoBaseMs >= 0 && audioBaseMs >= 0)
+					{
+						const qint64 normVideoMs = videoPtsMsRaw - videoBaseMs;
+						const qint64 normAudioMs = audioClockMs - audioBaseMs;
+						driftMs = normVideoMs - normAudioMs;
+					}
 					if (driftMs > 40)
 					{
 						// 单次睡眠过长会让整条管线积压，主观感受为「卡顿」；略等即可。
@@ -586,12 +630,40 @@ static bool seekToMs(AVFormatContext* fmt, int streamIndex, qint64 positionMs)
 				const int vStride = renderFrame->linesize[2];
 				const int width = renderFrame->width;
 				const int height = renderFrame->height;
-				const int uvHeight = height / 2;
+				const int uvHeight = (height + 1) / 2;
 				QByteArray yBuffer(reinterpret_cast<const char*>(renderFrame->data[0]), yStride * height);
 				QByteArray uBuffer(reinterpret_cast<const char*>(renderFrame->data[1]), uStride * uvHeight);
 				QByteArray vBuffer(reinterpret_cast<const char*>(renderFrame->data[2]), vStride * uvHeight);
 				queuePreviewYuv(std::move(yBuffer), std::move(uBuffer), std::move(vBuffer), width, height, yStride, uStride, vStride);
 				av_frame_unref(frame);
+			}
+			if (m_impl->eofReached.load())
+			{
+				bool videoEmpty = false;
+				bool audioEmpty = false;
+				{
+					std::lock_guard<std::mutex> lock(m_impl->videoQueueMutex);
+					videoEmpty = m_impl->videoPackets.empty();
+				}
+				{
+					std::lock_guard<std::mutex> lock(m_impl->audioQueueMutex);
+					audioEmpty = m_impl->audioPackets.empty();
+				}
+				if (videoEmpty && audioEmpty)
+				{
+					const qint64 total = m_impl->durationMs.load();
+					if (total > 0)
+					{
+						m_impl->currentPosMs.store(total);
+					}
+					bool expected = false;
+					if (m_impl->eofLoopQueued.compare_exchange_strong(expected, true))
+					{
+						m_impl->seekRequestMs.store(0);
+						m_impl->videoQueueCv.notify_all();
+						m_impl->audioQueueCv.notify_all();
+					}
+				}
 			}
 			const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
 			if (nowMs - lastLogMs >= 2000)
@@ -732,6 +804,10 @@ static bool seekToMs(AVFormatContext* fmt, int streamIndex, qint64 positionMs)
 							m_impl->audioClockBasePtsMs.store(audioPtsMsForClock);
 							const qint64 processedUs = m_impl->audioSink ? m_impl->audioSink->processedUSecs() : 0;
 							m_impl->audioClockBaseProcessedUs.store(processedUs);
+						}
+						if (m_impl->avSyncAudioBaseMs.load() < 0)
+						{
+							m_impl->avSyncAudioBaseMs.store(audioPtsMsForClock);
 						}
 					}
 					const double rate = qBound(1.0, m_impl->playbackRate.load(), 2.0);
@@ -1089,6 +1165,7 @@ void PlayerFFmpeg::Impl::clearVideoPackets()
 		durationMs.store(0);
 		currentPosMs.store(0);
 		seekRequestMs.store(-1);
+		timelineOriginMs.store(-1);
 		playbackRate.store(1.0);
 		audioResampleDirty.store(false);
 		audioClockMs.store(-1);
@@ -1098,6 +1175,10 @@ void PlayerFFmpeg::Impl::clearVideoPackets()
 		statAudioBytes2s.store(0);
 		statAudioFrames2s.store(0);
 		statDroppedVideo2s.store(0);
+		avSyncVideoBaseMs.store(-1);
+		avSyncAudioBaseMs.store(-1);
+		eofReached.store(false);
+		eofLoopQueued.store(false);
 		syncVersion.store(0);
 		audioSinkResetPending.store(false);
 		seekTargetMs.store(-1);

@@ -79,8 +79,11 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 	m_fileProgress->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
 	m_fileProgressLabel = new QLabel(tr("00:00 / 00:00"), this);
 	m_fileProgressLabel->setVisible(false);
+	m_fileProgressLabel->setFixedWidth(120);
 	m_debugStatsLabel = new QLabel(tr("VQ:0 AQ:0 DropV/2s:0 AudFrm/2s:0 AudKB/2s:0"), this);
 	m_debugStatsLabel->setVisible(false);
+	m_debugStatsLabel->setFixedWidth(300);
+	m_debugStatsLabel->setTextFormat(Qt::PlainText);
 	m_speedCombo = new QComboBox(this);
 	m_speedCombo->addItem(tr("1倍速"), 1.0);
 	m_speedCombo->addItem(tr("1.25倍速"), 1.25);
