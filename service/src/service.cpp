@@ -37,6 +37,15 @@ void fplayer::Service::initScreenCapture(MediaBackendType backend)
 	}
 }
 
+void fplayer::Service::initStream(MediaBackendType backend)
+{
+	this->m_stream = m_runtime->createStream(backend);
+	if (this->m_stream == nullptr)
+	{
+		LOG_WARN("fplayer::Service::initStream(MediaBackend backend) ==> 推拉流获取失败");
+	}
+}
+
 void fplayer::Service::bindCameraPreview(fplayer::IFVideoView* videoView)
 {
 	if (!videoView || !m_runtime)
@@ -284,6 +293,44 @@ bool fplayer::Service::screenCanControlFrameRate() const
 fplayer::MediaBackendType fplayer::Service::screenBackendType() const
 {
 	return m_screenCapture ? m_screenCapture->backendType() : MediaBackendType::Qt6;
+}
+
+bool fplayer::Service::streamStartPush(const QString& inputUrl, const QString& outputUrl)
+{
+	return m_stream && m_stream->startPush(inputUrl, outputUrl);
+}
+
+bool fplayer::Service::streamStartPull(const QString& inputUrl, const QString& outputUrl)
+{
+	return m_stream && m_stream->startPull(inputUrl, outputUrl);
+}
+
+void fplayer::Service::streamStop()
+{
+	if (m_stream)
+	{
+		m_stream->stop();
+	}
+}
+
+bool fplayer::Service::streamIsRunning() const
+{
+	return m_stream && m_stream->isRunning();
+}
+
+QString fplayer::Service::streamLastError() const
+{
+	return m_stream ? m_stream->lastError() : QStringLiteral("stream not initialized");
+}
+
+QString fplayer::Service::streamRecentLog() const
+{
+	return m_stream ? m_stream->recentLog() : QString();
+}
+
+int fplayer::Service::streamLastExitCode() const
+{
+	return m_stream ? m_stream->lastExitCode() : 0;
 }
 
 // void fplayer::Service::bindCameraPreviewQt6(QWidget* widget)

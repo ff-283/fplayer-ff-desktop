@@ -33,6 +33,12 @@
 #include <QGuiApplication>
 #include <QScreen>
 #include <QSet>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QFormLayout>
+#include <QPushButton>
+#include <QMessageBox>
+#include <QTextEdit>
 
 CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendType) :
 	QWidget(parent),
@@ -44,6 +50,7 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 	m_modeMenuBar = new QMenuBar(this);
 	ui->verticalLayout->setMenuBar(m_modeMenuBar);
 	auto* modeMenu = m_modeMenuBar->addMenu(tr("模式"));
+	auto* streamMenu = m_modeMenuBar->addMenu(tr("推拉流"));
 	auto* actionGroup = new QActionGroup(this);
 	actionGroup->setExclusive(true);
 	auto* actionCameraMode = modeMenu->addAction(tr("摄像头模式"));
@@ -55,6 +62,8 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 	actionGroup->addAction(actionCameraMode);
 	actionGroup->addAction(actionFileMode);
 	actionGroup->addAction(actionScreenMode);
+	auto* actionPushStream = streamMenu->addAction(tr("推流"));
+	auto* actionPullStream = streamMenu->addAction(tr("拉流"));
 	actionCameraMode->setChecked(true);
 
 	m_fileTitleButton = new QToolButton(m_modeMenuBar);
@@ -141,6 +150,7 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 	m_service->initPlayer(fplayer::MediaBackendType::FFmpeg);
 	m_screenBackendType = fplayer::MediaBackendType::FFmpeg;
 	m_service->initScreenCapture(m_screenBackendType);
+	m_service->initStream(fplayer::MediaBackendType::FFmpeg);
 	this->ui->wgtView->setBackendType(backendType);
 
 	// 2) 绑定预览窗口
@@ -344,6 +354,205 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 			        switchToCameraMode();
 		        }
 	        });
+	connect(actionPushStream, &QAction::triggered, this, [this]() {
+		QDialog dlg(this);
+		dlg.setWindowTitle(tr("推流配置"));
+		auto* layout = new QFormLayout(&dlg);
+		auto addRecent = [](QStringList& list, const QString& value) {
+			const QString v = value.trimmed();
+			if (v.isEmpty())
+			{
+				return;
+			}
+			list.removeAll(v);
+			list.prepend(v);
+			while (list.size() > 8)
+			{
+				list.removeLast();
+			}
+		};
+		auto* cmbProtocol = new QComboBox(&dlg);
+		cmbProtocol->addItem(tr("RTMP"), QStringLiteral("rtmp://127.0.0.1:1935/live/stream"));
+		cmbProtocol->addItem(tr("RTSP"), QStringLiteral("rtsp://127.0.0.1:8554/live/stream"));
+		cmbProtocol->addItem(tr("SRT"), QStringLiteral("srt://127.0.0.1:8890?mode=caller"));
+		auto* cmbInput = new QComboBox(&dlg);
+		cmbInput->setEditable(true);
+		cmbInput->addItems(m_recentPushInputs);
+		auto* cmbOutput = new QComboBox(&dlg);
+		cmbOutput->setEditable(true);
+		cmbOutput->addItems(m_recentPushOutputs);
+		cmbInput->setCurrentText(QStringLiteral(""));
+		cmbOutput->setCurrentText(QStringLiteral(""));
+		cmbInput->lineEdit()->setPlaceholderText(tr("输入源（文件/设备）"));
+		cmbOutput->lineEdit()->setPlaceholderText(tr("输出地址，例如 rtmp://127.0.0.1:1935/live/stream"));
+		auto* btnBrowseInput = new QPushButton(tr("选择文件"), &dlg);
+		connect(btnBrowseInput, &QPushButton::clicked, &dlg, [cmbInput, this]() {
+			const QString filePath = QFileDialog::getOpenFileName(this, tr("选择推流输入文件"));
+			if (!filePath.isEmpty())
+			{
+				cmbInput->setCurrentText(filePath);
+			}
+		});
+		auto* lblStatus = new QLabel(tr("状态：未启动"), &dlg);
+		auto* txtLog = new QTextEdit(&dlg);
+		txtLog->setReadOnly(true);
+		txtLog->setMinimumHeight(120);
+		auto* logTimer = new QTimer(&dlg);
+		logTimer->setInterval(500);
+		connect(logTimer, &QTimer::timeout, &dlg, [this, lblStatus, txtLog]() {
+			lblStatus->setText(this->m_service->streamIsRunning()
+				                   ? tr("状态：运行中")
+				                   : tr("状态：已停止，退出码=%1").arg(this->m_service->streamLastExitCode()));
+			txtLog->setPlainText(this->m_service->streamRecentLog());
+			txtLog->moveCursor(QTextCursor::End);
+		});
+		logTimer->start();
+		connect(cmbProtocol, &QComboBox::currentTextChanged, &dlg, [cmbProtocol, cmbOutput]() {
+			if (cmbOutput->currentText().trimmed().isEmpty())
+			{
+				cmbOutput->setCurrentText(cmbProtocol->currentData().toString());
+			}
+		});
+		layout->addRow(tr("输入"), cmbInput);
+		layout->addRow(QString(), btnBrowseInput);
+		layout->addRow(tr("协议模板"), cmbProtocol);
+		layout->addRow(tr("输出"), cmbOutput);
+		layout->addRow(lblStatus);
+		layout->addRow(txtLog);
+		auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+		auto* btnStop = new QPushButton(tr("停止推流"), &dlg);
+		buttons->addButton(btnStop, QDialogButtonBox::ActionRole);
+		layout->addRow(buttons);
+		connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+		connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+		connect(btnStop, &QPushButton::clicked, &dlg, [this]() {
+			this->m_service->streamStop();
+		});
+		if (dlg.exec() != QDialog::Accepted)
+		{
+			return;
+		}
+		const QString pushInput = cmbInput->currentText().trimmed();
+		const QString pushOutput = cmbOutput->currentText().trimmed();
+		if (!this->m_service->streamStartPush(pushInput, pushOutput))
+		{
+			QMessageBox::warning(this, tr("推流失败"), this->m_service->streamLastError());
+			return;
+		}
+		addRecent(m_recentPushInputs, pushInput);
+		addRecent(m_recentPushOutputs, pushOutput);
+	});
+	connect(actionPullStream, &QAction::triggered, this, [this]() {
+		QDialog dlg(this);
+		dlg.setWindowTitle(tr("拉流配置"));
+		auto* layout = new QFormLayout(&dlg);
+		auto addRecent = [](QStringList& list, const QString& value) {
+			const QString v = value.trimmed();
+			if (v.isEmpty())
+			{
+				return;
+			}
+			list.removeAll(v);
+			list.prepend(v);
+			while (list.size() > 8)
+			{
+				list.removeLast();
+			}
+		};
+		auto* cmbProtocol = new QComboBox(&dlg);
+		cmbProtocol->addItem(tr("RTMP"), QStringLiteral("rtmp://127.0.0.1:1935/live/stream"));
+		cmbProtocol->addItem(tr("RTSP"), QStringLiteral("rtsp://127.0.0.1:8554/live/stream"));
+		cmbProtocol->addItem(tr("SRT"), QStringLiteral("srt://127.0.0.1:8890?mode=listener"));
+		auto* cmbInput = new QComboBox(&dlg);
+		cmbInput->setEditable(true);
+		cmbInput->addItems(m_recentPullInputs);
+		auto* cmbOutput = new QComboBox(&dlg);
+		cmbOutput->setEditable(true);
+		cmbOutput->addItems(m_recentPullOutputs);
+		auto* chkPreview = new QCheckBox(tr("直接预览到播放窗口"), &dlg);
+		cmbInput->lineEdit()->setPlaceholderText(tr("输入流地址，例如 rtmp://127.0.0.1:1935/live/stream"));
+		cmbOutput->lineEdit()->setPlaceholderText(tr("输出文件，例如 D:/temp/pull.mp4"));
+		auto* btnBrowseOutput = new QPushButton(tr("选择输出文件"), &dlg);
+		connect(btnBrowseOutput, &QPushButton::clicked, &dlg, [cmbOutput, this]() {
+			const QString outPath = QFileDialog::getSaveFileName(this, tr("选择拉流输出文件"), QString(),
+			                                                     tr("Media Files (*.mp4 *.mkv *.flv);;All Files (*.*)"));
+			if (!outPath.isEmpty())
+			{
+				cmbOutput->setCurrentText(outPath);
+			}
+		});
+		auto* lblStatus = new QLabel(tr("状态：未启动"), &dlg);
+		auto* txtLog = new QTextEdit(&dlg);
+		txtLog->setReadOnly(true);
+		txtLog->setMinimumHeight(120);
+		auto* logTimer = new QTimer(&dlg);
+		logTimer->setInterval(500);
+		connect(logTimer, &QTimer::timeout, &dlg, [this, lblStatus, txtLog]() {
+			lblStatus->setText(this->m_service->streamIsRunning()
+				                   ? tr("状态：运行中")
+				                   : tr("状态：已停止，退出码=%1").arg(this->m_service->streamLastExitCode()));
+			txtLog->setPlainText(this->m_service->streamRecentLog());
+			txtLog->moveCursor(QTextCursor::End);
+		});
+		logTimer->start();
+		connect(cmbProtocol, &QComboBox::currentTextChanged, &dlg, [cmbProtocol, cmbInput]() {
+			if (cmbInput->currentText().trimmed().isEmpty())
+			{
+				cmbInput->setCurrentText(cmbProtocol->currentData().toString());
+			}
+		});
+		layout->addRow(tr("输入"), cmbInput);
+		layout->addRow(tr("协议模板"), cmbProtocol);
+		layout->addRow(tr("输出"), cmbOutput);
+		layout->addRow(QString(), btnBrowseOutput);
+		layout->addRow(chkPreview);
+		layout->addRow(lblStatus);
+		layout->addRow(txtLog);
+		auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+		auto* btnStop = new QPushButton(tr("停止拉流"), &dlg);
+		buttons->addButton(btnStop, QDialogButtonBox::ActionRole);
+		layout->addRow(buttons);
+		connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+		connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+		connect(btnStop, &QPushButton::clicked, &dlg, [this]() {
+			this->m_service->streamStop();
+		});
+		if (dlg.exec() != QDialog::Accepted)
+		{
+			return;
+		}
+		const QString pullInput = cmbInput->currentText().trimmed();
+		const QString pullOutput = cmbOutput->currentText().trimmed();
+		if (chkPreview->isChecked())
+		{
+			this->ui->wgtView->setBackendType(fplayer::MediaBackendType::FFmpeg);
+			this->m_service->bindPlayerPreview(this->ui->wgtView);
+			if (!this->m_service->openMediaFile(pullInput))
+			{
+				QMessageBox::warning(this, tr("拉流预览失败"), tr("无法打开输入流地址"));
+				return;
+			}
+			m_captureMode = CaptureMode::File;
+			m_isFileMode = true;
+			this->ui->wgtDevices->setVisible(false);
+			this->m_fileProgress->setVisible(true);
+			this->m_fileProgressLabel->setVisible(true);
+			this->m_speedCombo->setVisible(true);
+			this->m_debugStatsLabel->setVisible(true);
+			this->m_fileProgressTimer->start();
+			this->m_debugStatsTimer->start();
+			this->ui->btnPlay->setIcon(QIcon::fromTheme(QIcon::ThemeIcon::MediaPlaybackPause));
+			addRecent(m_recentPullInputs, pullInput);
+			return;
+		}
+		if (!this->m_service->streamStartPull(pullInput, pullOutput))
+		{
+			QMessageBox::warning(this, tr("拉流失败"), this->m_service->streamLastError());
+			return;
+		}
+		addRecent(m_recentPullInputs, pullInput);
+		addRecent(m_recentPullOutputs, pullOutput);
+	});
 	connect(m_fileTitleButton, &QToolButton::clicked, this, [this, actionFileMode]() {
 		if (!m_isFileMode)
 		{

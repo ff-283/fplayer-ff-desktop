@@ -3,6 +3,7 @@
 #include <fplayer/backend/media_ffmpeg/cameraffmpeg.h>
 #include <fplayer/backend/media_ffmpeg/playerffmpeg.h>
 #include <fplayer/backend/media_ffmpeg/screencaptureffmpeg.h>
+#include <fplayer/backend/net_ffmpeg/streamffmpeg.h>
 
 #include <fplayer/backend/media_qt6/cameraqt6.h>
 #include <fplayer/backend/media_qt6/screencaptureqt6.h>
@@ -55,6 +56,20 @@ std::shared_ptr<fplayer::IScreenCapture> fplayer::RunTime::createScreenCapture(M
 		break;
 	}
 	return m_screenCapture;
+}
+
+std::shared_ptr<fplayer::IStream> fplayer::RunTime::createStream(MediaBackendType backend)
+{
+	m_stream.reset();
+	switch (backend)
+	{
+	case MediaBackendType::FFmpeg:
+		m_stream = std::make_shared<fplayer::StreamFFmpeg>();
+		break;
+	default:
+		break;
+	}
+	return m_stream;
 }
 
 void fplayer::RunTime::bindCameraPreview(const fplayer::PreviewTarget& target)

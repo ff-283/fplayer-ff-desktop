@@ -14,6 +14,7 @@
 #include <fplayer/api/media/iplayer.h>
 #include <fplayer/api/media/iscreencapture.h>
 #include <fplayer/api/media/previewtarget.h>
+#include <fplayer/api/net/istream.h>
 #include <fplayer/runtime/export.h>
 
 namespace fplayer
@@ -24,6 +25,7 @@ namespace fplayer
 		std::shared_ptr<ICamera> createCamera(MediaBackendType backend);
 		std::shared_ptr<IPlayer> createPlayer(MediaBackendType backend);
 		std::shared_ptr<IScreenCapture> createScreenCapture(MediaBackendType backend);
+		std::shared_ptr<IStream> createStream(MediaBackendType backend);
 		void bindCameraPreview(const fplayer::PreviewTarget& target);
 		void bindPlayerPreview(const fplayer::PreviewTarget& target);
 		void bindScreenPreview(const fplayer::PreviewTarget& target);
@@ -32,6 +34,7 @@ namespace fplayer
 		std::shared_ptr<ICamera> m_camera;
 		std::shared_ptr<IPlayer> m_player;
 		std::shared_ptr<IScreenCapture> m_screenCapture;
+		std::shared_ptr<IStream> m_stream;
 	};
 
 

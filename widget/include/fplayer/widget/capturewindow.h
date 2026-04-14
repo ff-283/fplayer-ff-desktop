@@ -11,6 +11,7 @@
 
 #include <QWidget>
 #include <QHash>
+#include <QStringList>
 #include <fplayer/widget/export.h>
 #include <fplayer/api/media/mediabackendtype.h>
 
@@ -97,6 +98,10 @@ private:
 	bool m_progressDragging = false;
 	int m_lastScreenIndex = 0;
 	QHash<int, int> m_screenFpsOverrides;
+	QStringList m_recentPushInputs;
+	QStringList m_recentPushOutputs;
+	QStringList m_recentPullInputs;
+	QStringList m_recentPullOutputs;
 	fplayer::MediaBackendType m_screenBackendType = fplayer::MediaBackendType::Qt6;
 };
 

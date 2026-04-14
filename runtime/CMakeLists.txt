@@ -13,6 +13,10 @@ if(FPLAYER_BUILD_MEDIA_FFMPEG)
     target_link_libraries(${PROJECT_NAME} PUBLIC FPlayer_Backend_Media_FFmpeg)
 endif()
 
+if(FPLAYER_BUILD_NET_FFMPEG)
+    target_link_libraries(${PROJECT_NAME} PUBLIC FPlayer_Backend_Net_FFmpeg)
+endif()
+
 target_link_libraries(${PROJECT_NAME} PRIVATE Logger)
 
 
