@@ -105,3 +105,19 @@ bool fplayer::ScreenCaptureQt6::canControlCursorCapture() const
 	const QMetaObject* mo = m_screenCapture->metaObject();
 	return mo && mo->indexOfMethod("setCursorCaptureEnabled(bool)") >= 0;
 }
+
+bool fplayer::ScreenCaptureQt6::setFrameRate(int fps)
+{
+	Q_UNUSED(fps);
+	return false;
+}
+
+int fplayer::ScreenCaptureQt6::frameRate() const
+{
+	return m_fps;
+}
+
+bool fplayer::ScreenCaptureQt6::canControlFrameRate() const
+{
+	return false;
+}

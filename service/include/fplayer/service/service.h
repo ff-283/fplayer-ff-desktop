@@ -73,6 +73,9 @@ namespace fplayer
 		bool screenIsActive() const;
 		bool screenSetCursorCaptureEnabled(bool enabled);
 		bool screenCanControlCursorCapture() const;
+		bool screenSetFrameRate(int fps);
+		int screenFrameRate() const;
+		bool screenCanControlFrameRate() const;
 		MediaBackendType screenBackendType() const;
 
 	private:

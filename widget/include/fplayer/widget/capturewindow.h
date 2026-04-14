@@ -10,6 +10,7 @@
 
 
 #include <QWidget>
+#include <QHash>
 #include <fplayer/widget/export.h>
 #include <fplayer/api/media/mediabackendtype.h>
 
@@ -75,8 +76,10 @@ private:
 	void relocateTitleWidget();
 	void refreshCameraDeviceUi();
 	void refreshScreenDeviceUi();
+	void refreshScreenFpsUi(int screenIndex);
 	bool selectScreen(int index);
 	void stopScreenCapture();
+	int preferredFpsForScreen(int screenIndex) const;
 	bool m_isFileMode = false;
 	CaptureMode m_captureMode = CaptureMode::Camera;
 	fplayer::MediaBackendType m_cameraBackendType = fplayer::MediaBackendType::Qt6;
@@ -93,6 +96,7 @@ private:
 	QTimer* m_debugStatsTimer = nullptr;
 	bool m_progressDragging = false;
 	int m_lastScreenIndex = 0;
+	QHash<int, int> m_screenFpsOverrides;
 	fplayer::MediaBackendType m_screenBackendType = fplayer::MediaBackendType::Qt6;
 };
 

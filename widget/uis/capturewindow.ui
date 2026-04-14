@@ -240,16 +240,26 @@
            </property>
           </widget>
          </item>
-        <item>
-         <widget class="QCheckBox" name="chkCaptureCursor">
-          <property name="text">
-           <string>捕获鼠标指针</string>
-          </property>
-          <property name="checked">
-           <bool>true</bool>
-          </property>
-         </widget>
-        </item>
+         <item>
+          <widget class="QCheckBox" name="chkCaptureCursor">
+           <property name="text">
+            <string>捕获鼠标指针</string>
+           </property>
+           <property name="checked">
+            <bool>true</bool>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QComboBox" name="cmbScreenFps">
+           <property name="minimumSize">
+            <size>
+             <width>96</width>
+             <height>0</height>
+            </size>
+           </property>
+          </widget>
+         </item>
         </layout>
        </widget>
       </item>

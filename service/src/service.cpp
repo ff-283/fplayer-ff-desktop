@@ -266,6 +266,21 @@ bool fplayer::Service::screenCanControlCursorCapture() const
 	return m_screenCapture && m_screenCapture->canControlCursorCapture();
 }
 
+bool fplayer::Service::screenSetFrameRate(int fps)
+{
+	return m_screenCapture && m_screenCapture->setFrameRate(fps);
+}
+
+int fplayer::Service::screenFrameRate() const
+{
+	return m_screenCapture ? m_screenCapture->frameRate() : 30;
+}
+
+bool fplayer::Service::screenCanControlFrameRate() const
+{
+	return m_screenCapture && m_screenCapture->canControlFrameRate();
+}
+
 fplayer::MediaBackendType fplayer::Service::screenBackendType() const
 {
 	return m_screenCapture ? m_screenCapture->backendType() : MediaBackendType::Qt6;

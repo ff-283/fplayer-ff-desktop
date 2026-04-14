@@ -27,6 +27,9 @@ namespace fplayer
 		bool isActive() const override;
 		bool setCursorCaptureEnabled(bool enabled) override;
 		bool canControlCursorCapture() const override;
+		bool setFrameRate(int fps) override;
+		int frameRate() const override;
+		bool canControlFrameRate() const override;
 
 	private:
 		QMediaCaptureSession* m_session = nullptr;

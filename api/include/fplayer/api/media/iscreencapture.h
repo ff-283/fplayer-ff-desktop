@@ -40,12 +40,16 @@ namespace fplayer
 
 		virtual bool setCursorCaptureEnabled(bool enabled) = 0;
 		virtual bool canControlCursorCapture() const = 0;
+		virtual bool setFrameRate(int fps) = 0;
+		virtual int frameRate() const = 0;
+		virtual bool canControlFrameRate() const = 0;
 
 		MediaBackendType backendType() const;
 
 	protected:
 		MediaBackendType m_backendType = MediaBackendType::Qt6;
 		int m_screenIndex = 0;
+		int m_fps = 30;
 	};
 }
 

@@ -64,7 +64,7 @@ bool fplayer::ScreenCaptureFFmpeg::openInputForSelectedScreen()
 	}
 	const auto screen = m_descriptions[m_screenIndex];
 	AVDictionary* options = nullptr;
-	av_dict_set(&options, "framerate", "30", 0);
+	av_dict_set(&options, "framerate", QString::number(m_fps).toUtf8().constData(), 0);
 	av_dict_set(&options, "draw_mouse", m_captureCursor ? "1" : "0", 0);
 	av_dict_set(&options, "offset_x", QString::number(screen.x).toUtf8().constData(), 0);
 	av_dict_set(&options, "offset_y", QString::number(screen.y).toUtf8().constData(), 0);
@@ -195,6 +195,31 @@ bool fplayer::ScreenCaptureFFmpeg::setCursorCaptureEnabled(bool enabled)
 }
 
 bool fplayer::ScreenCaptureFFmpeg::canControlCursorCapture() const
+{
+	return true;
+}
+
+bool fplayer::ScreenCaptureFFmpeg::setFrameRate(int fps)
+{
+	if (fps <= 0)
+	{
+		return false;
+	}
+	const bool changed = (m_fps != fps);
+	m_fps = fps;
+	if (changed && m_active.load())
+	{
+		selectScreen(m_screenIndex);
+	}
+	return true;
+}
+
+int fplayer::ScreenCaptureFFmpeg::frameRate() const
+{
+	return m_fps;
+}
+
+bool fplayer::ScreenCaptureFFmpeg::canControlFrameRate() const
 {
 	return true;
 }

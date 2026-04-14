@@ -30,6 +30,9 @@
 #include <QResizeEvent>
 #include <QFontMetrics>
 #include <QAbstractItemView>
+#include <QGuiApplication>
+#include <QScreen>
+#include <QSet>
 
 CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendType) :
 	QWidget(parent),
@@ -74,6 +77,7 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 	this->ui->btnSettings->setFocusPolicy(Qt::NoFocus);
 	this->ui->btnFullscreen->setFocusPolicy(Qt::NoFocus);
 	this->ui->chkCaptureCursor->setVisible(false);
+	this->ui->cmbScreenFps->setVisible(false);
 
 	m_fileProgress = new QSlider(Qt::Horizontal, this);
 	m_fileProgress->setMinimum(0);
@@ -180,6 +184,26 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 			this->ui->chkCaptureCursor->setToolTip(QString());
 		}
 	});
+	connect(this->ui->cmbScreenFps, &QComboBox::currentIndexChanged, this, [this](int index) {
+		if (m_captureMode != CaptureMode::Screen || index < 0)
+		{
+			return;
+		}
+		const int fps = this->ui->cmbScreenFps->itemData(index).toInt();
+		const int currentScreenIndex = this->ui->cmbDevices->currentIndex();
+		if (currentScreenIndex >= 0)
+		{
+			m_screenFpsOverrides[currentScreenIndex] = fps;
+		}
+		if (!m_service->screenSetFrameRate(fps))
+		{
+			this->ui->cmbScreenFps->setToolTip(tr("当前屏幕采集后端不支持动态帧率设置。"));
+		}
+		else
+		{
+			this->ui->cmbScreenFps->setToolTip(QString());
+		}
+	});
 
 	// 摄像头格式变更
 	connect(this->ui->cmbFormats, &QComboBox::currentIndexChanged, [this](int index) {
@@ -220,6 +244,7 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		this->ui->wgtDevices->setVisible(true);
 		this->ui->cmbFormats->setVisible(true);
 		this->ui->chkCaptureCursor->setVisible(false);
+		this->ui->cmbScreenFps->setVisible(false);
 		this->m_fileProgress->setVisible(false);
 		this->m_fileProgressLabel->setVisible(false);
 		this->m_speedCombo->setVisible(false);
@@ -277,8 +302,19 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		this->ui->wgtDevices->setVisible(true);
 		this->ui->cmbFormats->setVisible(false);
 		this->ui->chkCaptureCursor->setVisible(true);
+		this->ui->cmbScreenFps->setVisible(true);
 		this->ui->wgtView->setBackendType(m_screenBackendType);
 		this->m_service->bindScreenPreview(this->ui->wgtView);
+		const bool canControlFps = this->m_service->screenCanControlFrameRate();
+		this->ui->cmbScreenFps->setEnabled(canControlFps);
+		if (!canControlFps)
+		{
+			this->ui->cmbScreenFps->setToolTip(tr("当前屏幕采集后端不支持帧率设置。"));
+		}
+		else
+		{
+			this->ui->cmbScreenFps->setToolTip(QString());
+		}
 		this->refreshScreenDeviceUi();
 		if (this->ui->cmbDevices->count() <= 0)
 		{
@@ -611,6 +647,44 @@ void CaptureWindow::refreshScreenDeviceUi()
 	this->ui->cmbDevices->blockSignals(false);
 }
 
+void CaptureWindow::refreshScreenFpsUi(int screenIndex)
+{
+	this->ui->cmbScreenFps->blockSignals(true);
+	this->ui->cmbScreenFps->clear();
+	const auto screens = QGuiApplication::screens();
+	qreal refreshRate = 60.0;
+	if (screenIndex >= 0 && screenIndex < screens.size() && screens.at(screenIndex))
+	{
+		refreshRate = screens.at(screenIndex)->refreshRate();
+	}
+	const QList<int> baseFps{15, 24, 25, 30, 45, 50, 60, 75, 90, 100, 120, 144, 165, 180, 200, 240};
+	QList<int> candidates;
+	for (const int fps : baseFps)
+	{
+		if (fps <= static_cast<int>(refreshRate + 0.5))
+		{
+			candidates.push_back(fps);
+		}
+	}
+	if (candidates.isEmpty())
+	{
+		candidates.push_back(qMax(15, static_cast<int>(refreshRate + 0.5)));
+	}
+	const int recommended = preferredFpsForScreen(screenIndex);
+	QSet<int> dedup;
+	for (const int fps : candidates)
+	{
+		if (dedup.contains(fps))
+		{
+			continue;
+		}
+		dedup.insert(fps);
+		const QString text = (fps == recommended) ? tr("%1 FPS (推荐)").arg(fps) : tr("%1 FPS").arg(fps);
+		this->ui->cmbScreenFps->addItem(text, fps);
+	}
+	this->ui->cmbScreenFps->blockSignals(false);
+}
+
 bool CaptureWindow::selectScreen(int index)
 {
 	if (!m_service || index < 0 || index >= this->ui->cmbDevices->count())
@@ -620,6 +694,22 @@ bool CaptureWindow::selectScreen(int index)
 	m_lastScreenIndex = index;
 	this->ui->wgtView->setBackendType(m_screenBackendType);
 	this->m_service->bindScreenPreview(this->ui->wgtView);
+	refreshScreenFpsUi(index);
+	const int fps = m_screenFpsOverrides.value(index, preferredFpsForScreen(index));
+	const int fpsComboIndex = this->ui->cmbScreenFps->findData(fps);
+	if (fpsComboIndex >= 0)
+	{
+		this->ui->cmbScreenFps->blockSignals(true);
+		this->ui->cmbScreenFps->setCurrentIndex(fpsComboIndex);
+		this->ui->cmbScreenFps->blockSignals(false);
+	}
+	else
+	{
+		this->ui->cmbScreenFps->blockSignals(true);
+		this->ui->cmbScreenFps->setCurrentIndex(this->ui->cmbScreenFps->count() > 0 ? 0 : -1);
+		this->ui->cmbScreenFps->blockSignals(false);
+	}
+	this->m_service->screenSetFrameRate(fps > 0 ? fps : 30);
 	if (!m_service->selectScreen(index))
 	{
 		return false;
@@ -646,4 +736,60 @@ void CaptureWindow::stopScreenCapture()
 	{
 		m_service->screenSetActive(false);
 	}
+}
+
+int CaptureWindow::preferredFpsForScreen(int screenIndex) const
+{
+	const auto screens = QGuiApplication::screens();
+	if (screenIndex < 0 || screenIndex >= screens.size() || !screens.at(screenIndex))
+	{
+		return 30;
+	}
+	const auto* screen = screens.at(screenIndex);
+	const qreal refreshRate = screen->refreshRate();
+	const QSize logical = screen->geometry().size();
+	const qreal dpr = screen->devicePixelRatio();
+	const qint64 pixels = static_cast<qint64>(logical.width() * dpr) * static_cast<qint64>(logical.height() * dpr);
+
+	int targetByResolution = 60;
+	if (pixels <= 1920LL * 1080LL)
+	{
+		targetByResolution = 120;
+	}
+	else if (pixels <= 2560LL * 1440LL)
+	{
+		targetByResolution = 90;
+	}
+	else if (pixels <= 3840LL * 2160LL)
+	{
+		targetByResolution = 60;
+	}
+	else
+	{
+		targetByResolution = 30;
+	}
+
+	const int maxByRefresh = qMax(15, static_cast<int>(refreshRate + 0.5));
+	const int upper = qMin(targetByResolution, maxByRefresh);
+	if (upper >= 120)
+	{
+		return 120;
+	}
+	if (upper >= 90)
+	{
+		return 90;
+	}
+	if (upper >= 60)
+	{
+		return 60;
+	}
+	if (upper >= 30)
+	{
+		return 30;
+	}
+	if (upper >= 24)
+	{
+		return 24;
+	}
+	return 15;
 }
