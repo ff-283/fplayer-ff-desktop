@@ -11,6 +11,7 @@
 
 #include <QWidget>
 #include <QHash>
+#include <QSet>
 #include <QStringList>
 #include <fplayer/widget/export.h>
 #include <fplayer/api/media/mediabackendtype.h>
@@ -100,6 +101,7 @@ private:
 	bool m_progressDragging = false;
 	int m_lastScreenIndex = 0;
 	QHash<int, int> m_screenFpsOverrides;
+	QSet<int> m_hdrPromptedScreenIndexes;
 	QStringList m_recentPushInputs;
 	QStringList m_recentPushOutputs;
 	QStringList m_recentPullInputs;

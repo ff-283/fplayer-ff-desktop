@@ -28,6 +28,12 @@ fplayer::ScreenCaptureFFmpeg::~ScreenCaptureFFmpeg()
 
 void fplayer::ScreenCaptureFFmpeg::refreshScreens()
 {
+	auto alignEvenFloor = [](const int v) -> int {
+		return (v >= 0) ? (v & ~1) : -(((-v) + 1) & ~1);
+	};
+	auto alignEvenSize = [](const int v) -> int {
+		return qMax(2, v) & ~1;
+	};
 	m_descriptions.clear();
 	const auto screens = QGuiApplication::screens();
 	for (auto* screen : screens)
@@ -41,10 +47,10 @@ void fplayer::ScreenCaptureFFmpeg::refreshScreens()
 		d.isPrimary = screen == QGuiApplication::primaryScreen();
 		const QSize logical = screen->geometry().size();
 		const qreal dpr = screen->devicePixelRatio();
-		d.width = qRound(logical.width() * dpr);
-		d.height = qRound(logical.height() * dpr);
-		d.x = qRound(screen->geometry().x() * dpr);
-		d.y = qRound(screen->geometry().y() * dpr);
+		d.width = alignEvenSize(qRound(logical.width() * dpr));
+		d.height = alignEvenSize(qRound(logical.height() * dpr));
+		d.x = alignEvenFloor(qRound(screen->geometry().x() * dpr));
+		d.y = alignEvenFloor(qRound(screen->geometry().y() * dpr));
 		m_descriptions.push_back(d);
 	}
 }

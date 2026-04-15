@@ -43,6 +43,11 @@
 #include <QSpinBox>
 #include <QRegularExpression>
 #include <QStandardItemModel>
+#if defined(_WIN32)
+#define NOMINMAX
+#include <windows.h>
+#include <dxgi1_6.h>
+#endif
 
 namespace
 {
@@ -60,6 +65,100 @@ const char* screenBackendName(const fplayer::MediaBackendType backend)
 		return "Unknown";
 	}
 }
+
+#if defined(_WIN32)
+template<typename T>
+void safeDxgiRelease(T*& p)
+{
+	if (p)
+	{
+		p->Release();
+		p = nullptr;
+	}
+}
+
+bool isHdrEnabledForScreenIndex(const int screenIndex)
+{
+	const auto screens = QGuiApplication::screens();
+	if (screenIndex < 0 || screenIndex >= screens.size() || !screens.at(screenIndex))
+	{
+		return false;
+	}
+	const auto* targetScreen = screens.at(screenIndex);
+	const QRect logical = targetScreen->geometry();
+	const qreal dpr = targetScreen->devicePixelRatio();
+	const QRect expected(
+		qRound(logical.x() * dpr),
+		qRound(logical.y() * dpr),
+		qRound(logical.width() * dpr),
+		qRound(logical.height() * dpr));
+	constexpr int kTolerance = 2;
+
+	IDXGIFactory1* factory = nullptr;
+	if (FAILED(CreateDXGIFactory1(IID_PPV_ARGS(&factory))) || !factory)
+	{
+		return false;
+	}
+	bool hdrEnabled = false;
+	for (UINT ai = 0; !hdrEnabled; ++ai)
+	{
+		IDXGIAdapter1* adapter = nullptr;
+		if (factory->EnumAdapters1(ai, &adapter) == DXGI_ERROR_NOT_FOUND)
+		{
+			break;
+		}
+		for (UINT oi = 0; !hdrEnabled; ++oi)
+		{
+			IDXGIOutput* output = nullptr;
+			if (adapter->EnumOutputs(oi, &output) == DXGI_ERROR_NOT_FOUND)
+			{
+				break;
+			}
+			DXGI_OUTPUT_DESC od{};
+			if (FAILED(output->GetDesc(&od)))
+			{
+				safeDxgiRelease(output);
+				continue;
+			}
+			const QRect outRect(
+				od.DesktopCoordinates.left,
+				od.DesktopCoordinates.top,
+				od.DesktopCoordinates.right - od.DesktopCoordinates.left,
+				od.DesktopCoordinates.bottom - od.DesktopCoordinates.top);
+			const bool match =
+				(qAbs(outRect.x() - expected.x()) <= kTolerance) &&
+				(qAbs(outRect.y() - expected.y()) <= kTolerance) &&
+				(qAbs(outRect.width() - expected.width()) <= kTolerance) &&
+				(qAbs(outRect.height() - expected.height()) <= kTolerance);
+			if (!match)
+			{
+				safeDxgiRelease(output);
+				continue;
+			}
+			IDXGIOutput6* output6 = nullptr;
+			if (SUCCEEDED(output->QueryInterface(IID_PPV_ARGS(&output6))) && output6)
+			{
+				DXGI_OUTPUT_DESC1 od1{};
+				if (SUCCEEDED(output6->GetDesc1(&od1)))
+				{
+					const DXGI_COLOR_SPACE_TYPE cs = od1.ColorSpace;
+					const bool hdrByColorSpace =
+						(cs == DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020) ||
+						(cs == DXGI_COLOR_SPACE_RGB_STUDIO_G2084_NONE_P2020) ||
+						(cs == DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709);
+					const bool hdrByBitDepth = od1.BitsPerColor > 8;
+					hdrEnabled = hdrByColorSpace || hdrByBitDepth;
+				}
+			}
+			safeDxgiRelease(output6);
+			safeDxgiRelease(output);
+		}
+		safeDxgiRelease(adapter);
+	}
+	safeDxgiRelease(factory);
+	return hdrEnabled;
+}
+#endif
 }
 
 CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendType) :
@@ -603,7 +702,8 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 			{
 				const QString screenText = this->ui->cmbDevices ? this->ui->cmbDevices->currentText().trimmed() : QString();
 				const int fps = this->m_service ? this->m_service->screenFrameRate() : 30;
-				lblPushParams->setText(tr("模式：屏幕\n来源：%1\n帧率：%2 FPS\n编码：H264（不可用时 MPEG4）")
+				lblPushParams->setText(tr("模式：屏幕\n后端：%1\n来源：%2\n帧率：%3 FPS\n编码：H264（不可用时 MPEG4）")
+				                       .arg(QString::fromLatin1(screenBackendName(this->m_screenBackendType)))
 				                       .arg(screenText.isEmpty() ? tr("当前屏幕") : screenText)
 				                       .arg(fps));
 				return;
@@ -1258,6 +1358,56 @@ bool CaptureWindow::selectScreen(int index)
 	{
 		return false;
 	}
+	auto fallbackToFfmpeg = [this, index]() -> bool {
+		LOG_WARN("[screen]", "fallback to FFmpeg(gdigrab), index=", index);
+		m_service->initScreenCapture(fplayer::MediaBackendType::FFmpeg);
+		m_screenBackendType = fplayer::MediaBackendType::FFmpeg;
+		this->ui->wgtView->setBackendType(m_screenBackendType);
+		this->m_service->bindScreenPreview(this->ui->wgtView);
+		this->refreshScreenDeviceUi();
+		if (this->ui->cmbDevices->count() <= 0)
+		{
+			return false;
+		}
+		const int fallbackIndex = qBound(0, index, this->ui->cmbDevices->count() - 1);
+		refreshScreenFpsUi(fallbackIndex);
+		const int fallbackFps = m_screenFpsOverrides.value(fallbackIndex, preferredFpsForScreen(fallbackIndex));
+		const int fallbackFpsComboIndex = this->ui->cmbScreenFps->findData(fallbackFps);
+		this->ui->cmbScreenFps->blockSignals(true);
+		this->ui->cmbScreenFps->setCurrentIndex(fallbackFpsComboIndex >= 0
+			                                        ? fallbackFpsComboIndex
+			                                        : (this->ui->cmbScreenFps->count() > 0 ? 0 : -1));
+		this->ui->cmbScreenFps->blockSignals(false);
+		const bool fallbackCanControlFps = this->m_service->screenCanControlFrameRate();
+		this->ui->cmbScreenFps->setEnabled(fallbackCanControlFps);
+		if (!fallbackCanControlFps)
+		{
+			this->ui->cmbScreenFps->setToolTip(tr("当前屏幕采集后端不支持帧率设置。"));
+		}
+		else
+		{
+			this->ui->cmbScreenFps->setToolTip(QString());
+		}
+		if (!m_service->selectScreen(fallbackIndex))
+		{
+			return false;
+		}
+		this->m_service->screenSetFrameRate(fallbackFps > 0 ? fallbackFps : 30);
+		m_service->screenSetActive(true);
+		if (!m_service->screenSetCursorCaptureEnabled(this->ui->chkCaptureCursor->isChecked()))
+		{
+			this->ui->chkCaptureCursor->setChecked(false);
+			this->ui->chkCaptureCursor->setEnabled(false);
+			this->ui->chkCaptureCursor->setToolTip(tr("当前屏幕采集后端不支持捕获鼠标指针。"));
+		}
+		else
+		{
+			this->ui->chkCaptureCursor->setEnabled(true);
+			this->updateCaptureCursorCheckToolTip();
+		}
+		this->ui->btnPlay->setIcon(QIcon::fromTheme(QIcon::ThemeIcon::MediaPlaybackPause));
+		return true;
+	};
 	LOG_INFO("[screen]", "start capture, backend=", screenBackendName(m_screenBackendType), " index=", index);
 	m_lastScreenIndex = index;
 	this->ui->wgtView->setBackendType(m_screenBackendType);
@@ -1277,8 +1427,34 @@ bool CaptureWindow::selectScreen(int index)
 		this->ui->cmbScreenFps->setCurrentIndex(this->ui->cmbScreenFps->count() > 0 ? 0 : -1);
 		this->ui->cmbScreenFps->blockSignals(false);
 	}
+#if defined(_WIN32)
+	if (m_screenBackendType == fplayer::MediaBackendType::Dxgi && !m_hdrPromptedScreenIndexes.contains(index))
+	{
+		if (isHdrEnabledForScreenIndex(index))
+		{
+			m_hdrPromptedScreenIndexes.insert(index);
+			const auto choice = QMessageBox::question(
+				this,
+				tr("屏幕捕获后端切换"),
+				tr("已检测到系统HDR打开，为确保稳定，将屏幕获取后端改为ffmepg。\n是否切换？"),
+				QMessageBox::Yes | QMessageBox::No,
+				QMessageBox::Yes);
+			if (choice == QMessageBox::Yes)
+			{
+				return fallbackToFfmpeg();
+			}
+		}
+	}
+#endif
 	if (!m_service->selectScreen(index))
 	{
+		// DXGI 在部分显卡/DPI/会话组合下可能无法稳定拿到桌面复制流，
+		// 这里自动回退到 FFmpeg(gdigrab) 保证屏幕捕获可用。
+		if (m_screenBackendType == fplayer::MediaBackendType::Dxgi)
+		{
+			LOG_WARN("[screen]", "DXGI selectScreen failed");
+			return fallbackToFfmpeg();
+		}
 		return false;
 	}
 	this->m_service->screenSetFrameRate(fps > 0 ? fps : 30);

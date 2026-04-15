@@ -5,6 +5,7 @@
 #include <QMetaObject>
 #include <QScreen>
 #include <QThread>
+#include <logger/logger.h>
 
 #include <fplayer/common/fglwidget/fglwidget.h>
 #include <fplayer/common/screenframebus/screenframebus.h>
@@ -33,6 +34,48 @@ namespace
 			p = nullptr;
 		}
 	}
+
+	const char* dxgiFormatName(const DXGI_FORMAT fmt)
+	{
+		switch (fmt)
+		{
+		case DXGI_FORMAT_B8G8R8A8_UNORM:
+			return "B8G8R8A8_UNORM";
+		case DXGI_FORMAT_B8G8R8A8_UNORM_SRGB:
+			return "B8G8R8A8_UNORM_SRGB";
+		case DXGI_FORMAT_R8G8B8A8_UNORM:
+			return "R8G8B8A8_UNORM";
+		case DXGI_FORMAT_R8G8B8A8_UNORM_SRGB:
+			return "R8G8B8A8_UNORM_SRGB";
+		case DXGI_FORMAT_R10G10B10A2_UNORM:
+			return "R10G10B10A2_UNORM";
+		case DXGI_FORMAT_R16G16B16A16_FLOAT:
+			return "R16G16B16A16_FLOAT";
+		default:
+			return "OTHER";
+		}
+	}
+
+	bool resolveInputPixelFormat(const DXGI_FORMAT fmt, AVPixelFormat& srcFmt, int& bytesPerPixel)
+	{
+		switch (fmt)
+		{
+		case DXGI_FORMAT_B8G8R8A8_UNORM:
+		case DXGI_FORMAT_B8G8R8A8_UNORM_SRGB:
+			srcFmt = AV_PIX_FMT_BGRA;
+			bytesPerPixel = 4;
+			return true;
+		case DXGI_FORMAT_R8G8B8A8_UNORM:
+		case DXGI_FORMAT_R8G8B8A8_UNORM_SRGB:
+			srcFmt = AV_PIX_FMT_RGBA;
+			bytesPerPixel = 4;
+			return true;
+		default:
+			srcFmt = AV_PIX_FMT_NONE;
+			bytesPerPixel = 0;
+			return false;
+		}
+	}
 }
 
 #endif
@@ -51,6 +94,59 @@ fplayer::ScreenCaptureDxgi::~ScreenCaptureDxgi()
 void fplayer::ScreenCaptureDxgi::refreshScreens()
 {
 	m_descriptions.clear();
+#ifdef _WIN32
+	// DXGI 后端优先使用 OutputDesc 原生坐标与尺寸，避免 Qt 几何+DPR 推导引入的 1px 偏差。
+	IDXGIFactory1* factory = nullptr;
+	if (SUCCEEDED(CreateDXGIFactory1(IID_PPV_ARGS(&factory))) && factory)
+	{
+		const QScreen* primary = QGuiApplication::primaryScreen();
+		const QRect primaryRect = primary ? primary->geometry() : QRect();
+		for (UINT ai = 0;; ++ai)
+		{
+			IDXGIAdapter1* adapter = nullptr;
+			if (factory->EnumAdapters1(ai, &adapter) == DXGI_ERROR_NOT_FOUND)
+			{
+				break;
+			}
+			for (UINT oi = 0;; ++oi)
+			{
+				IDXGIOutput* output = nullptr;
+				if (adapter->EnumOutputs(oi, &output) == DXGI_ERROR_NOT_FOUND)
+				{
+					break;
+				}
+				DXGI_OUTPUT_DESC od{};
+				if (SUCCEEDED(output->GetDesc(&od)) && od.AttachedToDesktop)
+				{
+					ScreenDescription d;
+					const QString devName = QString::fromWCharArray(od.DeviceName).trimmed();
+					d.name = devName.isEmpty() ? QStringLiteral("屏幕") : devName;
+					d.x = od.DesktopCoordinates.left;
+					d.y = od.DesktopCoordinates.top;
+					d.width = od.DesktopCoordinates.right - od.DesktopCoordinates.left;
+					d.height = od.DesktopCoordinates.bottom - od.DesktopCoordinates.top;
+					const QRect outRect(d.x, d.y, d.width, d.height);
+					d.isPrimary = !primaryRect.isNull() && outRect.intersects(primaryRect);
+					m_descriptions.push_back(d);
+				}
+				safeRelease(output);
+			}
+			safeRelease(adapter);
+		}
+		safeRelease(factory);
+	}
+	if (!m_descriptions.isEmpty())
+	{
+		return;
+	}
+#endif
+	// DXGI 枚举失败时，回退到 Qt 层几何信息。
+	auto alignEvenFloor = [](const int v) -> int {
+		return (v >= 0) ? (v & ~1) : -(((-v) + 1) & ~1);
+	};
+	auto alignEvenSize = [](const int v) -> int {
+		return qMax(2, v) & ~1;
+	};
 	const auto screens = QGuiApplication::screens();
 	for (auto* screen : screens)
 	{
@@ -63,10 +159,10 @@ void fplayer::ScreenCaptureDxgi::refreshScreens()
 		d.isPrimary = screen == QGuiApplication::primaryScreen();
 		const QSize logical = screen->geometry().size();
 		const qreal dpr = screen->devicePixelRatio();
-		d.width = qRound(logical.width() * dpr);
-		d.height = qRound(logical.height() * dpr);
-		d.x = qRound(screen->geometry().x() * dpr);
-		d.y = qRound(screen->geometry().y() * dpr);
+		d.width = alignEvenSize(qRound(logical.width() * dpr));
+		d.height = alignEvenSize(qRound(logical.height() * dpr));
+		d.x = alignEvenFloor(qRound(screen->geometry().x() * dpr));
+		d.y = alignEvenFloor(qRound(screen->geometry().y() * dpr));
 		m_descriptions.push_back(d);
 	}
 }
@@ -247,12 +343,16 @@ bool fplayer::ScreenCaptureDxgi::openDuplicationForScreenIndex(int screenIndex)
 		return false;
 	}
 	const auto expected = m_descriptions.at(screenIndex);
+	constexpr int kRectTolerancePx = 2;
 	IDXGIFactory1* factory = nullptr;
 	if (FAILED(CreateDXGIFactory1(IID_PPV_ARGS(&factory))))
 	{
 		return false;
 	}
 	bool ok = false;
+	IDXGIAdapter1* fallbackAdapter = nullptr;
+	IDXGIOutput* fallbackOutput = nullptr;
+	UINT globalOutputIndex = 0;
 	for (UINT ai = 0;; ++ai)
 	{
 		IDXGIAdapter1* adapter = nullptr;
@@ -271,8 +371,24 @@ bool fplayer::ScreenCaptureDxgi::openDuplicationForScreenIndex(int screenIndex)
 			output->GetDesc(&od);
 			const long outW = od.DesktopCoordinates.right - od.DesktopCoordinates.left;
 			const long outH = od.DesktopCoordinates.bottom - od.DesktopCoordinates.top;
-			if (od.DesktopCoordinates.left != expected.x || od.DesktopCoordinates.top != expected.y || outW != expected.width || outH != expected.height)
+			const bool isApproxMatch =
+				(qAbs(od.DesktopCoordinates.left - expected.x) <= kRectTolerancePx) &&
+				(qAbs(od.DesktopCoordinates.top - expected.y) <= kRectTolerancePx) &&
+				(qAbs(outW - expected.width) <= kRectTolerancePx) &&
+				(qAbs(outH - expected.height) <= kRectTolerancePx);
+			const bool isIndexFallback = (globalOutputIndex == static_cast<UINT>(screenIndex));
+			if (!isApproxMatch)
 			{
+				if (isIndexFallback)
+				{
+					safeRelease(fallbackAdapter);
+					safeRelease(fallbackOutput);
+					adapter->AddRef();
+					output->AddRef();
+					fallbackAdapter = adapter;
+					fallbackOutput = output;
+				}
+				++globalOutputIndex;
 				output->Release();
 				output = nullptr;
 				continue;
@@ -314,6 +430,8 @@ bool fplayer::ScreenCaptureDxgi::openDuplicationForScreenIndex(int screenIndex)
 			safeRelease(out1);
 			safeRelease(output);
 			safeRelease(adapter);
+			safeRelease(fallbackAdapter);
+			safeRelease(fallbackOutput);
 			break;
 		}
 		if (ok)
@@ -322,6 +440,42 @@ bool fplayer::ScreenCaptureDxgi::openDuplicationForScreenIndex(int screenIndex)
 		}
 		safeRelease(adapter);
 	}
+	if (!ok && fallbackAdapter && fallbackOutput)
+	{
+		IDXGIOutput1* out1 = nullptr;
+		if (SUCCEEDED(fallbackOutput->QueryInterface(IID_PPV_ARGS(&out1))))
+		{
+			ID3D11Device* device = nullptr;
+			ID3D11DeviceContext* context = nullptr;
+			D3D_FEATURE_LEVEL fl{};
+			const D3D_FEATURE_LEVEL levels[] = {D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_10_1, D3D_FEATURE_LEVEL_10_0};
+			const UINT nlevels = static_cast<UINT>(sizeof(levels) / sizeof(levels[0]));
+			if (SUCCEEDED(D3D11CreateDevice(fallbackAdapter, D3D_DRIVER_TYPE_UNKNOWN, nullptr, D3D11_CREATE_DEVICE_BGRA_SUPPORT, levels,
+			                                nlevels, D3D11_SDK_VERSION, &device, &fl, &context)))
+			{
+				IDXGIOutputDuplication* dupl = nullptr;
+				if (SUCCEEDED(out1->DuplicateOutput(device, &dupl)))
+				{
+					DXGI_OUTPUT_DESC od{};
+					fallbackOutput->GetDesc(&od);
+					m_d3dDevice = device;
+					m_d3dContext = context;
+					m_duplication = dupl;
+					m_outputLeft = od.DesktopCoordinates.left;
+					m_outputTop = od.DesktopCoordinates.top;
+					ok = true;
+				}
+				else
+				{
+					safeRelease(device);
+					safeRelease(context);
+				}
+			}
+		}
+		safeRelease(out1);
+	}
+	safeRelease(fallbackAdapter);
+	safeRelease(fallbackOutput);
 	safeRelease(factory);
 	return ok;
 }
@@ -398,7 +552,8 @@ bool fplayer::ScreenCaptureDxgi::captureOneFrame()
 	const HRESULT hr = dupl->AcquireNextFrame(100, &fi, &desktopRes);
 	if (hr == DXGI_ERROR_WAIT_TIMEOUT)
 	{
-		return false;
+		// 桌面复制在画面静止时会超时；这不是故障，不应触发重建设备。
+		return true;
 	}
 	if (hr == DXGI_ERROR_ACCESS_LOST)
 	{
@@ -419,6 +574,37 @@ bool fplayer::ScreenCaptureDxgi::captureOneFrame()
 
 	D3D11_TEXTURE2D_DESC td{};
 	acquired->GetDesc(&td);
+	AVPixelFormat srcPixFmt = AV_PIX_FMT_NONE;
+	int bytesPerPixel = 0;
+	if (!resolveInputPixelFormat(td.Format, srcPixFmt, bytesPerPixel))
+	{
+		const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+		++m_unsupportedSkipCount;
+		// HDR/高级色彩场景会高频命中该分支，按时间窗口合并日志，避免刷屏。
+		if ((nowMs - m_lastUnsupportedLogMs) >= 3000)
+		{
+			m_lastUnsupportedLogMs = nowMs;
+			m_lastDxgiFormat = static_cast<int>(td.Format);
+			LOG_WARN("[screen][dxgi]", "skip unsupported duplication format=", dxgiFormatName(td.Format), "(",
+			         static_cast<int>(td.Format), "), usually caused by HDR/advanced-color",
+			         ", skipped=", m_unsupportedSkipCount);
+			m_unsupportedSkipCount = 0;
+		}
+		safeRelease(acquired);
+		dupl->ReleaseFrame();
+		// HDR/高级色彩场景可能间歇出现浮点格式帧；跳过该帧，等待下一帧，
+		// 避免把它当作故障触发 duplication 重建（会造成画面扭曲/抖动）。
+		return true;
+	}
+	const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+	if (!m_loggedFrameMeta || m_lastDxgiFormat != static_cast<int>(td.Format) || (nowMs - m_lastFrameMetaLogMs) >= 5000)
+	{
+		m_loggedFrameMeta = true;
+		m_lastFrameMetaLogMs = nowMs;
+		m_lastDxgiFormat = static_cast<int>(td.Format);
+		LOG_INFO("[screen][dxgi]", "frame meta w=", static_cast<int>(td.Width), " h=", static_cast<int>(td.Height), " fmt=",
+		         dxgiFormatName(td.Format), " bpp=", bytesPerPixel);
+	}
 
 	ID3D11Texture2D* staging = static_cast<ID3D11Texture2D*>(m_stagingTex);
 	if (!staging || m_frameW != static_cast<int>(td.Width) || m_frameH != static_cast<int>(td.Height))
@@ -461,47 +647,64 @@ bool fplayer::ScreenCaptureDxgi::captureOneFrame()
 	}
 	const int tw = m_frameW;
 	const int th = m_frameH;
-	const int bgraBytes = tw * th * 4;
-	if (m_bgraFrame.size() != bgraBytes)
+	const int packedBytes = tw * th * bytesPerPixel;
+	if (m_bgraFrame.size() != packedBytes)
 	{
-		m_bgraFrame.resize(bgraBytes);
+		m_bgraFrame.resize(packedBytes);
 	}
 	auto* dst = reinterpret_cast<uint8_t*>(m_bgraFrame.data());
 	auto* src = static_cast<const uint8_t*>(map.pData);
+	if (map.RowPitch < static_cast<UINT>(tw * bytesPerPixel))
+	{
+		LOG_ERROR("[screen][dxgi]", "invalid row pitch=", static_cast<int>(map.RowPitch), " expectedAtLeast=", tw * bytesPerPixel);
+		ctx->Unmap(staging, 0);
+		return false;
+	}
 	for (int y = 0; y < th; ++y)
 	{
-		memcpy(dst + y * tw * 4, src + y * map.RowPitch, static_cast<size_t>(tw) * 4);
+		memcpy(dst + static_cast<size_t>(y) * tw * bytesPerPixel, src + y * map.RowPitch, static_cast<size_t>(tw) * bytesPerPixel);
 	}
 	ctx->Unmap(staging, 0);
 
 	if (m_captureCursor)
 	{
-		drawCursorOnBgra(reinterpret_cast<uint8_t*>(m_bgraFrame.data()), tw, th, tw * 4);
+		if (srcPixFmt == AV_PIX_FMT_BGRA)
+		{
+			drawCursorOnBgra(reinterpret_cast<uint8_t*>(m_bgraFrame.data()), tw, th, tw * bytesPerPixel);
+		}
+		else
+		{
+			// 仅 BGRA 路径做 GDI 指针叠加；RGBA 叠加会通道错乱，这里保持原帧。
+		}
 	}
 
 	const uint8_t* srcSlice[4] = {reinterpret_cast<const uint8_t*>(m_bgraFrame.constData()), nullptr, nullptr, nullptr};
-	int srcStrideArr[4] = {tw * 4, 0, 0, 0};
+	int srcStrideArr[4] = {tw * bytesPerPixel, 0, 0, 0};
 
-	// 预览链路固定使用原始屏幕尺寸，避免受推流尺寸影响。
+	// 预览链路固定使用屏幕尺寸；YUV420P 目的尺寸需为偶数，奇数时做 1px 裁剪避免 U/V 错位。
+	const int previewW = qMax(2, tw) & ~1;
+	const int previewH = qMax(2, th) & ~1;
 	SwsContext* swsPreview = static_cast<SwsContext*>(m_swsPreview);
-	if (!swsPreview || m_previewW != tw || m_previewH != th)
+	if (!swsPreview || m_previewW != previewW || m_previewH != previewH)
 	{
 		sws_freeContext(swsPreview);
-		swsPreview = sws_getContext(tw, th, AV_PIX_FMT_BGRA, tw, th, AV_PIX_FMT_YUV420P, SWS_BILINEAR, nullptr, nullptr, nullptr);
+		swsPreview = sws_getContext(tw, th, srcPixFmt, previewW, previewH, AV_PIX_FMT_YUV420P, SWS_BILINEAR, nullptr, nullptr,
+		                            nullptr);
 		m_swsPreview = swsPreview;
-		m_previewW = tw;
-		m_previewH = th;
+		m_previewW = previewW;
+		m_previewH = previewH;
 	}
 	if (!swsPreview)
 	{
 		return false;
 	}
-	const int previewYStride = tw;
-	const int previewUStride = tw / 2;
-	const int previewVStride = tw / 2;
-	const int previewYBytes = previewYStride * th;
-	const int previewUBytes = previewUStride * (th / 2);
-	const int previewVBytes = previewVStride * (th / 2);
+	const int previewYStride = previewW;
+	const int previewUStride = previewW / 2;
+	const int previewVStride = previewW / 2;
+	const int previewYBytes = previewYStride * previewH;
+	const int previewUvHeight = previewH / 2;
+	const int previewUBytes = previewUStride * previewUvHeight;
+	const int previewVBytes = previewVStride * previewUvHeight;
 	if (m_previewY.size() != previewYBytes)
 	{
 		m_previewY.resize(previewYBytes);
@@ -522,7 +725,7 @@ bool fplayer::ScreenCaptureDxgi::captureOneFrame()
 	};
 	int previewStride[4] = {previewYStride, previewUStride, previewVStride, 0};
 	sws_scale(swsPreview, srcSlice, srcStrideArr, 0, th, previewYuv, previewStride);
-	dispatchFrameToView(m_previewY, m_previewU, m_previewV, tw, th, previewStride[0], previewStride[1], previewStride[2]);
+	dispatchFrameToView(m_previewY, m_previewU, m_previewV, previewW, previewH, previewStride[0], previewStride[1], previewStride[2]);
 
 	// 推流链路按目标尺寸独立缩放并发布到总线。
 	int targetW = 0;
@@ -540,15 +743,15 @@ bool fplayer::ScreenCaptureDxgi::captureOneFrame()
 	// 未下发推流尺寸时，先发布预览同尺寸帧，保证推流启动阶段能拿到首帧。
 	if (!pushRequested)
 	{
-		fplayer::ScreenFrameBus::instance().publish(m_previewY, m_previewU, m_previewV, tw, th, previewStride[0], previewStride[1],
+		fplayer::ScreenFrameBus::instance().publish(m_previewY, m_previewU, m_previewV, previewW, previewH, previewStride[0], previewStride[1],
 		                                            previewStride[2]);
 		return true;
 	}
 
 	// 推流尺寸与预览尺寸一致时，只做一次 BGRA->YUV 转换并复用结果。
-	if (targetW == tw && targetH == th)
+	if (targetW == previewW && targetH == previewH)
 	{
-		fplayer::ScreenFrameBus::instance().publish(m_previewY, m_previewU, m_previewV, tw, th, previewStride[0], previewStride[1],
+		fplayer::ScreenFrameBus::instance().publish(m_previewY, m_previewU, m_previewV, previewW, previewH, previewStride[0], previewStride[1],
 		                                            previewStride[2]);
 		return true;
 	}
@@ -557,7 +760,7 @@ bool fplayer::ScreenCaptureDxgi::captureOneFrame()
 	if (!swsPush || m_pushW != targetW || m_pushH != targetH)
 	{
 		sws_freeContext(swsPush);
-		swsPush = sws_getContext(tw, th, AV_PIX_FMT_BGRA, targetW, targetH, AV_PIX_FMT_YUV420P, SWS_BILINEAR, nullptr, nullptr, nullptr);
+		swsPush = sws_getContext(tw, th, srcPixFmt, targetW, targetH, AV_PIX_FMT_YUV420P, SWS_BILINEAR, nullptr, nullptr, nullptr);
 		m_swsPush = swsPush;
 		m_pushW = targetW;
 		m_pushH = targetH;

@@ -34,6 +34,11 @@ namespace fplayer
 
 		static bool canUseUnpackRowLength()
 		{
+#ifdef Q_OS_WIN
+			// 经验上 Windows + 部分驱动对 GL_UNPACK_ROW_LENGTH 的实现不稳定，可能导致行错位/扭曲；
+			// 统一走逐行重打包路径，优先保证屏幕捕获预览稳定性。
+			return false;
+#else
 			const QOpenGLContext* ctx = QOpenGLContext::currentContext();
 			if (!ctx)
 			{
@@ -49,6 +54,7 @@ namespace fplayer
 				return true;
 			}
 			return ctx->hasExtension(QByteArrayLiteral("GL_EXT_unpack_subimage"));
+#endif
 		}
 	}
 

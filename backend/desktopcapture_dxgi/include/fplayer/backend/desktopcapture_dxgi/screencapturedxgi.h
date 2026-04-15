@@ -75,6 +75,11 @@ namespace fplayer
 		QByteArray m_pushV;
 		long m_outputLeft = 0;
 		long m_outputTop = 0;
+		int m_lastDxgiFormat = -1;
+		bool m_loggedFrameMeta = false;
+		qint64 m_lastFrameMetaLogMs = 0;
+		qint64 m_lastUnsupportedLogMs = 0;
+		int m_unsupportedSkipCount = 0;
 #endif
 	};
 }
