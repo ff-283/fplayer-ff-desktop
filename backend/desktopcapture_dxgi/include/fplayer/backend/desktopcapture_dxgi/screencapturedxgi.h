@@ -54,13 +54,18 @@ namespace fplayer
 		FGLWidget* m_glWidget = nullptr;
 
 #ifdef _WIN32
-		void* m_sws = nullptr;
+		void* m_swsPreview = nullptr;
+		void* m_swsPush = nullptr;
 		void* m_d3dDevice = nullptr;
 		void* m_d3dContext = nullptr;
 		void* m_duplication = nullptr;
 		void* m_stagingTex = nullptr;
 		int m_frameW = 0;
 		int m_frameH = 0;
+		int m_previewW = 0;
+		int m_previewH = 0;
+		int m_pushW = 0;
+		int m_pushH = 0;
 		long m_outputLeft = 0;
 		long m_outputTop = 0;
 #endif

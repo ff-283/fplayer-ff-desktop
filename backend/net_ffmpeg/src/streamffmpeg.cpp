@@ -7,12 +7,14 @@ extern "C"
 #include <libavformat/avformat.h>
 #include <libavutil/error.h>
 #include <libavutil/opt.h>
+#include <libswresample/swresample.h>
 #include <libswscale/swscale.h>
 }
 
 #include <QMutexLocker>
 #include <QThread>
 #include <fplayer/common/cameraframebus/cameraframebus.h>
+#include <fplayer/common/screenframebus/screenframebus.h>
 #include <chrono>
 #include <cstring>
 #include <mutex>
@@ -23,6 +25,7 @@ namespace
 	{
 		QString device;
 		QString source;
+		QString audioSource = QStringLiteral("off");
 		int fps = 30;
 		int width = 0;
 		int height = 0;
@@ -143,6 +146,11 @@ namespace
 				{
 					params.bitrateKbps = kbps;
 				}
+				continue;
+			}
+			if (key == QStringLiteral("audio"))
+			{
+				params.audioSource = value;
 			}
 		}
 		return params;
@@ -197,14 +205,17 @@ bool fplayer::StreamFFmpeg::startPush(const QString& inputUrl, const QString& ou
 	m_running.store(true, std::memory_order_relaxed);
 	m_completedSession.store(false, std::memory_order_relaxed);
 	const QString screenPrefix = QStringLiteral("__screen_capture__:");
+	const QString screenPreviewPrefix = QStringLiteral("__screen_preview__:");
 	const QString cameraPrefix = QStringLiteral("__camera_capture__:");
 	const QString cameraPreviewPrefix = QStringLiteral("__camera_preview__:");
 	const QString fileTranscodePrefix = QStringLiteral("__file_transcode__:");
 	const bool isScreenCapture = (inputUrl == QStringLiteral("__screen_capture__")) || inputUrl.startsWith(screenPrefix);
+	const bool isScreenPreview = inputUrl.startsWith(screenPreviewPrefix);
 	const bool isCameraCapture = inputUrl.startsWith(cameraPrefix);
 	const bool isCameraPreview = inputUrl.startsWith(cameraPreviewPrefix);
 	const bool isFileTranscode = inputUrl.startsWith(fileTranscodePrefix);
 	const QString screenSpec = inputUrl.startsWith(screenPrefix) ? inputUrl.mid(screenPrefix.size()).trimmed() : QString();
+	const QString screenPreviewSpec = isScreenPreview ? inputUrl.mid(screenPreviewPrefix.size()).trimmed() : QString();
 	const QString cameraSpec = isCameraCapture ? inputUrl.mid(cameraPrefix.size()).trimmed() : QString();
 	const QString cameraPreviewSpec = isCameraPreview ? inputUrl.mid(cameraPreviewPrefix.size()).trimmed() : QString();
 	const QString fileTranscodeSpec = isFileTranscode ? inputUrl.mid(fileTranscodePrefix.size()).trimmed() : QString();
@@ -221,6 +232,12 @@ bool fplayer::StreamFFmpeg::startPush(const QString& inputUrl, const QString& ou
 		{
 			m_worker = std::make_unique<std::thread>([this, outputUrl, screenSpec]() {
 				pushScreenLoop(outputUrl, screenSpec);
+			});
+		}
+		else if (isScreenPreview)
+		{
+			m_worker = std::make_unique<std::thread>([this, outputUrl, screenPreviewSpec]() {
+				pushScreenPreviewLoop(outputUrl, screenPreviewSpec);
 			});
 		}
 		else if (isCameraCapture)
@@ -257,6 +274,10 @@ bool fplayer::StreamFFmpeg::startPush(const QString& inputUrl, const QString& ou
 	if (isScreenCapture)
 	{
 		appendLogLine(QStringLiteral("[推流] 已启动（桌面采集直推）"));
+	}
+	else if (isScreenPreview)
+	{
+		appendLogLine(QStringLiteral("[推流] 已启动（DXGI 预览帧推流）"));
 	}
 	else if (isCameraCapture)
 	{
@@ -888,6 +909,111 @@ void fplayer::StreamFFmpeg::pushScreenLoop(const QString& outputUrl, const QStri
 	const CaptureParams params = parseCaptureParams(captureSpec);
 	const int targetFps = qMax(1, params.fps);
 	avdevice_register_all();
+	AVFormatContext* audioIfmt = nullptr;
+	AVCodecContext* audioDecCtx = nullptr;
+	AVCodecContext* audioEncCtx = nullptr;
+	SwrContext* audioSwr = nullptr;
+	AVPacket* audioPkt = nullptr;
+	AVPacket* audioOutPkt = nullptr;
+	AVFrame* audioDecFrame = nullptr;
+	AVFrame* audioEncFrame = nullptr;
+	int audioIndex = -1;
+	AVStream* outAudioStream = nullptr;
+	int64_t audioPts = 0;
+
+	const bool enableAudio = !params.audioSource.isEmpty() && params.audioSource != QStringLiteral("off");
+	if (enableAudio)
+	{
+		QString audioDevice = params.audioSource;
+		if (audioDevice == QStringLiteral("system"))
+		{
+			audioDevice = QStringLiteral("audio=virtual-audio-capturer");
+		}
+		if (!audioDevice.startsWith(QStringLiteral("audio=")))
+		{
+			audioDevice = QStringLiteral("audio=") + audioDevice;
+		}
+		audioIfmt = avformat_alloc_context();
+		if (!audioIfmt)
+		{
+			exitCode = AVERROR(ENOMEM);
+			setLastError(QStringLiteral("创建音频采集上下文失败"));
+			goto cleanup;
+		}
+		audioIfmt->interrupt_callback.callback = &StreamFFmpeg::interruptCallback;
+		audioIfmt->interrupt_callback.opaque = &m_stopRequest;
+		const AVInputFormat* audioFmt = av_find_input_format("dshow");
+		const QByteArray audioDeviceUtf8 = audioDevice.toUtf8();
+		ret = avformat_open_input(&audioIfmt, audioDeviceUtf8.constData(), audioFmt, nullptr);
+		if (ret < 0)
+		{
+			char errbuf[AV_ERROR_MAX_STRING_SIZE];
+			av_strerror(ret, errbuf, sizeof(errbuf));
+			exitCode = ret;
+			setLastError(QStringLiteral("打开系统声音采集失败: %1").arg(QString::fromUtf8(errbuf)));
+			goto cleanup;
+		}
+		ret = avformat_find_stream_info(audioIfmt, nullptr);
+		if (ret < 0)
+		{
+			exitCode = ret;
+			setLastError(QStringLiteral("读取音频流信息失败"));
+			goto cleanup;
+		}
+		for (unsigned i = 0; i < audioIfmt->nb_streams; ++i)
+		{
+			if (audioIfmt->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO)
+			{
+				audioIndex = static_cast<int>(i);
+				break;
+			}
+		}
+		if (audioIndex < 0)
+		{
+			exitCode = AVERROR_STREAM_NOT_FOUND;
+			setLastError(QStringLiteral("未找到可用系统音频流"));
+			goto cleanup;
+		}
+		const AVCodecParameters* inAudioPar = audioIfmt->streams[audioIndex]->codecpar;
+		const AVCodec* audioDec = avcodec_find_decoder(inAudioPar->codec_id);
+		if (!audioDec)
+		{
+			exitCode = AVERROR_DECODER_NOT_FOUND;
+			setLastError(QStringLiteral("未找到音频解码器"));
+			goto cleanup;
+		}
+		audioDecCtx = avcodec_alloc_context3(audioDec);
+		if (!audioDecCtx)
+		{
+			exitCode = AVERROR(ENOMEM);
+			setLastError(QStringLiteral("创建音频解码器上下文失败"));
+			goto cleanup;
+		}
+		ret = avcodec_parameters_to_context(audioDecCtx, inAudioPar);
+		if (ret < 0)
+		{
+			exitCode = ret;
+			setLastError(QStringLiteral("加载音频输入参数失败"));
+			goto cleanup;
+		}
+		ret = avcodec_open2(audioDecCtx, audioDec, nullptr);
+		if (ret < 0)
+		{
+			exitCode = ret;
+			setLastError(QStringLiteral("打开音频解码器失败"));
+			goto cleanup;
+		}
+		audioPkt = av_packet_alloc();
+		audioOutPkt = av_packet_alloc();
+		audioDecFrame = av_frame_alloc();
+		audioEncFrame = av_frame_alloc();
+		if (!audioPkt || !audioOutPkt || !audioDecFrame || !audioEncFrame)
+		{
+			exitCode = AVERROR(ENOMEM);
+			setLastError(QStringLiteral("分配音频编码资源失败"));
+			goto cleanup;
+		}
+	}
 
 	inPkt = av_packet_alloc();
 	outPkt = av_packet_alloc();
@@ -1040,6 +1166,10 @@ void fplayer::StreamFFmpeg::pushScreenLoop(const QString& outputUrl, const QStri
 		              .arg(encCtx->height)
 		              .arg(targetFps)
 		              .arg(bitrateKbps));
+		if (enableAudio)
+		{
+			appendLogLine(QStringLiteral("[屏幕推流] 音频来源=%1").arg(params.audioSource));
+		}
 		ret = avcodec_open2(encCtx, enc, nullptr);
 		if (ret < 0)
 		{
@@ -1056,6 +1186,119 @@ void fplayer::StreamFFmpeg::pushScreenLoop(const QString& outputUrl, const QStri
 		}
 		outStream->time_base = encCtx->time_base;
 		avcodec_parameters_from_context(outStream->codecpar, encCtx);
+		if (enableAudio && audioIfmt && audioIndex >= 0)
+		{
+			const AVCodec* audioEnc = avcodec_find_encoder(AV_CODEC_ID_AAC);
+			if (!audioEnc)
+			{
+				exitCode = AVERROR_ENCODER_NOT_FOUND;
+				setLastError(QStringLiteral("未找到 AAC 音频编码器，无法推送声音"));
+				goto cleanup;
+			}
+			audioEncCtx = avcodec_alloc_context3(audioEnc);
+			if (!audioEncCtx)
+			{
+				exitCode = AVERROR(ENOMEM);
+				setLastError(QStringLiteral("创建音频编码器上下文失败"));
+				goto cleanup;
+			}
+			audioEncCtx->sample_rate = audioDecCtx && audioDecCtx->sample_rate > 0 ? audioDecCtx->sample_rate : 48000;
+			if (audioEnc->supported_samplerates)
+			{
+				int bestRate = audioEnc->supported_samplerates[0];
+				int bestDiff = qAbs(bestRate - audioEncCtx->sample_rate);
+				for (const int* p = audioEnc->supported_samplerates; *p != 0; ++p)
+				{
+					const int diff = qAbs(*p - audioEncCtx->sample_rate);
+					if (diff < bestDiff)
+					{
+						bestRate = *p;
+						bestDiff = diff;
+					}
+				}
+				audioEncCtx->sample_rate = bestRate;
+			}
+			if (audioDecCtx && audioDecCtx->ch_layout.nb_channels > 0)
+			{
+				av_channel_layout_copy(&audioEncCtx->ch_layout, &audioDecCtx->ch_layout);
+			}
+			else
+			{
+				av_channel_layout_default(&audioEncCtx->ch_layout, 2);
+			}
+			if (audioEnc->ch_layouts)
+			{
+				const AVChannelLayout* best = &audioEnc->ch_layouts[0];
+				int bestDiff = qAbs(best->nb_channels - audioEncCtx->ch_layout.nb_channels);
+				for (const AVChannelLayout* p = audioEnc->ch_layouts; p && p->nb_channels > 0; ++p)
+				{
+					const int diff = qAbs(p->nb_channels - audioEncCtx->ch_layout.nb_channels);
+					if (diff < bestDiff)
+					{
+						best = p;
+						bestDiff = diff;
+					}
+				}
+				av_channel_layout_uninit(&audioEncCtx->ch_layout);
+				av_channel_layout_copy(&audioEncCtx->ch_layout, best);
+			}
+			audioEncCtx->sample_fmt = audioEnc->sample_fmts ? audioEnc->sample_fmts[0] : AV_SAMPLE_FMT_FLTP;
+			audioEncCtx->bit_rate = 128000;
+			audioEncCtx->time_base = AVRational{1, audioEncCtx->sample_rate};
+			if (ofmt->oformat->flags & AVFMT_GLOBALHEADER)
+			{
+				audioEncCtx->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
+			}
+			ret = avcodec_open2(audioEncCtx, audioEnc, nullptr);
+			if (ret < 0)
+			{
+				exitCode = ret;
+				setLastError(QStringLiteral("打开音频编码器失败"));
+				goto cleanup;
+			}
+			outAudioStream = avformat_new_stream(ofmt, nullptr);
+			if (!outAudioStream)
+			{
+				exitCode = AVERROR(ENOMEM);
+				setLastError(QStringLiteral("创建输出音频流失败"));
+				goto cleanup;
+			}
+			ret = avcodec_parameters_from_context(outAudioStream->codecpar, audioEncCtx);
+			if (ret < 0)
+			{
+				exitCode = ret;
+				setLastError(QStringLiteral("写入输出音频参数失败"));
+				goto cleanup;
+			}
+			outAudioStream->codecpar->codec_tag = 0;
+			outAudioStream->time_base = audioEncCtx->time_base;
+			const AVChannelLayout* inLayout = audioDecCtx->ch_layout.nb_channels > 0 ? &audioDecCtx->ch_layout : nullptr;
+			AVChannelLayout defaultInLayout;
+			if (!inLayout)
+			{
+				av_channel_layout_default(&defaultInLayout, 2);
+				inLayout = &defaultInLayout;
+			}
+			ret = swr_alloc_set_opts2(&audioSwr, &audioEncCtx->ch_layout, audioEncCtx->sample_fmt, audioEncCtx->sample_rate,
+			                          inLayout, audioDecCtx->sample_fmt, audioDecCtx->sample_rate, 0, nullptr);
+			if (!inLayout || inLayout == &defaultInLayout)
+			{
+				av_channel_layout_uninit(&defaultInLayout);
+			}
+			if (ret < 0 || !audioSwr)
+			{
+				exitCode = ret < 0 ? ret : AVERROR(EINVAL);
+				setLastError(QStringLiteral("创建音频重采样器失败"));
+				goto cleanup;
+			}
+			ret = swr_init(audioSwr);
+			if (ret < 0)
+			{
+				exitCode = ret;
+				setLastError(QStringLiteral("初始化音频重采样器失败"));
+				goto cleanup;
+			}
+		}
 	}
 
 	if (!(ofmt->oformat->flags & AVFMT_NOFILE))
@@ -1156,6 +1399,52 @@ void fplayer::StreamFFmpeg::pushScreenLoop(const QString& outputUrl, const QStri
 			}
 			av_frame_unref(decFrame);
 		}
+		if (enableAudio && audioIfmt && audioPkt && outAudioStream)
+		{
+			const int audioRet = av_read_frame(audioIfmt, audioPkt);
+			if (audioRet >= 0)
+			{
+				if (audioPkt->stream_index == audioIndex)
+				{
+					ret = avcodec_send_packet(audioDecCtx, audioPkt);
+					if (ret >= 0)
+					{
+						while (avcodec_receive_frame(audioDecCtx, audioDecFrame) == 0)
+						{
+							const int dstSamples = av_rescale_rnd(
+								swr_get_delay(audioSwr, audioDecCtx->sample_rate) + audioDecFrame->nb_samples,
+								audioEncCtx->sample_rate,
+								audioDecCtx->sample_rate,
+								AV_ROUND_UP);
+							av_frame_unref(audioEncFrame);
+							audioEncFrame->nb_samples = qMax(1, dstSamples);
+							audioEncFrame->format = audioEncCtx->sample_fmt;
+							audioEncFrame->sample_rate = audioEncCtx->sample_rate;
+							av_channel_layout_copy(&audioEncFrame->ch_layout, &audioEncCtx->ch_layout);
+							if (av_frame_get_buffer(audioEncFrame, 0) >= 0)
+							{
+								swr_convert(audioSwr, audioEncFrame->data, audioEncFrame->nb_samples,
+								            (const uint8_t* const*)audioDecFrame->data, audioDecFrame->nb_samples);
+								audioEncFrame->pts = audioPts;
+								audioPts += audioEncFrame->nb_samples;
+								if (avcodec_send_frame(audioEncCtx, audioEncFrame) >= 0)
+								{
+									while (avcodec_receive_packet(audioEncCtx, audioOutPkt) == 0)
+									{
+										av_packet_rescale_ts(audioOutPkt, audioEncCtx->time_base, outAudioStream->time_base);
+										audioOutPkt->stream_index = outAudioStream->index;
+										av_interleaved_write_frame(ofmt, audioOutPkt);
+										av_packet_unref(audioOutPkt);
+									}
+								}
+							}
+							av_frame_unref(audioDecFrame);
+						}
+					}
+				}
+				av_packet_unref(audioPkt);
+			}
+		}
 	}
 
 	avcodec_send_frame(encCtx, nullptr);
@@ -1165,6 +1454,17 @@ void fplayer::StreamFFmpeg::pushScreenLoop(const QString& outputUrl, const QStri
 		outPkt->stream_index = 0;
 		av_interleaved_write_frame(ofmt, outPkt);
 		av_packet_unref(outPkt);
+	}
+	if (enableAudio && audioEncCtx && outAudioStream && audioOutPkt)
+	{
+		avcodec_send_frame(audioEncCtx, nullptr);
+		while (avcodec_receive_packet(audioEncCtx, audioOutPkt) == 0)
+		{
+			av_packet_rescale_ts(audioOutPkt, audioEncCtx->time_base, outAudioStream->time_base);
+			audioOutPkt->stream_index = outAudioStream->index;
+			av_interleaved_write_frame(ofmt, audioOutPkt);
+			av_packet_unref(audioOutPkt);
+		}
 	}
 	if (wroteHeader)
 	{
@@ -1211,6 +1511,356 @@ cleanup:
 	if (ifmt)
 	{
 		avformat_close_input(&ifmt);
+	}
+	if (audioPkt)
+	{
+		av_packet_free(&audioPkt);
+	}
+	if (audioOutPkt)
+	{
+		av_packet_free(&audioOutPkt);
+	}
+	if (audioDecFrame)
+	{
+		av_frame_free(&audioDecFrame);
+	}
+	if (audioEncFrame)
+	{
+		av_frame_free(&audioEncFrame);
+	}
+	if (audioSwr)
+	{
+		swr_free(&audioSwr);
+	}
+	if (audioEncCtx)
+	{
+		avcodec_free_context(&audioEncCtx);
+	}
+	if (audioDecCtx)
+	{
+		avcodec_free_context(&audioDecCtx);
+	}
+	if (audioIfmt)
+	{
+		avformat_close_input(&audioIfmt);
+	}
+	{
+		QMutexLocker locker(&m_mutex);
+		m_lastExitCode = exitCode;
+	}
+	m_completedSession.store(true, std::memory_order_relaxed);
+	m_running.store(false, std::memory_order_relaxed);
+}
+
+void fplayer::StreamFFmpeg::pushScreenPreviewLoop(const QString& outputUrl, const QString& captureSpec)
+{
+	AVFormatContext* ofmt = nullptr;
+	AVCodecContext* encCtx = nullptr;
+	AVPacket* outPkt = nullptr;
+	AVFrame* encFrame = nullptr;
+	SwsContext* sws = nullptr;
+	int exitCode = 0;
+	int ret = 0;
+	bool wroteHeader = false;
+	uint64_t lastSerial = 0;
+	int srcWidth = 0;
+	int srcHeight = 0;
+	int64_t lastPts = -1;
+	auto nextEncodeAt = std::chrono::steady_clock::time_point{};
+	auto startClock = std::chrono::steady_clock::time_point{};
+	fplayer::ScreenFrame frame;
+
+	const QByteArray outUtf8 = outputUrl.toUtf8();
+	const char* outPath = outUtf8.constData();
+	const CaptureParams params = parseCaptureParams(captureSpec);
+	const int targetFps = qMax(1, params.fps);
+	const int frameIntervalMs = qMax(1, 1000 / targetFps);
+	fplayer::ScreenFrameBus::instance().setPublishTargetSize(0, 0);
+	outPkt = av_packet_alloc();
+	encFrame = av_frame_alloc();
+	if (!outPkt || !encFrame)
+	{
+		exitCode = AVERROR(ENOMEM);
+		setLastError(QStringLiteral("分配编码资源失败"));
+		goto cleanup;
+	}
+
+	ret = avformat_alloc_output_context2(&ofmt, nullptr, "flv", outPath);
+	if (ret < 0 || !ofmt)
+	{
+		exitCode = ret ? ret : AVERROR_UNKNOWN;
+		setLastError(QStringLiteral("创建推流输出上下文失败"));
+		goto cleanup;
+	}
+	ofmt->interrupt_callback.callback = &StreamFFmpeg::interruptCallback;
+	ofmt->interrupt_callback.opaque = &m_stopRequest;
+
+	// 等待当前屏幕预览帧可用，避免推流线程空跑。
+	frame = fplayer::ScreenFrameBus::instance().snapshot();
+	for (int i = 0; i < 300 && (!frame.valid || frame.width <= 0 || frame.height <= 0) && !m_stopRequest.load(std::memory_order_relaxed);
+	     ++i)
+	{
+		QThread::msleep(10);
+		frame = fplayer::ScreenFrameBus::instance().snapshot();
+	}
+	if (!frame.valid || frame.width <= 0 || frame.height <= 0)
+	{
+		exitCode = AVERROR(EINVAL);
+		setLastError(QStringLiteral("当前屏幕预览无可用帧，无法开始推流"));
+		goto cleanup;
+	}
+	lastSerial = frame.serial;
+
+	{
+		const AVCodec* enc = avcodec_find_encoder(AV_CODEC_ID_H264);
+		if (!enc)
+		{
+			enc = avcodec_find_encoder(AV_CODEC_ID_MPEG4);
+		}
+		if (!enc)
+		{
+			exitCode = AVERROR_ENCODER_NOT_FOUND;
+			setLastError(QStringLiteral("未找到可用视频编码器(H264/MPEG4)"));
+			goto cleanup;
+		}
+		encCtx = avcodec_alloc_context3(enc);
+		if (!encCtx)
+		{
+			exitCode = AVERROR(ENOMEM);
+			setLastError(QStringLiteral("创建编码器上下文失败"));
+			goto cleanup;
+		}
+		const int outW = params.outWidth > 0 ? params.outWidth : frame.width;
+		const int outH = params.outHeight > 0 ? params.outHeight : frame.height;
+		encCtx->width = qMax(2, outW) & ~1;
+		encCtx->height = qMax(2, outH) & ~1;
+		encCtx->pix_fmt = AV_PIX_FMT_YUV420P;
+		encCtx->time_base = AVRational{1, targetFps};
+		encCtx->framerate = AVRational{targetFps, 1};
+		encCtx->gop_size = targetFps * 2;
+		encCtx->max_b_frames = 0;
+		const int bitrateKbps = params.bitrateKbps > 0
+			                        ? params.bitrateKbps
+			                        : estimateBitrateKbps(encCtx->width, encCtx->height, targetFps);
+		encCtx->bit_rate = static_cast<int64_t>(bitrateKbps) * 1000;
+		encCtx->rc_max_rate = encCtx->bit_rate;
+		encCtx->rc_buffer_size = encCtx->bit_rate * 2;
+		if (ofmt->oformat->flags & AVFMT_GLOBALHEADER)
+		{
+			encCtx->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
+		}
+		if (enc->id == AV_CODEC_ID_H264 && encCtx->priv_data)
+		{
+			av_opt_set(encCtx->priv_data, "preset", "ultrafast", 0);
+			av_opt_set(encCtx->priv_data, "tune", "zerolatency", 0);
+		}
+		ret = avcodec_open2(encCtx, enc, nullptr);
+		if (ret < 0)
+		{
+			exitCode = ret;
+			setLastError(QStringLiteral("打开编码器失败"));
+			goto cleanup;
+		}
+		AVStream* outStream = avformat_new_stream(ofmt, nullptr);
+		if (!outStream)
+		{
+			exitCode = AVERROR(ENOMEM);
+			setLastError(QStringLiteral("创建输出视频流失败"));
+			goto cleanup;
+		}
+		outStream->time_base = encCtx->time_base;
+		avcodec_parameters_from_context(outStream->codecpar, encCtx);
+		appendLogLine(QStringLiteral("[屏幕推流] 来源=DXGI预览帧 输入=%1x%2 输出=%3x%4 FPS=%5 码率=%6kbps")
+		              .arg(frame.width)
+		              .arg(frame.height)
+		              .arg(encCtx->width)
+		              .arg(encCtx->height)
+		              .arg(targetFps)
+		              .arg(bitrateKbps));
+		appendLogLine(QStringLiteral("[屏幕推流] 编码节流=严格FPS 同分辨率=%1")
+		              .arg((frame.width == encCtx->width && frame.height == encCtx->height) ? QStringLiteral("直拷贝") : QStringLiteral("缩放")));
+		fplayer::ScreenFrameBus::instance().setPublishTargetSize(encCtx->width, encCtx->height);
+		appendLogLine(QStringLiteral("[屏幕推流] DXGI发布尺寸=%1x%2（采集阶段直接缩放）").arg(encCtx->width).arg(encCtx->height));
+		if (!params.audioSource.isEmpty() && params.audioSource != QStringLiteral("off"))
+		{
+			appendLogLine(QStringLiteral("[屏幕推流] DXGI预览帧模式暂未接入音频，已忽略音频来源=%1").arg(params.audioSource));
+		}
+	}
+
+	if (!(ofmt->oformat->flags & AVFMT_NOFILE))
+	{
+		ret = avio_open2(&ofmt->pb, outPath, AVIO_FLAG_WRITE, nullptr, nullptr);
+		if (ret < 0)
+		{
+			exitCode = ret;
+			setLastError(QStringLiteral("打开推流输出地址失败"));
+			goto cleanup;
+		}
+	}
+	ret = avformat_write_header(ofmt, nullptr);
+	if (ret < 0)
+	{
+		exitCode = ret;
+		setLastError(QStringLiteral("写入推流头失败"));
+		goto cleanup;
+	}
+	wroteHeader = true;
+
+	encFrame->format = encCtx->pix_fmt;
+	encFrame->width = encCtx->width;
+	encFrame->height = encCtx->height;
+	ret = av_frame_get_buffer(encFrame, 32);
+	if (ret < 0)
+	{
+		exitCode = ret;
+		setLastError(QStringLiteral("分配编码帧缓冲失败"));
+		goto cleanup;
+	}
+
+	srcWidth = frame.width;
+	srcHeight = frame.height;
+	if (srcWidth != encCtx->width || srcHeight != encCtx->height)
+	{
+		sws = sws_getContext(srcWidth, srcHeight, AV_PIX_FMT_YUV420P, encCtx->width, encCtx->height, AV_PIX_FMT_YUV420P, SWS_BILINEAR,
+		                     nullptr, nullptr, nullptr);
+		if (!sws)
+		{
+			exitCode = AVERROR(EINVAL);
+			setLastError(QStringLiteral("创建缩放上下文失败"));
+			goto cleanup;
+		}
+	}
+	startClock = std::chrono::steady_clock::now();
+	nextEncodeAt = startClock;
+
+	while (!m_stopRequest.load(std::memory_order_relaxed))
+	{
+		frame = fplayer::ScreenFrameBus::instance().snapshot();
+		if (!frame.valid || frame.serial == lastSerial || frame.width <= 0 || frame.height <= 0)
+		{
+			QThread::msleep(2);
+			continue;
+		}
+		lastSerial = frame.serial;
+		const auto now = std::chrono::steady_clock::now();
+		if (now < nextEncodeAt)
+		{
+			continue;
+		}
+		nextEncodeAt = now + std::chrono::milliseconds(frameIntervalMs);
+
+		// 源分辨率变化时重建缩放器，保持推流线程稳定。
+		const bool sizeChanged = (frame.width != srcWidth) || (frame.height != srcHeight);
+		if (sizeChanged)
+		{
+			if (sws)
+			{
+				sws_freeContext(sws);
+				sws = nullptr;
+			}
+			srcWidth = frame.width;
+			srcHeight = frame.height;
+			if (srcWidth != encCtx->width || srcHeight != encCtx->height)
+			{
+				sws = sws_getContext(srcWidth, srcHeight, AV_PIX_FMT_YUV420P, encCtx->width, encCtx->height, AV_PIX_FMT_YUV420P,
+				                     SWS_BILINEAR, nullptr, nullptr, nullptr);
+				if (!sws)
+				{
+					exitCode = AVERROR(EINVAL);
+					setLastError(QStringLiteral("重建缩放上下文失败"));
+					break;
+				}
+			}
+		}
+
+		const uint8_t* srcData[4] = {
+			reinterpret_cast<const uint8_t*>(frame.y.constData()),
+			reinterpret_cast<const uint8_t*>(frame.u.constData()),
+			reinterpret_cast<const uint8_t*>(frame.v.constData()),
+			nullptr
+		};
+		int srcStride[4] = {frame.yStride, frame.uStride, frame.vStride, 0};
+		ret = av_frame_make_writable(encFrame);
+		if (ret < 0)
+		{
+			continue;
+		}
+		if (sws)
+		{
+			sws_scale(sws, srcData, srcStride, 0, frame.height, encFrame->data, encFrame->linesize);
+		}
+		else
+		{
+			for (int y = 0; y < encCtx->height; ++y)
+			{
+				memcpy(encFrame->data[0] + y * encFrame->linesize[0], srcData[0] + y * srcStride[0], encCtx->width);
+			}
+			for (int y = 0; y < encCtx->height / 2; ++y)
+			{
+				memcpy(encFrame->data[1] + y * encFrame->linesize[1], srcData[1] + y * srcStride[1], encCtx->width / 2);
+				memcpy(encFrame->data[2] + y * encFrame->linesize[2], srcData[2] + y * srcStride[2], encCtx->width / 2);
+			}
+		}
+		const auto elapsedUs = std::chrono::duration_cast<std::chrono::microseconds>(now - startClock).count();
+		int64_t pts = av_rescale_q(elapsedUs, AVRational{1, 1000000}, encCtx->time_base);
+		if (pts <= lastPts)
+		{
+			pts = lastPts + 1;
+		}
+		lastPts = pts;
+		encFrame->pts = pts;
+		ret = avcodec_send_frame(encCtx, encFrame);
+		if (ret < 0)
+		{
+			continue;
+		}
+		while (avcodec_receive_packet(encCtx, outPkt) == 0)
+		{
+			av_packet_rescale_ts(outPkt, encCtx->time_base, ofmt->streams[0]->time_base);
+			outPkt->stream_index = 0;
+			av_interleaved_write_frame(ofmt, outPkt);
+			av_packet_unref(outPkt);
+		}
+	}
+
+	avcodec_send_frame(encCtx, nullptr);
+	while (avcodec_receive_packet(encCtx, outPkt) == 0)
+	{
+		av_packet_rescale_ts(outPkt, encCtx->time_base, ofmt->streams[0]->time_base);
+		outPkt->stream_index = 0;
+		av_interleaved_write_frame(ofmt, outPkt);
+		av_packet_unref(outPkt);
+	}
+	if (wroteHeader)
+	{
+		av_write_trailer(ofmt);
+	}
+
+cleanup:
+	fplayer::ScreenFrameBus::instance().setPublishTargetSize(0, 0);
+	if (sws)
+	{
+		sws_freeContext(sws);
+	}
+	if (encFrame)
+	{
+		av_frame_free(&encFrame);
+	}
+	if (outPkt)
+	{
+		av_packet_free(&outPkt);
+	}
+	if (encCtx)
+	{
+		avcodec_free_context(&encCtx);
+	}
+	if (ofmt)
+	{
+		if (!(ofmt->oformat->flags & AVFMT_NOFILE) && ofmt->pb)
+		{
+			avio_closep(&ofmt->pb);
+		}
+		avformat_free_context(ofmt);
 	}
 	{
 		QMutexLocker locker(&m_mutex);

@@ -7,6 +7,7 @@
 #include <QThread>
 
 #include <fplayer/common/fglwidget/fglwidget.h>
+#include <fplayer/common/screenframebus/screenframebus.h>
 
 #ifdef _WIN32
 #	define NOMINMAX
@@ -200,8 +201,10 @@ void fplayer::ScreenCaptureDxgi::stopCaptureThread()
 void fplayer::ScreenCaptureDxgi::releaseDxgi()
 {
 #ifdef _WIN32
-	sws_freeContext(static_cast<SwsContext*>(m_sws));
-	m_sws = nullptr;
+	sws_freeContext(static_cast<SwsContext*>(m_swsPreview));
+	m_swsPreview = nullptr;
+	sws_freeContext(static_cast<SwsContext*>(m_swsPush));
+	m_swsPush = nullptr;
 	{
 		auto* st = static_cast<ID3D11Texture2D*>(m_stagingTex);
 		safeRelease(st);
@@ -223,6 +226,8 @@ void fplayer::ScreenCaptureDxgi::releaseDxgi()
 		m_d3dDevice = nullptr;
 	}
 	m_frameW = m_frameH = 0;
+	m_previewW = m_previewH = 0;
+	m_pushW = m_pushH = 0;
 #endif
 }
 
@@ -430,8 +435,12 @@ bool fplayer::ScreenCaptureDxgi::captureOneFrame()
 		staging = st;
 		m_frameW = static_cast<int>(td.Width);
 		m_frameH = static_cast<int>(td.Height);
-		sws_freeContext(static_cast<SwsContext*>(m_sws));
-		m_sws = nullptr;
+		sws_freeContext(static_cast<SwsContext*>(m_swsPreview));
+		m_swsPreview = nullptr;
+		sws_freeContext(static_cast<SwsContext*>(m_swsPush));
+		m_swsPush = nullptr;
+		m_previewW = m_previewH = 0;
+		m_pushW = m_pushH = 0;
 	}
 
 	ctx->CopyResource(staging, acquired);
@@ -460,30 +469,72 @@ bool fplayer::ScreenCaptureDxgi::captureOneFrame()
 		drawCursorOnBgra(reinterpret_cast<uint8_t*>(bgra.data()), tw, th, tw * 4);
 	}
 
-	SwsContext* sws = static_cast<SwsContext*>(m_sws);
-	if (!sws)
+	const uint8_t* srcSlice[4] = {reinterpret_cast<const uint8_t*>(bgra.constData()), nullptr, nullptr, nullptr};
+	int srcStrideArr[4] = {tw * 4, 0, 0, 0};
+
+	// 预览链路固定使用原始屏幕尺寸，避免受推流尺寸影响。
+	SwsContext* swsPreview = static_cast<SwsContext*>(m_swsPreview);
+	if (!swsPreview || m_previewW != tw || m_previewH != th)
 	{
-		sws = sws_getContext(tw, th, AV_PIX_FMT_BGRA, tw, th, AV_PIX_FMT_YUV420P, SWS_BILINEAR, nullptr, nullptr, nullptr);
-		m_sws = sws;
+		sws_freeContext(swsPreview);
+		swsPreview = sws_getContext(tw, th, AV_PIX_FMT_BGRA, tw, th, AV_PIX_FMT_YUV420P, SWS_BILINEAR, nullptr, nullptr, nullptr);
+		m_swsPreview = swsPreview;
+		m_previewW = tw;
+		m_previewH = th;
 	}
-	uint8_t* dstYuv[4] = {};
-	int dstStride[4] = {};
-	if (av_image_alloc(dstYuv, dstStride, tw, th, AV_PIX_FMT_YUV420P, 32) < 0)
+	if (!swsPreview)
 	{
 		return false;
 	}
-	const uint8_t* srcSlice[4] = {reinterpret_cast<const uint8_t*>(bgra.constData()), nullptr, nullptr, nullptr};
-	int srcStrideArr[4] = {tw * 4, 0, 0, 0};
-	sws_scale(sws, srcSlice, srcStrideArr, 0, th, dstYuv, dstStride);
+	uint8_t* previewYuv[4] = {};
+	int previewStride[4] = {};
+	if (av_image_alloc(previewYuv, previewStride, tw, th, AV_PIX_FMT_YUV420P, 32) < 0)
+	{
+		return false;
+	}
+	sws_scale(swsPreview, srcSlice, srcStrideArr, 0, th, previewYuv, previewStride);
+	QByteArray previewY(reinterpret_cast<const char*>(previewYuv[0]), previewStride[0] * th);
+	QByteArray previewU(reinterpret_cast<const char*>(previewYuv[1]), previewStride[1] * (th / 2));
+	QByteArray previewV(reinterpret_cast<const char*>(previewYuv[2]), previewStride[2] * (th / 2));
+	dispatchFrameToView(previewY, previewU, previewV, tw, th, previewStride[0], previewStride[1], previewStride[2]);
+	av_freep(&previewYuv[0]);
 
-	const int yStride = dstStride[0];
-	const int uStride = dstStride[1];
-	const int vStride = dstStride[2];
-	QByteArray yb(reinterpret_cast<const char*>(dstYuv[0]), yStride * th);
-	QByteArray ub(reinterpret_cast<const char*>(dstYuv[1]), uStride * (th / 2));
-	QByteArray vb(reinterpret_cast<const char*>(dstYuv[2]), vStride * (th / 2));
-	dispatchFrameToView(yb, ub, vb, tw, th, yStride, uStride, vStride);
-	av_freep(&dstYuv[0]);
+	// 推流链路按目标尺寸独立缩放并发布到总线。
+	int targetW = 0;
+	int targetH = 0;
+	fplayer::ScreenFrameBus::instance().publishTargetSize(targetW, targetH);
+	if (targetW <= 0 || targetH <= 0)
+	{
+		targetW = tw;
+		targetH = th;
+	}
+	targetW = qMax(2, targetW) & ~1;
+	targetH = qMax(2, targetH) & ~1;
+	SwsContext* swsPush = static_cast<SwsContext*>(m_swsPush);
+	if (!swsPush || m_pushW != targetW || m_pushH != targetH)
+	{
+		sws_freeContext(swsPush);
+		swsPush = sws_getContext(tw, th, AV_PIX_FMT_BGRA, targetW, targetH, AV_PIX_FMT_YUV420P, SWS_BILINEAR, nullptr, nullptr, nullptr);
+		m_swsPush = swsPush;
+		m_pushW = targetW;
+		m_pushH = targetH;
+	}
+	if (!swsPush)
+	{
+		return false;
+	}
+	uint8_t* pushYuv[4] = {};
+	int pushStride[4] = {};
+	if (av_image_alloc(pushYuv, pushStride, targetW, targetH, AV_PIX_FMT_YUV420P, 32) < 0)
+	{
+		return false;
+	}
+	sws_scale(swsPush, srcSlice, srcStrideArr, 0, th, pushYuv, pushStride);
+	QByteArray pushY(reinterpret_cast<const char*>(pushYuv[0]), pushStride[0] * targetH);
+	QByteArray pushU(reinterpret_cast<const char*>(pushYuv[1]), pushStride[1] * (targetH / 2));
+	QByteArray pushV(reinterpret_cast<const char*>(pushYuv[2]), pushStride[2] * (targetH / 2));
+	fplayer::ScreenFrameBus::instance().publish(pushY, pushU, pushV, targetW, targetH, pushStride[0], pushStride[1], pushStride[2]);
+	av_freep(&pushYuv[0]);
 	return true;
 }
 

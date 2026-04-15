@@ -9,7 +9,7 @@ target_link_libraries(${PROJECT_NAME} PUBLIC FPlayer_Api)
 target_link_libraries(${PROJECT_NAME} PUBLIC FPlayer_Common)
 target_link_libraries(${PROJECT_NAME} PRIVATE Logger)
 target_link_directories(${PROJECT_NAME} PRIVATE ${FFMPEG_LIBRARIES})
-target_link_libraries(${PROJECT_NAME} PRIVATE avdevice avformat avcodec swscale avutil)
+target_link_libraries(${PROJECT_NAME} PRIVATE avdevice avformat avcodec swscale swresample avutil)
 target_include_directories(${PROJECT_NAME} PRIVATE ${FFMPEG_HEADER})
 
 install(TARGETS ${PROJECT_NAME}

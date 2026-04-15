@@ -323,6 +323,11 @@ bool fplayer::Service::streamStartPush(const QString& inputUrl, const QString& o
 	return m_stream && m_stream->startPush(inputUrl, outputUrl);
 }
 
+bool fplayer::Service::streamStartPushByScene(PushScene scene, const QString& outputUrl, const QString& sceneInput)
+{
+	return streamStartPushByScene(scene, outputUrl, sceneInput, PushOptions{});
+}
+
 bool fplayer::Service::streamStartPushByScene(PushScene scene, const QString& outputUrl, const QString& sceneInput,
                                               const PushOptions& options)
 {
@@ -352,7 +357,10 @@ bool fplayer::Service::streamStartPushByScene(PushScene scene, const QString& ou
 	case PushScene::Screen:
 	{
 		const int fps = options.fps > 0 ? options.fps : qMax(1, screenFrameRate());
-		QString screenSpec = QStringLiteral("__screen_capture__:fps=%1").arg(fps);
+		const bool useScreenPreview = (screenBackendType() == MediaBackendType::Dxgi);
+		QString screenSpec = QStringLiteral("%1:fps=%2")
+			                     .arg(useScreenPreview ? QStringLiteral("__screen_preview__") : QStringLiteral("__screen_capture__"))
+			                     .arg(fps);
 		if (m_screenCapture)
 		{
 			const auto screens = m_screenCapture->getDescriptions();
@@ -374,6 +382,10 @@ bool fplayer::Service::streamStartPushByScene(PushScene scene, const QString& ou
 		if (options.bitrateKbps > 0)
 		{
 			screenSpec += QStringLiteral(";bitrate=%1").arg(options.bitrateKbps);
+		}
+		if (!options.audioSource.trimmed().isEmpty())
+		{
+			screenSpec += QStringLiteral(";audio=%1").arg(options.audioSource.trimmed());
 		}
 		return m_stream->startPush(screenSpec, outputUrl);
 	}

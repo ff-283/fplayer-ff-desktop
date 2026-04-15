@@ -7,6 +7,7 @@
 #include <QVBoxLayout>
 #include <QCamera>
 #include <QMediaDevices>
+#include <QAudioDevice>
 #include <logger/logger.h>
 #include <QDebug>
 #include <qicon.h>
@@ -476,6 +477,25 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		spBitrate->setSpecialValueText(tr("跟随当前"));
 		spBitrate->setValue(0);
 		spBitrate->setSuffix(tr(" kbps"));
+		auto* cmbAudioSource = new QComboBox(&dlg);
+		cmbAudioSource->addItem(tr("关闭声音"), QStringLiteral("off"));
+		cmbAudioSource->addItem(tr("系统声音（实验）"), QStringLiteral("system"));
+		{
+			const auto audioInputs = QMediaDevices::audioInputs();
+			QSet<QString> dedup;
+			for (const auto& dev : audioInputs)
+			{
+				const QString name = dev.description().trimmed();
+				if (name.isEmpty() || dedup.contains(name))
+				{
+					continue;
+				}
+				dedup.insert(name);
+				cmbAudioSource->addItem(tr("麦克风：%1").arg(name), name);
+			}
+		}
+		cmbAudioSource->setCurrentIndex(0);
+		cmbAudioSource->setEnabled(screenScene);
 		auto* chkKeepAspect = new QCheckBox(tr("保持宽高比"), &dlg);
 		chkKeepAspect->setChecked(true);
 		if (screenScene)
@@ -602,6 +622,7 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		layout->addRow(tr("尺寸"), cmbSize);
 		layout->addRow(QString(), chkKeepAspect);
 		layout->addRow(tr("码率"), spBitrate);
+		layout->addRow(tr("声音来源"), cmbAudioSource);
 		layout->addRow(tr("协议模板"), cmbProtocol);
 		layout->addRow(tr("输出"), cmbOutput);
 		layout->addRow(lblStatus);
@@ -613,7 +634,7 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		buttons->addButton(btnStop, QDialogButtonBox::ActionRole);
 		layout->addRow(buttons);
 		connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
-		connect(btnStop, &QPushButton::clicked, &dlg, [this, btnStart, cmbProtocol, cmbOutput, spFps, cmbSize, spBitrate, fileScene]() {
+		connect(btnStop, &QPushButton::clicked, &dlg, [this, btnStart, cmbProtocol, cmbOutput, spFps, cmbSize, spBitrate, cmbAudioSource, fileScene, screenScene]() {
 			this->m_service->streamStop();
 			btnStart->setEnabled(true);
 			cmbProtocol->setEnabled(true);
@@ -621,8 +642,9 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 			spFps->setEnabled(!fileScene);
 			cmbSize->setEnabled(!fileScene);
 			spBitrate->setEnabled(true);
+			cmbAudioSource->setEnabled(screenScene);
 		});
-		connect(btnStart, &QPushButton::clicked, &dlg, [this, btnStart, cmbProtocol, cmbOutput, spFps, cmbSize, spBitrate, chkKeepAspect, fileScene, screenScene, addRecent]() {
+		connect(btnStart, &QPushButton::clicked, &dlg, [this, btnStart, cmbProtocol, cmbOutput, spFps, cmbSize, spBitrate, cmbAudioSource, chkKeepAspect, fileScene, screenScene, addRecent]() {
 			const QString pushOutput = cmbOutput->currentText().trimmed();
 			if (pushOutput.isEmpty())
 			{
@@ -653,6 +675,7 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 			options.fps = spFps->value();
 			options.bitrateKbps = spBitrate->value();
 			options.keepAspectRatio = chkKeepAspect->isChecked();
+			options.audioSource = cmbAudioSource->currentData().toString();
 			QString sizeText = cmbSize->currentText().trimmed();
 			if (sizeText.isEmpty() || sizeText == tr("跟随当前"))
 			{
@@ -685,8 +708,9 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 			spFps->setEnabled(false);
 			cmbSize->setEnabled(false);
 			spBitrate->setEnabled(false);
+			cmbAudioSource->setEnabled(false);
 		});
-		connect(logTimer, &QTimer::timeout, &dlg, [this, btnStart, cmbProtocol, cmbOutput, spFps, cmbSize, spBitrate, fileScene]() {
+		connect(logTimer, &QTimer::timeout, &dlg, [this, btnStart, cmbProtocol, cmbOutput, spFps, cmbSize, spBitrate, cmbAudioSource, fileScene, screenScene]() {
 			const bool running = this->m_service->streamIsRunning();
 			if (!running)
 			{
@@ -696,6 +720,7 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 				spFps->setEnabled(!fileScene);
 				cmbSize->setEnabled(!fileScene);
 				spBitrate->setEnabled(true);
+				cmbAudioSource->setEnabled(screenScene);
 			}
 		});
 		refreshPushParams();

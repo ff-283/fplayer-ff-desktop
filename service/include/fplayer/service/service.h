@@ -27,6 +27,7 @@ namespace fplayer
 			int height = 0;
 			int bitrateKbps = 0;
 			bool keepAspectRatio = false;
+			QString audioSource = QStringLiteral("off");
 		};
 
 		enum class PushScene
@@ -94,8 +95,9 @@ namespace fplayer
 		bool screenCanControlFrameRate() const;
 		MediaBackendType screenBackendType() const;
 		bool streamStartPush(const QString& inputUrl, const QString& outputUrl);
-		bool streamStartPushByScene(PushScene scene, const QString& outputUrl, const QString& sceneInput = QString(),
-		                            const PushOptions& options = PushOptions());
+		bool streamStartPushByScene(PushScene scene, const QString& outputUrl, const QString& sceneInput = QString());
+		bool streamStartPushByScene(PushScene scene, const QString& outputUrl, const QString& sceneInput,
+		                            const PushOptions& options);
 		bool streamStartPull(const QString& inputUrl, const QString& outputUrl);
 		void streamStop();
 		bool streamIsRunning() const;

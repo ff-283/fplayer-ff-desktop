@@ -33,6 +33,8 @@ namespace fplayer
 		void transcodeFileLoop(const QString& outputUrl, const QString& transcodeSpec);
 		/// 采集桌面并编码后推流（不依赖播放器输入源）。
 		void pushScreenLoop(const QString& outputUrl, const QString& captureSpec);
+		/// 使用当前屏幕预览帧编码推流（DXGI 预览链路）。
+		void pushScreenPreviewLoop(const QString& outputUrl, const QString& captureSpec);
 		/// 采集摄像头并编码后推流（不依赖前端渲染链）。
 		void pushCameraLoop(const QString& outputUrl, const QString& captureSpec);
 		/// 使用当前摄像头预览帧编码推流，避免设备二次占用。
