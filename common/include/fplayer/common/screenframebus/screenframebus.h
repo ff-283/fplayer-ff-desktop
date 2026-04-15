@@ -1,6 +1,7 @@
 #ifndef FPLAYER_DESKTOP_SCREENFRAMEBUS_H
 #define FPLAYER_DESKTOP_SCREENFRAMEBUS_H
 
+#include <atomic>
 #include <QByteArray>
 #include <QMutex>
 #include <fplayer/common/export.h>
@@ -30,6 +31,7 @@ namespace fplayer
 		             int yStride, int uStride, int vStride);
 
 		ScreenFrame snapshot() const;
+		bool snapshotIfNew(quint64 lastSerial, ScreenFrame& outFrame) const;
 		void setPublishTargetSize(int width, int height);
 		void publishTargetSize(int& width, int& height) const;
 
@@ -40,6 +42,7 @@ namespace fplayer
 		mutable QMutex m_mutex;
 		ScreenFrame m_frame;
 		quint64 m_serial = 0;
+		std::atomic<quint64> m_latestSerial{0};
 		int m_targetWidth = 0;
 		int m_targetHeight = 0;
 	};

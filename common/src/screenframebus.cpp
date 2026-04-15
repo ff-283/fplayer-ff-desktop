@@ -22,12 +22,29 @@ void fplayer::ScreenFrameBus::publish(const QByteArray& y, const QByteArray& u, 
 	m_frame.vStride = vStride;
 	m_frame.serial = ++m_serial;
 	m_frame.valid = true;
+	m_latestSerial.store(m_frame.serial, std::memory_order_release);
 }
 
 fplayer::ScreenFrame fplayer::ScreenFrameBus::snapshot() const
 {
 	QMutexLocker locker(&m_mutex);
 	return m_frame;
+}
+
+bool fplayer::ScreenFrameBus::snapshotIfNew(quint64 lastSerial, ScreenFrame& outFrame) const
+{
+	const quint64 latest = m_latestSerial.load(std::memory_order_acquire);
+	if (latest <= lastSerial)
+	{
+		return false;
+	}
+	QMutexLocker locker(&m_mutex);
+	if (!m_frame.valid || m_frame.serial == lastSerial)
+	{
+		return false;
+	}
+	outFrame = m_frame;
+	return true;
 }
 
 void fplayer::ScreenFrameBus::setPublishTargetSize(int width, int height)

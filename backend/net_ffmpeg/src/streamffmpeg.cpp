@@ -6,6 +6,7 @@ extern "C"
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
 #include <libavutil/error.h>
+#include <libavutil/hwcontext.h>
 #include <libavutil/opt.h>
 #include <libswresample/swresample.h>
 #include <libswscale/swscale.h>
@@ -242,6 +243,48 @@ namespace
 		return choice;
 	}
 
+	bool canCreateD3D11HwDevice()
+	{
+		AVBufferRef* hwDev = nullptr;
+		const int ret = av_hwdevice_ctx_create(&hwDev, AV_HWDEVICE_TYPE_D3D11VA, nullptr, nullptr, 0);
+		if (ret >= 0 && hwDev)
+		{
+			av_buffer_unref(&hwDev);
+			return true;
+		}
+		av_buffer_unref(&hwDev);
+		return false;
+	}
+
+	QString encoderHwFramesHint(const AVCodec* enc)
+	{
+		if (!enc)
+		{
+			return QStringLiteral("unknown");
+		}
+		bool hasD3D11VA = false;
+		bool hasCuda = false;
+		for (int i = 0;; ++i)
+		{
+			const AVCodecHWConfig* cfg = avcodec_get_hw_config(enc, i);
+			if (!cfg)
+			{
+				break;
+			}
+			if (cfg->device_type == AV_HWDEVICE_TYPE_D3D11VA)
+			{
+				hasD3D11VA = true;
+			}
+			if (cfg->device_type == AV_HWDEVICE_TYPE_CUDA)
+			{
+				hasCuda = true;
+			}
+		}
+		return QStringLiteral("d3d11va=%1 cuda=%2")
+				.arg(hasD3D11VA ? QStringLiteral("yes") : QStringLiteral("no"))
+				.arg(hasCuda ? QStringLiteral("yes") : QStringLiteral("no"));
+	}
+
 	AVPixelFormat pickEncoderPixelFormat(const AVCodec* enc, const bool preferHardware)
 	{
 		if (!enc || !enc->pix_fmts)
@@ -319,12 +362,15 @@ bool fplayer::StreamFFmpeg::startPush(const QString& inputUrl, const QString& ou
 	{
 		const char* cfg = avcodec_configuration();
 		const QString cfgText = QString::fromUtf8(cfg ? cfg : "");
+		const bool d3d11vaReady = canCreateD3D11HwDevice();
 		appendLogLine(QStringLiteral("[诊断] FFmpeg编码器可见性: nvenc=%1 amf=%2")
 		              .arg(avcodec_find_encoder_by_name("h264_nvenc") ? QStringLiteral("yes") : QStringLiteral("no"))
 		              .arg(avcodec_find_encoder_by_name("h264_amf") ? QStringLiteral("yes") : QStringLiteral("no")));
 		appendLogLine(QStringLiteral("[诊断] FFmpeg配置包含: --enable-nvenc=%1 --enable-amf=%2")
 		              .arg(cfgText.contains(QStringLiteral("--enable-nvenc")) ? QStringLiteral("yes") : QStringLiteral("no"))
 		              .arg(cfgText.contains(QStringLiteral("--enable-amf")) ? QStringLiteral("yes") : QStringLiteral("no")));
+		appendLogLine(QStringLiteral("[诊断] D3D11VA硬件设备可用=%1")
+		              .arg(d3d11vaReady ? QStringLiteral("yes") : QStringLiteral("no")));
 	}
 	const QString screenPrefix = QStringLiteral("__screen_capture__:");
 	const QString screenPreviewPrefix = QStringLiteral("__screen_preview__:");
@@ -1315,6 +1361,7 @@ void fplayer::StreamFFmpeg::pushScreenLoop(const QString& outputUrl, const QStri
 		appendLogLine(QStringLiteral("[屏幕推流] 编码器=%1（%2）")
 		              .arg(encChoice.name.isEmpty() ? QString::fromLatin1(enc->name ? enc->name : "unknown") : encChoice.name)
 		              .arg(encChoice.isHardware ? QStringLiteral("硬件") : QStringLiteral("软件")));
+		appendLogLine(QStringLiteral("[屏幕推流] 编码器硬件帧能力=%1").arg(encoderHwFramesHint(enc)));
 		if (enableAudio)
 		{
 			appendLogLine(QStringLiteral("[屏幕推流] 音频来源=%1").arg(params.audioSource));
@@ -1720,6 +1767,7 @@ void fplayer::StreamFFmpeg::pushScreenPreviewLoop(const QString& outputUrl, cons
 	int srcWidth = 0;
 	int srcHeight = 0;
 	int64_t lastPts = -1;
+	bool writeFailed = false;
 	auto nextEncodeAt = std::chrono::steady_clock::time_point{};
 	auto startClock = std::chrono::steady_clock::time_point{};
 	fplayer::ScreenFrame frame;
@@ -1750,12 +1798,13 @@ void fplayer::StreamFFmpeg::pushScreenPreviewLoop(const QString& outputUrl, cons
 	ofmt->interrupt_callback.opaque = &m_stopRequest;
 
 	// 等待当前屏幕预览帧可用，避免推流线程空跑。
-	frame = fplayer::ScreenFrameBus::instance().snapshot();
-	for (int i = 0; i < 300 && (!frame.valid || frame.width <= 0 || frame.height <= 0) && !m_stopRequest.load(std::memory_order_relaxed);
-	     ++i)
+	for (int i = 0; i < 300 && !m_stopRequest.load(std::memory_order_relaxed); ++i)
 	{
+		if (fplayer::ScreenFrameBus::instance().snapshotIfNew(lastSerial, frame) && frame.width > 0 && frame.height > 0)
+		{
+			break;
+		}
 		QThread::msleep(10);
-		frame = fplayer::ScreenFrameBus::instance().snapshot();
 	}
 	if (!frame.valid || frame.width <= 0 || frame.height <= 0)
 	{
@@ -1785,7 +1834,7 @@ void fplayer::StreamFFmpeg::pushScreenPreviewLoop(const QString& outputUrl, cons
 		const int outH = params.outHeight > 0 ? params.outHeight : frame.height;
 		encCtx->width = qMax(2, outW) & ~1;
 		encCtx->height = qMax(2, outH) & ~1;
-		encCtx->pix_fmt = AV_PIX_FMT_YUV420P;
+		encCtx->pix_fmt = pickEncoderPixelFormat(enc, encChoice.isHardware);
 		encCtx->time_base = AVRational{1, targetFps};
 		encCtx->framerate = AVRational{targetFps, 1};
 		encCtx->gop_size = targetFps * 2;
@@ -1815,8 +1864,13 @@ void fplayer::StreamFFmpeg::pushScreenPreviewLoop(const QString& outputUrl, cons
 		ret = avcodec_open2(encCtx, enc, nullptr);
 		if (ret < 0)
 		{
+			char errbuf[AV_ERROR_MAX_STRING_SIZE];
+			av_strerror(ret, errbuf, sizeof(errbuf));
 			exitCode = ret;
-			setLastError(QStringLiteral("打开编码器失败"));
+			setLastError(QStringLiteral("打开编码器失败: %1 (encoder=%2, pix_fmt=%3)")
+				             .arg(QString::fromUtf8(errbuf))
+				             .arg(encChoice.name.isEmpty() ? QString::fromLatin1(enc->name ? enc->name : "unknown") : encChoice.name)
+				             .arg(static_cast<int>(encCtx->pix_fmt)));
 			goto cleanup;
 		}
 		AVStream* outStream = avformat_new_stream(ofmt, nullptr);
@@ -1838,6 +1892,7 @@ void fplayer::StreamFFmpeg::pushScreenPreviewLoop(const QString& outputUrl, cons
 		appendLogLine(QStringLiteral("[屏幕推流] 编码器=%1（%2）")
 		              .arg(encChoice.name.isEmpty() ? QString::fromLatin1(enc->name ? enc->name : "unknown") : encChoice.name)
 		              .arg(encChoice.isHardware ? QStringLiteral("硬件") : QStringLiteral("软件")));
+	appendLogLine(QStringLiteral("[屏幕推流] 编码器硬件帧能力=%1").arg(encoderHwFramesHint(enc)));
 	appendLogLine(QStringLiteral("[屏幕推流] 编码像素格式=%1").arg(static_cast<int>(encCtx->pix_fmt)));
 		appendLogLine(QStringLiteral("[屏幕推流] 编码节流=严格FPS 同分辨率=%1")
 		              .arg((frame.width == encCtx->width && frame.height == encCtx->height) ? QStringLiteral("直拷贝") : QStringLiteral("缩放")));
@@ -1854,16 +1909,20 @@ void fplayer::StreamFFmpeg::pushScreenPreviewLoop(const QString& outputUrl, cons
 		ret = avio_open2(&ofmt->pb, outPath, AVIO_FLAG_WRITE, nullptr, nullptr);
 		if (ret < 0)
 		{
+			char errbuf[AV_ERROR_MAX_STRING_SIZE];
+			av_strerror(ret, errbuf, sizeof(errbuf));
 			exitCode = ret;
-			setLastError(QStringLiteral("打开推流输出地址失败"));
+			setLastError(QStringLiteral("打开推流输出地址失败: %1").arg(QString::fromUtf8(errbuf)));
 			goto cleanup;
 		}
 	}
 	ret = avformat_write_header(ofmt, nullptr);
 	if (ret < 0)
 	{
+		char errbuf[AV_ERROR_MAX_STRING_SIZE];
+		av_strerror(ret, errbuf, sizeof(errbuf));
 		exitCode = ret;
-		setLastError(QStringLiteral("写入推流头失败"));
+		setLastError(QStringLiteral("写入推流头失败: %1").arg(QString::fromUtf8(errbuf)));
 		goto cleanup;
 	}
 	wroteHeader = true;
@@ -1897,8 +1956,7 @@ void fplayer::StreamFFmpeg::pushScreenPreviewLoop(const QString& outputUrl, cons
 
 	while (!m_stopRequest.load(std::memory_order_relaxed))
 	{
-		frame = fplayer::ScreenFrameBus::instance().snapshot();
-		if (!frame.valid || frame.serial == lastSerial || frame.width <= 0 || frame.height <= 0)
+		if (!fplayer::ScreenFrameBus::instance().snapshotIfNew(lastSerial, frame) || frame.width <= 0 || frame.height <= 0)
 		{
 			QThread::msleep(2);
 			continue;
@@ -1980,26 +2038,66 @@ void fplayer::StreamFFmpeg::pushScreenPreviewLoop(const QString& outputUrl, cons
 		{
 			av_packet_rescale_ts(outPkt, encCtx->time_base, ofmt->streams[0]->time_base);
 			outPkt->stream_index = 0;
-			av_interleaved_write_frame(ofmt, outPkt);
+			ret = av_interleaved_write_frame(ofmt, outPkt);
 			av_packet_unref(outPkt);
+			if (ret < 0)
+			{
+				char errbuf[AV_ERROR_MAX_STRING_SIZE];
+				av_strerror(ret, errbuf, sizeof(errbuf));
+				exitCode = ret;
+				setLastError(QStringLiteral("写入视频包失败: %1").arg(QString::fromUtf8(errbuf)));
+				writeFailed = true;
+				break;
+			}
+		}
+		if (writeFailed)
+		{
+			break;
 		}
 	}
 
-	avcodec_send_frame(encCtx, nullptr);
-	while (avcodec_receive_packet(encCtx, outPkt) == 0)
+	if (!writeFailed)
 	{
-		av_packet_rescale_ts(outPkt, encCtx->time_base, ofmt->streams[0]->time_base);
-		outPkt->stream_index = 0;
-		av_interleaved_write_frame(ofmt, outPkt);
-		av_packet_unref(outPkt);
+		avcodec_send_frame(encCtx, nullptr);
+		while (avcodec_receive_packet(encCtx, outPkt) == 0)
+		{
+			av_packet_rescale_ts(outPkt, encCtx->time_base, ofmt->streams[0]->time_base);
+			outPkt->stream_index = 0;
+			ret = av_interleaved_write_frame(ofmt, outPkt);
+			av_packet_unref(outPkt);
+			if (ret < 0)
+			{
+				char errbuf[AV_ERROR_MAX_STRING_SIZE];
+				av_strerror(ret, errbuf, sizeof(errbuf));
+				exitCode = ret;
+				setLastError(QStringLiteral("写入尾包失败: %1").arg(QString::fromUtf8(errbuf)));
+				writeFailed = true;
+				break;
+			}
+		}
 	}
 	if (wroteHeader)
 	{
-		av_write_trailer(ofmt);
+		ret = av_write_trailer(ofmt);
+		if (ret < 0 && exitCode == 0)
+		{
+			char errbuf[AV_ERROR_MAX_STRING_SIZE];
+			av_strerror(ret, errbuf, sizeof(errbuf));
+			exitCode = ret;
+			setLastError(QStringLiteral("写入推流尾失败: %1").arg(QString::fromUtf8(errbuf)));
+		}
 	}
 
 cleanup:
 	fplayer::ScreenFrameBus::instance().setPublishTargetSize(0, 0);
+	if (exitCode < 0)
+	{
+		const QString err = lastError();
+		if (!err.trimmed().isEmpty())
+		{
+			appendLogLine(QStringLiteral("[屏幕推流] 失败: %1 (code=%2)").arg(err).arg(exitCode));
+		}
+	}
 	if (sws)
 	{
 		sws_freeContext(sws);

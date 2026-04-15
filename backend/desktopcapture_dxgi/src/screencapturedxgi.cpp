@@ -228,6 +228,13 @@ void fplayer::ScreenCaptureDxgi::releaseDxgi()
 	m_frameW = m_frameH = 0;
 	m_previewW = m_previewH = 0;
 	m_pushW = m_pushH = 0;
+	m_bgraFrame.clear();
+	m_previewY.clear();
+	m_previewU.clear();
+	m_previewV.clear();
+	m_pushY.clear();
+	m_pushU.clear();
+	m_pushV.clear();
 #endif
 }
 
@@ -454,9 +461,12 @@ bool fplayer::ScreenCaptureDxgi::captureOneFrame()
 	}
 	const int tw = m_frameW;
 	const int th = m_frameH;
-	QByteArray bgra;
-	bgra.resize(tw * th * 4);
-	auto* dst = reinterpret_cast<uint8_t*>(bgra.data());
+	const int bgraBytes = tw * th * 4;
+	if (m_bgraFrame.size() != bgraBytes)
+	{
+		m_bgraFrame.resize(bgraBytes);
+	}
+	auto* dst = reinterpret_cast<uint8_t*>(m_bgraFrame.data());
 	auto* src = static_cast<const uint8_t*>(map.pData);
 	for (int y = 0; y < th; ++y)
 	{
@@ -466,10 +476,10 @@ bool fplayer::ScreenCaptureDxgi::captureOneFrame()
 
 	if (m_captureCursor)
 	{
-		drawCursorOnBgra(reinterpret_cast<uint8_t*>(bgra.data()), tw, th, tw * 4);
+		drawCursorOnBgra(reinterpret_cast<uint8_t*>(m_bgraFrame.data()), tw, th, tw * 4);
 	}
 
-	const uint8_t* srcSlice[4] = {reinterpret_cast<const uint8_t*>(bgra.constData()), nullptr, nullptr, nullptr};
+	const uint8_t* srcSlice[4] = {reinterpret_cast<const uint8_t*>(m_bgraFrame.constData()), nullptr, nullptr, nullptr};
 	int srcStrideArr[4] = {tw * 4, 0, 0, 0};
 
 	// 预览链路固定使用原始屏幕尺寸，避免受推流尺寸影响。
@@ -486,23 +496,39 @@ bool fplayer::ScreenCaptureDxgi::captureOneFrame()
 	{
 		return false;
 	}
-	uint8_t* previewYuv[4] = {};
-	int previewStride[4] = {};
-	if (av_image_alloc(previewYuv, previewStride, tw, th, AV_PIX_FMT_YUV420P, 32) < 0)
+	const int previewYStride = tw;
+	const int previewUStride = tw / 2;
+	const int previewVStride = tw / 2;
+	const int previewYBytes = previewYStride * th;
+	const int previewUBytes = previewUStride * (th / 2);
+	const int previewVBytes = previewVStride * (th / 2);
+	if (m_previewY.size() != previewYBytes)
 	{
-		return false;
+		m_previewY.resize(previewYBytes);
 	}
+	if (m_previewU.size() != previewUBytes)
+	{
+		m_previewU.resize(previewUBytes);
+	}
+	if (m_previewV.size() != previewVBytes)
+	{
+		m_previewV.resize(previewVBytes);
+	}
+	uint8_t* previewYuv[4] = {
+		reinterpret_cast<uint8_t*>(m_previewY.data()),
+		reinterpret_cast<uint8_t*>(m_previewU.data()),
+		reinterpret_cast<uint8_t*>(m_previewV.data()),
+		nullptr
+	};
+	int previewStride[4] = {previewYStride, previewUStride, previewVStride, 0};
 	sws_scale(swsPreview, srcSlice, srcStrideArr, 0, th, previewYuv, previewStride);
-	QByteArray previewY(reinterpret_cast<const char*>(previewYuv[0]), previewStride[0] * th);
-	QByteArray previewU(reinterpret_cast<const char*>(previewYuv[1]), previewStride[1] * (th / 2));
-	QByteArray previewV(reinterpret_cast<const char*>(previewYuv[2]), previewStride[2] * (th / 2));
-	dispatchFrameToView(previewY, previewU, previewV, tw, th, previewStride[0], previewStride[1], previewStride[2]);
-	av_freep(&previewYuv[0]);
+	dispatchFrameToView(m_previewY, m_previewU, m_previewV, tw, th, previewStride[0], previewStride[1], previewStride[2]);
 
 	// 推流链路按目标尺寸独立缩放并发布到总线。
 	int targetW = 0;
 	int targetH = 0;
 	fplayer::ScreenFrameBus::instance().publishTargetSize(targetW, targetH);
+	const bool pushRequested = (targetW > 0 && targetH > 0);
 	if (targetW <= 0 || targetH <= 0)
 	{
 		targetW = tw;
@@ -510,6 +536,23 @@ bool fplayer::ScreenCaptureDxgi::captureOneFrame()
 	}
 	targetW = qMax(2, targetW) & ~1;
 	targetH = qMax(2, targetH) & ~1;
+
+	// 未下发推流尺寸时，先发布预览同尺寸帧，保证推流启动阶段能拿到首帧。
+	if (!pushRequested)
+	{
+		fplayer::ScreenFrameBus::instance().publish(m_previewY, m_previewU, m_previewV, tw, th, previewStride[0], previewStride[1],
+		                                            previewStride[2]);
+		return true;
+	}
+
+	// 推流尺寸与预览尺寸一致时，只做一次 BGRA->YUV 转换并复用结果。
+	if (targetW == tw && targetH == th)
+	{
+		fplayer::ScreenFrameBus::instance().publish(m_previewY, m_previewU, m_previewV, tw, th, previewStride[0], previewStride[1],
+		                                            previewStride[2]);
+		return true;
+	}
+
 	SwsContext* swsPush = static_cast<SwsContext*>(m_swsPush);
 	if (!swsPush || m_pushW != targetW || m_pushH != targetH)
 	{
@@ -523,18 +566,33 @@ bool fplayer::ScreenCaptureDxgi::captureOneFrame()
 	{
 		return false;
 	}
-	uint8_t* pushYuv[4] = {};
-	int pushStride[4] = {};
-	if (av_image_alloc(pushYuv, pushStride, targetW, targetH, AV_PIX_FMT_YUV420P, 32) < 0)
+	const int pushYStride = targetW;
+	const int pushUStride = targetW / 2;
+	const int pushVStride = targetW / 2;
+	const int pushYBytes = pushYStride * targetH;
+	const int pushUBytes = pushUStride * (targetH / 2);
+	const int pushVBytes = pushVStride * (targetH / 2);
+	if (m_pushY.size() != pushYBytes)
 	{
-		return false;
+		m_pushY.resize(pushYBytes);
 	}
+	if (m_pushU.size() != pushUBytes)
+	{
+		m_pushU.resize(pushUBytes);
+	}
+	if (m_pushV.size() != pushVBytes)
+	{
+		m_pushV.resize(pushVBytes);
+	}
+	uint8_t* pushYuv[4] = {
+		reinterpret_cast<uint8_t*>(m_pushY.data()),
+		reinterpret_cast<uint8_t*>(m_pushU.data()),
+		reinterpret_cast<uint8_t*>(m_pushV.data()),
+		nullptr
+	};
+	int pushStride[4] = {pushYStride, pushUStride, pushVStride, 0};
 	sws_scale(swsPush, srcSlice, srcStrideArr, 0, th, pushYuv, pushStride);
-	QByteArray pushY(reinterpret_cast<const char*>(pushYuv[0]), pushStride[0] * targetH);
-	QByteArray pushU(reinterpret_cast<const char*>(pushYuv[1]), pushStride[1] * (targetH / 2));
-	QByteArray pushV(reinterpret_cast<const char*>(pushYuv[2]), pushStride[2] * (targetH / 2));
-	fplayer::ScreenFrameBus::instance().publish(pushY, pushU, pushV, targetW, targetH, pushStride[0], pushStride[1], pushStride[2]);
-	av_freep(&pushYuv[0]);
+	fplayer::ScreenFrameBus::instance().publish(m_pushY, m_pushU, m_pushV, targetW, targetH, pushStride[0], pushStride[1], pushStride[2]);
 	return true;
 }
 

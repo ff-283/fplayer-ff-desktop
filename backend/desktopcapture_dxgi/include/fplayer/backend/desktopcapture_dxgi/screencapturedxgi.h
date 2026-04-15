@@ -66,6 +66,13 @@ namespace fplayer
 		int m_previewH = 0;
 		int m_pushW = 0;
 		int m_pushH = 0;
+		QByteArray m_bgraFrame;
+		QByteArray m_previewY;
+		QByteArray m_previewU;
+		QByteArray m_previewV;
+		QByteArray m_pushY;
+		QByteArray m_pushU;
+		QByteArray m_pushV;
 		long m_outputLeft = 0;
 		long m_outputTop = 0;
 #endif
