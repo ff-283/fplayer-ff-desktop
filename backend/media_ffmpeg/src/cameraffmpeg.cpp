@@ -7,6 +7,7 @@
 #include <atomic>
 
 #include <fplayer/backend/media_ffmpeg/cameraffmpeg.h>
+#include <fplayer/common/cameraframebus/cameraframebus.h>
 
 #include "fplayer/backend/media_ffmpeg/camerainfofetcher.h"
 #include "fplayer/common/fglwidget/fglwidget.h"
@@ -386,6 +387,7 @@ namespace fplayer
 		m_impl->captureThread->start();
 
 		m_cameraIndex = index;
+		m_isPlaying = true;
 		//qdebug() << "Selected camera:" << deviceInfo.name;
 		return true;
 	}
@@ -600,6 +602,7 @@ namespace fplayer
 							uStride,
 							vStride
 							);
+					CameraFrameBus::instance().publish(yBuffer, uBuffer, vBuffer, width, height, yStride, uStride, vStride);
 
 					av_frame_unref(frame);
 				}

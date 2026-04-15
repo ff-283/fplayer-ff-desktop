@@ -1,8 +1,26 @@
 #include <fplayer/service/service.h>
 
 #include <QtMultimediaWidgets/QVideoWidget>
+#include <QRegularExpression>
 #include <fplayer/common/maplist/maplist.hpp>
 #include <logger/logger.h>
+
+namespace
+{
+	bool parseCameraFormatText(const QString& formatText, int& width, int& height, int& fps)
+	{
+		static const QRegularExpression re(R"((\d+)\s*x\s*(\d+)\s+(\d+)\s*fps)", QRegularExpression::CaseInsensitiveOption);
+		const QRegularExpressionMatch m = re.match(formatText);
+		if (!m.hasMatch())
+		{
+			return false;
+		}
+		width = m.captured(1).toInt();
+		height = m.captured(2).toInt();
+		fps = m.captured(3).toInt();
+		return width > 0 && height > 0 && fps > 0;
+	}
+}
 
 fplayer::Service::Service() : m_runtime(new RunTime()), m_cameraIndex(0)
 {
@@ -43,6 +61,11 @@ void fplayer::Service::initStream(MediaBackendType backend)
 	if (this->m_stream == nullptr)
 	{
 		LOG_WARN("fplayer::Service::initStream(MediaBackend backend) ==> 推拉流获取失败");
+		m_streamInitErrorHint = QStringLiteral("stream backend unavailable: ensure CMake option FPLAYER_BUILD_NET_FFMPEG=ON then reconfigure/rebuild");
+	}
+	else
+	{
+		m_streamInitErrorHint.clear();
 	}
 }
 
@@ -300,6 +323,146 @@ bool fplayer::Service::streamStartPush(const QString& inputUrl, const QString& o
 	return m_stream && m_stream->startPush(inputUrl, outputUrl);
 }
 
+bool fplayer::Service::streamStartPushByScene(PushScene scene, const QString& outputUrl, const QString& sceneInput,
+                                              const PushOptions& options)
+{
+	auto applyAspectRatio = [](int srcW, int srcH, int& outW, int& outH, const bool keepAspect) {
+		if (!keepAspect || srcW <= 0 || srcH <= 0 || outW <= 0 || outH <= 0)
+		{
+			return;
+		}
+		const double srcRatio = static_cast<double>(srcW) / static_cast<double>(srcH);
+		const double dstRatio = static_cast<double>(outW) / static_cast<double>(outH);
+		if (dstRatio > srcRatio)
+		{
+			outW = qMax(2, static_cast<int>(outH * srcRatio)) & ~1;
+		}
+		else
+		{
+			outH = qMax(2, static_cast<int>(outW / srcRatio)) & ~1;
+		}
+	};
+
+	if (!m_stream)
+	{
+		return false;
+	}
+	switch (scene)
+	{
+	case PushScene::Screen:
+	{
+		const int fps = options.fps > 0 ? options.fps : qMax(1, screenFrameRate());
+		QString screenSpec = QStringLiteral("__screen_capture__:fps=%1").arg(fps);
+		if (m_screenCapture)
+		{
+			const auto screens = m_screenCapture->getDescriptions();
+			const int index = m_screenCapture->getIndex();
+			if (index >= 0 && index < screens.size())
+			{
+				const auto& s = screens.at(index);
+				// size 表示采集区域（整屏）；outsize 才是编码输出尺寸（缩放目标）。
+				screenSpec += QStringLiteral(";x=%1;y=%2;size=%3x%4").arg(s.x).arg(s.y).arg(s.width).arg(s.height);
+				int w = options.width > 0 ? options.width : s.width;
+				int h = options.height > 0 ? options.height : s.height;
+				applyAspectRatio(s.width, s.height, w, h, options.keepAspectRatio);
+				if (w != s.width || h != s.height)
+				{
+					screenSpec += QStringLiteral(";outsize=%1x%2").arg(w).arg(h);
+				}
+			}
+		}
+		if (options.bitrateKbps > 0)
+		{
+			screenSpec += QStringLiteral(";bitrate=%1").arg(options.bitrateKbps);
+		}
+		return m_stream->startPush(screenSpec, outputUrl);
+	}
+	case PushScene::File:
+	{
+		// 文件模式：未指定参数时走 remux/copy；指定码率/尺寸/帧率时走转码推流。
+		const bool needTranscode = options.bitrateKbps > 0 || options.fps > 0 || (options.width > 0 && options.height > 0);
+		if (!needTranscode)
+		{
+			return m_stream->startPush(sceneInput, outputUrl);
+		}
+		QStringList parts;
+		parts << QStringLiteral("src64=%1").arg(QString::fromUtf8(sceneInput.toUtf8().toBase64()));
+		if (options.fps > 0)
+		{
+			parts << QStringLiteral("fps=%1").arg(options.fps);
+		}
+		if (options.width > 0 && options.height > 0)
+		{
+			parts << QStringLiteral("size=%1x%2").arg(options.width).arg(options.height);
+		}
+		if (options.bitrateKbps > 0)
+		{
+			parts << QStringLiteral("bitrate=%1").arg(options.bitrateKbps);
+		}
+		return m_stream->startPush(QStringLiteral("__file_transcode__:") + parts.join(';'), outputUrl);
+	}
+	case PushScene::Camera:
+	{
+		QString cameraSpec = sceneInput.trimmed();
+		if (cameraSpec.isEmpty())
+		{
+			const QList<QString> cameras = getCameraList();
+			if (m_cameraIndex >= 0 && m_cameraIndex < cameras.size())
+			{
+				cameraSpec = cameras.at(m_cameraIndex).trimmed();
+			}
+		}
+		if (cameraSpec.isEmpty())
+		{
+			return m_stream->startPush(QStringLiteral("__camera_capture__:"), outputUrl);
+		}
+		if (!cameraSpec.startsWith(QStringLiteral("video=")))
+		{
+			cameraSpec = QStringLiteral("video=") + cameraSpec;
+		}
+		int width = 0;
+		int height = 0;
+		int fps = 0;
+		if (m_camera)
+		{
+			const auto descriptions = m_camera->getDescriptions();
+			if (m_cameraIndex >= 0 && m_cameraIndex < descriptions.size())
+			{
+				const auto& cur = descriptions.at(m_cameraIndex);
+				if (cur.formatIndex >= 0 && cur.formatIndex < cur.formats.size())
+				{
+					parseCameraFormatText(cur.formats.at(cur.formatIndex), width, height, fps);
+				}
+			}
+		}
+		QStringList params;
+		params << cameraSpec;
+		if (options.fps > 0)
+		{
+			params << QStringLiteral("fps=%1").arg(options.fps);
+		}
+		else if (fps > 0)
+		{
+			params << QStringLiteral("fps=%1").arg(fps);
+		}
+		int outW = options.width > 0 ? options.width : width;
+		int outH = options.height > 0 ? options.height : height;
+		applyAspectRatio(width, height, outW, outH, options.keepAspectRatio);
+		if (outW > 0 && outH > 0)
+		{
+			params << QStringLiteral("size=%1x%2").arg(outW).arg(outH);
+		}
+		if (options.bitrateKbps > 0)
+		{
+			params << QStringLiteral("bitrate=%1").arg(options.bitrateKbps);
+		}
+		return m_stream->startPush(QStringLiteral("__camera_preview__:") + params.join(';'), outputUrl);
+	}
+	default:
+		return false;
+	}
+}
+
 bool fplayer::Service::streamStartPull(const QString& inputUrl, const QString& outputUrl)
 {
 	return m_stream && m_stream->startPull(inputUrl, outputUrl);
@@ -320,7 +483,11 @@ bool fplayer::Service::streamIsRunning() const
 
 QString fplayer::Service::streamLastError() const
 {
-	return m_stream ? m_stream->lastError() : QStringLiteral("stream not initialized");
+	if (m_stream)
+	{
+		return m_stream->lastError();
+	}
+	return m_streamInitErrorHint.isEmpty() ? QStringLiteral("stream not initialized") : m_streamInitErrorHint;
 }
 
 QString fplayer::Service::streamRecentLog() const
@@ -331,6 +498,11 @@ QString fplayer::Service::streamRecentLog() const
 int fplayer::Service::streamLastExitCode() const
 {
 	return m_stream ? m_stream->lastExitCode() : 0;
+}
+
+bool fplayer::Service::streamHasCompletedSession() const
+{
+	return m_stream && m_stream->hasCompletedStreamSession();
 }
 
 // void fplayer::Service::bindCameraPreviewQt6(QWidget* widget)

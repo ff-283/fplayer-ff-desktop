@@ -81,6 +81,7 @@ private:
 	bool selectScreen(int index);
 	void stopScreenCapture();
 	int preferredFpsForScreen(int screenIndex) const;
+	void updateCaptureCursorCheckToolTip();
 	bool m_isFileMode = false;
 	CaptureMode m_captureMode = CaptureMode::Camera;
 	fplayer::MediaBackendType m_cameraBackendType = fplayer::MediaBackendType::Qt6;
@@ -88,6 +89,7 @@ private:
 	QToolButton* m_fileTitleButton = nullptr;
 	QTimer* m_titleMarqueeTimer = nullptr;
 	QString m_currentFileTitle;
+	QString m_currentFilePath;
 	int m_titleMarqueeOffset = 0;
 	QSlider* m_fileProgress = nullptr;
 	QLabel* m_fileProgressLabel = nullptr;

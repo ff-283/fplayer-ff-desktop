@@ -20,6 +20,21 @@ namespace fplayer
 	class FPLAYER_SERVICE_EXPORT Service
 	{
 	public:
+		struct PushOptions
+		{
+			int fps = 0;
+			int width = 0;
+			int height = 0;
+			int bitrateKbps = 0;
+			bool keepAspectRatio = false;
+		};
+
+		enum class PushScene
+		{
+			Camera,
+			File,
+			Screen,
+		};
 		Service();
 
 		~Service();
@@ -79,12 +94,15 @@ namespace fplayer
 		bool screenCanControlFrameRate() const;
 		MediaBackendType screenBackendType() const;
 		bool streamStartPush(const QString& inputUrl, const QString& outputUrl);
+		bool streamStartPushByScene(PushScene scene, const QString& outputUrl, const QString& sceneInput = QString(),
+		                            const PushOptions& options = PushOptions());
 		bool streamStartPull(const QString& inputUrl, const QString& outputUrl);
 		void streamStop();
 		bool streamIsRunning() const;
 		QString streamLastError() const;
 		QString streamRecentLog() const;
 		int streamLastExitCode() const;
+		bool streamHasCompletedSession() const;
 
 	private:
 		// void bindCameraPreviewQt6(QWidget* widget);
@@ -97,6 +115,7 @@ namespace fplayer
 		std::shared_ptr<fplayer::IScreenCapture> m_screenCapture;
 		std::shared_ptr<fplayer::IStream> m_stream;
 		int m_cameraIndex;// 摄像头索引
+		QString m_streamInitErrorHint;
 	};
 }
 

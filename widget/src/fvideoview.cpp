@@ -62,7 +62,7 @@ fplayer::PreviewTarget fplayer::FVideoView::previewTarget()
 		m_qtVideoWidget = new QVideoWidget(this);
 		m_lay->addWidget(m_qtVideoWidget);
 	}
-	else if (m_backendType == MediaBackendType::FFmpeg && !m_glWidget)
+	else if ((m_backendType == MediaBackendType::FFmpeg || m_backendType == MediaBackendType::Dxgi) && !m_glWidget)
 	{
 		m_glWidget = new FGLWidget(this);
 		m_lay->addWidget(m_glWidget);
@@ -76,7 +76,8 @@ fplayer::PreviewTarget fplayer::FVideoView::previewTarget()
 		t.backend_hint = static_cast<void*>(m_qtVideoWidget);
 		break;
 	case MediaBackendType::FFmpeg:
-		// FFmpeg backend 用
+	case MediaBackendType::Dxgi:
+		// FFmpeg / DXGI 屏幕采集均走 OpenGL YUV 路径
 		t.backend_hint = static_cast<void*>(m_glWidget);
 		break;
 	default:

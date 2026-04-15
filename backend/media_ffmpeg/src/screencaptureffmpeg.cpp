@@ -4,11 +4,13 @@
 #include <QMetaObject>
 #include <QScreen>
 #include <QThread>
+#include <logger/logger.h>
 
 #include <fplayer/common/fglwidget/fglwidget.h>
 
 extern "C" {
 #include <libavdevice/avdevice.h>
+#include <libavutil/error.h>
 #include <libswscale/swscale.h>
 }
 
@@ -66,18 +68,28 @@ bool fplayer::ScreenCaptureFFmpeg::openInputForSelectedScreen()
 	AVDictionary* options = nullptr;
 	av_dict_set(&options, "framerate", QString::number(m_fps).toUtf8().constData(), 0);
 	av_dict_set(&options, "draw_mouse", m_captureCursor ? "1" : "0", 0);
-	av_dict_set(&options, "offset_x", QString::number(screen.x).toUtf8().constData(), 0);
-	av_dict_set(&options, "offset_y", QString::number(screen.y).toUtf8().constData(), 0);
-	av_dict_set(&options, "video_size", QString("%1x%2").arg(screen.width).arg(screen.height).toUtf8().constData(), 0);
+	// 单显示器场景下让 gdigrab 走默认“整桌面”参数，避免 DPI/坐标换算边界导致区域越界。
+	// 多显示器下才显式传 offset/video_size 做分屏抓取。
+	if (m_descriptions.size() > 1)
+	{
+		av_dict_set(&options, "offset_x", QString::number(screen.x).toUtf8().constData(), 0);
+		av_dict_set(&options, "offset_y", QString::number(screen.y).toUtf8().constData(), 0);
+		av_dict_set(&options, "video_size", QString("%1x%2").arg(screen.width).arg(screen.height).toUtf8().constData(), 0);
+	}
 	const AVInputFormat* inputFmt = av_find_input_format("gdigrab");
 	const int ret = avformat_open_input(&m_formatContext, "desktop", inputFmt, &options);
 	av_dict_free(&options);
 	if (ret < 0)
 	{
+		char errbuf[AV_ERROR_MAX_STRING_SIZE] = {};
+		av_strerror(ret, errbuf, sizeof(errbuf));
+		LOG_WARN("[screen][ffmpeg]", "open gdigrab failed, index=", m_screenIndex, " screens=", m_descriptions.size(),
+		         " err=", errbuf);
 		return false;
 	}
 	if (avformat_find_stream_info(m_formatContext, nullptr) < 0)
 	{
+		LOG_WARN("[screen][ffmpeg]", "find stream info failed");
 		return false;
 	}
 	int videoStreamIndex = -1;

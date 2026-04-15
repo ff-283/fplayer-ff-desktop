@@ -53,7 +53,8 @@ namespace fplayer
 		QThread* m_captureThread = nullptr;
 		std::atomic<bool> m_capturing{false};
 		std::atomic<bool> m_active{false};
-		bool m_captureCursor = true;
+		/// 默认关闭：gdigrab 在 draw_mouse=1 时易触发 Windows 下系统光标全局闪烁（见 FFmpeg gdigrab / CAPTUREBLT 行为）。
+		bool m_captureCursor = false;
 		FGLWidget* m_glWidget = nullptr;
 	};
 }

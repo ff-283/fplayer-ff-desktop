@@ -3,7 +3,12 @@
 #include <fplayer/backend/media_ffmpeg/cameraffmpeg.h>
 #include <fplayer/backend/media_ffmpeg/playerffmpeg.h>
 #include <fplayer/backend/media_ffmpeg/screencaptureffmpeg.h>
+#if defined(_WIN32) && defined(FPLAYER_WITH_SCREEN_DXGI)
+#include <fplayer/backend/desktopcapture_dxgi/screencapturedxgi.h>
+#endif
+#if defined(FPLAYER_WITH_NET_FFMPEG)
 #include <fplayer/backend/net_ffmpeg/streamffmpeg.h>
+#endif
 
 #include <fplayer/backend/media_qt6/cameraqt6.h>
 #include <fplayer/backend/media_qt6/screencaptureqt6.h>
@@ -18,6 +23,8 @@ std::shared_ptr<fplayer::ICamera> fplayer::RunTime::createCamera(MediaBackendTyp
 		break;
 	case MediaBackendType::FFmpeg:
 		m_camera = std::make_unique<fplayer::CameraFFmpeg>();
+		break;
+	case MediaBackendType::Dxgi:
 		break;
 	default:
 		break;
@@ -35,6 +42,8 @@ std::shared_ptr<fplayer::IPlayer> fplayer::RunTime::createPlayer(MediaBackendTyp
 	case MediaBackendType::FFmpeg:
 		m_player = std::make_shared<fplayer::PlayerFFmpeg>();
 		break;
+	case MediaBackendType::Dxgi:
+		break;
 	default:
 		break;
 	}
@@ -47,10 +56,21 @@ std::shared_ptr<fplayer::IScreenCapture> fplayer::RunTime::createScreenCapture(M
 	switch (backend)
 	{
 	case MediaBackendType::Qt6:
+		// 显式请求 Qt6 屏幕采集后端。
 		m_screenCapture = std::make_shared<fplayer::ScreenCaptureQt6>();
 		break;
 	case MediaBackendType::FFmpeg:
+		// 显式请求 FFmpeg 屏幕采集后端（Windows 下为 gdigrab）。
 		m_screenCapture = std::make_shared<fplayer::ScreenCaptureFFmpeg>();
+		break;
+	case MediaBackendType::Dxgi:
+#if defined(_WIN32) && defined(FPLAYER_WITH_SCREEN_DXGI)
+		// Windows + DXGI 模块可用：走 Desktop Duplication 后端。
+		m_screenCapture = std::make_shared<fplayer::ScreenCaptureDxgi>();
+#else
+		// DXGI 不可用时安全回退到 FFmpeg，避免功能不可用。
+		m_screenCapture = std::make_shared<fplayer::ScreenCaptureFFmpeg>();
+#endif
 		break;
 	default:
 		break;
@@ -64,7 +84,11 @@ std::shared_ptr<fplayer::IStream> fplayer::RunTime::createStream(MediaBackendTyp
 	switch (backend)
 	{
 	case MediaBackendType::FFmpeg:
+#if defined(FPLAYER_WITH_NET_FFMPEG)
 		m_stream = std::make_shared<fplayer::StreamFFmpeg>();
+#endif
+		break;
+	case MediaBackendType::Dxgi:
 		break;
 	default:
 		break;

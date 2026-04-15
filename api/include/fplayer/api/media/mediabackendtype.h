@@ -13,7 +13,9 @@ namespace fplayer
 	enum class MediaBackendType
 	{
 		Qt6,
-		FFmpeg
+		FFmpeg,
+		/// Windows：屏幕采集使用 DXGI Desktop Duplication（非 FFmpeg gdigrab）
+		Dxgi
 	};
 }
 

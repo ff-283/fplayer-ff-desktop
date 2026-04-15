@@ -39,6 +39,26 @@
 #include <QPushButton>
 #include <QMessageBox>
 #include <QTextEdit>
+#include <QSpinBox>
+#include <QRegularExpression>
+
+namespace
+{
+const char* screenBackendName(const fplayer::MediaBackendType backend)
+{
+	switch (backend)
+	{
+	case fplayer::MediaBackendType::Qt6:
+		return "Qt6";
+	case fplayer::MediaBackendType::FFmpeg:
+		return "FFmpeg(gdigrab)";
+	case fplayer::MediaBackendType::Dxgi:
+		return "DXGI";
+	default:
+		return "Unknown";
+	}
+}
+}
 
 CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendType) :
 	QWidget(parent),
@@ -148,7 +168,14 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 	m_service->initCamera(backendType);
 	// 文件播放模块当前仅实现 FFmpeg 后端，固定用 FFmpeg 初始化播放器。
 	m_service->initPlayer(fplayer::MediaBackendType::FFmpeg);
+	// 屏幕捕获后端选择：
+	// - Windows 且构建启用了 DXGI 模块时：使用 DXGI（Desktop Duplication）
+	// - 其他情况：回退到 FFmpeg（gdigrab）路径
+#if defined(_WIN32) && defined(FPLAYER_WITH_SCREEN_DXGI)
+	m_screenBackendType = fplayer::MediaBackendType::Dxgi;
+#else
 	m_screenBackendType = fplayer::MediaBackendType::FFmpeg;
+#endif
 	m_service->initScreenCapture(m_screenBackendType);
 	m_service->initStream(fplayer::MediaBackendType::FFmpeg);
 	this->ui->wgtView->setBackendType(backendType);
@@ -191,7 +218,7 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		}
 		else
 		{
-			this->ui->chkCaptureCursor->setToolTip(QString());
+			this->updateCaptureCursorCheckToolTip();
 		}
 	});
 	connect(this->ui->cmbScreenFps, &QComboBox::currentIndexChanged, this, [this](int index) {
@@ -301,6 +328,7 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 	auto switchToScreenMode = [this]() -> bool {
 		m_isFileMode = false;
 		m_captureMode = CaptureMode::Screen;
+		LOG_INFO("[screen]", "switch to screen mode, backend=", screenBackendName(m_screenBackendType));
 		this->m_service->playerPause();
 		this->m_service->cameraPause();
 		this->m_fileProgress->setVisible(false);
@@ -331,7 +359,9 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 			return false;
 		}
 		const int preferredIndex = qBound(0, m_lastScreenIndex, this->ui->cmbDevices->count() - 1);
+		this->ui->cmbDevices->blockSignals(true);
 		this->ui->cmbDevices->setCurrentIndex(preferredIndex);
+		this->ui->cmbDevices->blockSignals(false);
 		return this->selectScreen(preferredIndex);
 	};
 	connect(actionCameraMode, &QAction::triggered, this, [actionCameraMode, switchToCameraMode]() {
@@ -358,6 +388,8 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		QDialog dlg(this);
 		dlg.setWindowTitle(tr("推流配置"));
 		auto* layout = new QFormLayout(&dlg);
+		layout->setVerticalSpacing(10);
+		layout->setRowWrapPolicy(QFormLayout::WrapLongRows);
 		auto addRecent = [](QStringList& list, const QString& value) {
 			const QString v = value.trimmed();
 			if (v.isEmpty())
@@ -375,24 +407,162 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		cmbProtocol->addItem(tr("RTMP"), QStringLiteral("rtmp://127.0.0.1:1935/live/stream"));
 		cmbProtocol->addItem(tr("RTSP"), QStringLiteral("rtsp://127.0.0.1:8554/live/stream"));
 		cmbProtocol->addItem(tr("SRT"), QStringLiteral("srt://127.0.0.1:8890?mode=caller"));
-		auto* cmbInput = new QComboBox(&dlg);
-		cmbInput->setEditable(true);
-		cmbInput->addItems(m_recentPushInputs);
+		const bool fileScene = (m_captureMode == CaptureMode::File);
+		const bool screenScene = (m_captureMode == CaptureMode::Screen);
+		auto* lblInputMode = new QLabel(screenScene
+			                                ? tr("来源：屏幕采集后端（由 Service 统一编排）")
+			                                : (fileScene ? tr("来源：当前文件模式媒体源") : tr("来源：当前摄像头模式")),
+		                            &dlg);
+		lblInputMode->setWordWrap(true);
+		lblInputMode->setMinimumHeight(lblInputMode->fontMetrics().lineSpacing() * 2 + 6);
+		auto* lblInputValue = new QLabel(&dlg);
+		lblInputValue->setWordWrap(true);
+		lblInputValue->setTextInteractionFlags(Qt::TextSelectableByMouse);
+		lblInputValue->setText(m_currentFilePath.trimmed().isEmpty() ? tr("未打开文件") : m_currentFilePath.trimmed());
 		auto* cmbOutput = new QComboBox(&dlg);
 		cmbOutput->setEditable(true);
-		cmbOutput->addItems(m_recentPushOutputs);
-		cmbInput->setCurrentText(QStringLiteral(""));
-		cmbOutput->setCurrentText(QStringLiteral(""));
-		cmbInput->lineEdit()->setPlaceholderText(tr("输入源（文件/设备）"));
-		cmbOutput->lineEdit()->setPlaceholderText(tr("输出地址，例如 rtmp://127.0.0.1:1935/live/stream"));
-		auto* btnBrowseInput = new QPushButton(tr("选择文件"), &dlg);
-		connect(btnBrowseInput, &QPushButton::clicked, &dlg, [cmbInput, this]() {
-			const QString filePath = QFileDialog::getOpenFileName(this, tr("选择推流输入文件"));
-			if (!filePath.isEmpty())
+		{
+			QStringList outputItems = m_recentPushOutputs;
+			if (outputItems.isEmpty())
 			{
-				cmbInput->setCurrentText(filePath);
+				outputItems << QStringLiteral("rtmp://127.0.0.1:1935/live/stream");
+				outputItems << QStringLiteral("rtsp://127.0.0.1:8554/live/stream");
+				outputItems << QStringLiteral("srt://127.0.0.1:8890?mode=caller");
 			}
-		});
+			cmbOutput->addItems(outputItems);
+		}
+		cmbOutput->setCurrentText(QStringLiteral(""));
+		cmbOutput->lineEdit()->setPlaceholderText(tr("输出地址，例如 rtmp://127.0.0.1:1935/live/stream"));
+		auto* spFps = new QSpinBox(&dlg);
+		spFps->setRange(0, 240);
+		spFps->setSpecialValueText(tr("跟随当前"));
+		auto* cmbSize = new QComboBox(&dlg);
+		cmbSize->setEditable(true);
+		cmbSize->setInsertPolicy(QComboBox::NoInsert);
+		cmbSize->lineEdit()->setPlaceholderText(tr("跟随当前 / 例如 1920x1080"));
+		cmbSize->addItem(tr("跟随当前"), QString());
+		auto appendSizeOption = [cmbSize](const int w, const int h) {
+			if (w <= 0 || h <= 0)
+			{
+				return;
+			}
+			const QString key = QStringLiteral("%1x%2").arg(w).arg(h);
+			if (cmbSize->findData(key) < 0)
+			{
+				cmbSize->addItem(key, key);
+			}
+		};
+		auto appendPresetSizes = [appendSizeOption](const int maxW, const int maxH) {
+			const QList<QSize> presets{
+				QSize(7680, 4320), QSize(5120, 2880), QSize(3840, 2160), QSize(3440, 1440),
+				QSize(2560, 1440), QSize(2560, 1080), QSize(1920, 1200), QSize(1920, 1080),
+				QSize(1600, 900), QSize(1366, 768), QSize(1280, 720), QSize(960, 540),
+				QSize(854, 480), QSize(640, 360)
+			};
+			for (const QSize& s : presets)
+			{
+				if (maxW > 0 && maxH > 0)
+				{
+					if (s.width() > maxW || s.height() > maxH)
+					{
+						continue;
+					}
+				}
+				appendSizeOption(s.width(), s.height());
+			}
+		};
+		auto* spBitrate = new QSpinBox(&dlg);
+		spBitrate->setRange(0, 50000);
+		spBitrate->setSpecialValueText(tr("跟随当前"));
+		spBitrate->setValue(0);
+		spBitrate->setSuffix(tr(" kbps"));
+		auto* chkKeepAspect = new QCheckBox(tr("保持宽高比"), &dlg);
+		chkKeepAspect->setChecked(true);
+		if (screenScene)
+		{
+			const int curFps = this->m_service ? this->m_service->screenFrameRate() : 30;
+			spFps->setValue(curFps);
+			if (this->m_service)
+			{
+				const auto screens = this->m_service->getScreenList();
+				const int idx = this->ui->cmbDevices ? this->ui->cmbDevices->currentIndex() : -1;
+				if (idx >= 0 && idx < screens.size())
+				{
+					const QString text = screens.at(idx);
+					const QRegularExpression re(R"(\((?:主屏|副屏),\s*(\d+)x(\d+)\))");
+					const auto m = re.match(text);
+					if (m.hasMatch())
+					{
+						const int w = m.captured(1).toInt();
+						const int h = m.captured(2).toInt();
+						appendPresetSizes(w, h);
+						appendSizeOption(w, h);
+						cmbSize->setCurrentText(QStringLiteral("%1x%2").arg(w).arg(h));
+					}
+				}
+			}
+		}
+		else if (!fileScene)
+		{
+			const QString fmtText = this->ui->cmbFormats ? this->ui->cmbFormats->currentText().trimmed() : QString();
+			const QRegularExpression re(R"((\d+)\s*x\s*(\d+)\s+(\d+)\s*fps)", QRegularExpression::CaseInsensitiveOption);
+			const auto m = re.match(fmtText);
+			if (m.hasMatch())
+			{
+				const int w = m.captured(1).toInt();
+				const int h = m.captured(2).toInt();
+				const int fps = m.captured(3).toInt();
+				spFps->setValue(fps);
+				appendPresetSizes(w, h);
+				appendSizeOption(w, h);
+				cmbSize->setCurrentText(QStringLiteral("%1x%2").arg(w).arg(h));
+			}
+			else
+			{
+				appendPresetSizes(3840, 2160);
+			}
+		}
+		else
+		{
+			appendPresetSizes(3840, 2160);
+		}
+		if (fileScene)
+		{
+			spFps->setEnabled(false);
+			cmbSize->setEnabled(false);
+			spBitrate->setEnabled(true);
+		}
+		auto* lblPushParams = new QLabel(&dlg);
+		lblPushParams->setWordWrap(true);
+		lblPushParams->setTextInteractionFlags(Qt::TextSelectableByMouse);
+		lblPushParams->setMinimumHeight(lblPushParams->fontMetrics().lineSpacing() * 4 + 8);
+		auto refreshPushParams = [this, lblPushParams, lblInputValue, fileScene, screenScene]() {
+			if (!lblPushParams)
+			{
+				return;
+			}
+			if (screenScene)
+			{
+				const QString screenText = this->ui->cmbDevices ? this->ui->cmbDevices->currentText().trimmed() : QString();
+				const int fps = this->m_service ? this->m_service->screenFrameRate() : 30;
+				lblPushParams->setText(tr("模式：屏幕\n来源：%1\n帧率：%2 FPS\n编码：H264（不可用时 MPEG4）")
+				                       .arg(screenText.isEmpty() ? tr("当前屏幕") : screenText)
+				                       .arg(fps));
+				return;
+			}
+			if (fileScene)
+			{
+				const QString input = lblInputValue ? lblInputValue->text().trimmed() : QString();
+				lblPushParams->setText(tr("模式：文件\n来源：%1\n策略：默认 copy；设置参数时转码\n编码：copy/重编码（按参数）")
+				                       .arg(input.isEmpty() ? tr("未指定") : input));
+				return;
+			}
+			const QString cameraName = this->ui->cmbDevices ? this->ui->cmbDevices->currentText().trimmed() : QString();
+			const QString formatText = this->ui->cmbFormats ? this->ui->cmbFormats->currentText().trimmed() : QString();
+			lblPushParams->setText(tr("模式：摄像头\n设备：%1\n格式：%2\n编码：H264（不可用时 MPEG4）")
+			                       .arg(cameraName.isEmpty() ? tr("未选择") : cameraName)
+			                       .arg(formatText.isEmpty() ? tr("默认") : formatText));
+		};
 		auto* lblStatus = new QLabel(tr("状态：未启动"), &dlg);
 		auto* txtLog = new QTextEdit(&dlg);
 		txtLog->setReadOnly(true);
@@ -400,9 +570,18 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		auto* logTimer = new QTimer(&dlg);
 		logTimer->setInterval(500);
 		connect(logTimer, &QTimer::timeout, &dlg, [this, lblStatus, txtLog]() {
-			lblStatus->setText(this->m_service->streamIsRunning()
-				                   ? tr("状态：运行中")
-				                   : tr("状态：已停止，退出码=%1").arg(this->m_service->streamLastExitCode()));
+			if (this->m_service->streamIsRunning())
+			{
+				lblStatus->setText(tr("状态：运行中"));
+			}
+			else if (this->m_service->streamHasCompletedSession())
+			{
+				lblStatus->setText(tr("状态：已停止，退出码=%1").arg(this->m_service->streamLastExitCode()));
+			}
+			else
+			{
+				lblStatus->setText(tr("状态：当前无推流任务"));
+			}
 			txtLog->setPlainText(this->m_service->streamRecentLog());
 			txtLog->moveCursor(QTextCursor::End);
 		});
@@ -413,34 +592,114 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 				cmbOutput->setCurrentText(cmbProtocol->currentData().toString());
 			}
 		});
-		layout->addRow(tr("输入"), cmbInput);
-		layout->addRow(QString(), btnBrowseInput);
+		layout->addRow(lblInputMode);
+		if (fileScene)
+		{
+			layout->addRow(tr("输入源"), lblInputValue);
+		}
+		layout->addRow(tr("当前参数"), lblPushParams);
+		layout->addRow(tr("帧率"), spFps);
+		layout->addRow(tr("尺寸"), cmbSize);
+		layout->addRow(QString(), chkKeepAspect);
+		layout->addRow(tr("码率"), spBitrate);
 		layout->addRow(tr("协议模板"), cmbProtocol);
 		layout->addRow(tr("输出"), cmbOutput);
 		layout->addRow(lblStatus);
 		layout->addRow(txtLog);
-		auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+		auto* buttons = new QDialogButtonBox(QDialogButtonBox::Close, &dlg);
+		auto* btnStart = new QPushButton(tr("开始推流"), &dlg);
 		auto* btnStop = new QPushButton(tr("停止推流"), &dlg);
+		buttons->addButton(btnStart, QDialogButtonBox::AcceptRole);
 		buttons->addButton(btnStop, QDialogButtonBox::ActionRole);
 		layout->addRow(buttons);
-		connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
 		connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
-		connect(btnStop, &QPushButton::clicked, &dlg, [this]() {
+		connect(btnStop, &QPushButton::clicked, &dlg, [this, btnStart, cmbProtocol, cmbOutput, spFps, cmbSize, spBitrate, fileScene]() {
 			this->m_service->streamStop();
+			btnStart->setEnabled(true);
+			cmbProtocol->setEnabled(true);
+			cmbOutput->setEnabled(true);
+			spFps->setEnabled(!fileScene);
+			cmbSize->setEnabled(!fileScene);
+			spBitrate->setEnabled(true);
 		});
-		if (dlg.exec() != QDialog::Accepted)
-		{
-			return;
-		}
-		const QString pushInput = cmbInput->currentText().trimmed();
-		const QString pushOutput = cmbOutput->currentText().trimmed();
-		if (!this->m_service->streamStartPush(pushInput, pushOutput))
-		{
-			QMessageBox::warning(this, tr("推流失败"), this->m_service->streamLastError());
-			return;
-		}
-		addRecent(m_recentPushInputs, pushInput);
-		addRecent(m_recentPushOutputs, pushOutput);
+		connect(btnStart, &QPushButton::clicked, &dlg, [this, btnStart, cmbProtocol, cmbOutput, spFps, cmbSize, spBitrate, chkKeepAspect, fileScene, screenScene, addRecent]() {
+			const QString pushOutput = cmbOutput->currentText().trimmed();
+			if (pushOutput.isEmpty())
+			{
+				QMessageBox::warning(this, tr("推流失败"), tr("输出地址不能为空。"));
+				return;
+			}
+			fplayer::Service::PushScene pushScene = fplayer::Service::PushScene::Camera;
+			QString sceneInput;
+			if (screenScene)
+			{
+				pushScene = fplayer::Service::PushScene::Screen;
+			}
+			else if (fileScene)
+			{
+				pushScene = fplayer::Service::PushScene::File;
+				sceneInput = m_currentFilePath.trimmed();
+				if (sceneInput.isEmpty())
+				{
+					QMessageBox::warning(this, tr("推流失败"), tr("文件模式下未找到可用输入源，请先打开文件后再推流。"));
+					return;
+				}
+			}
+			else
+			{
+				sceneInput = this->ui->cmbDevices ? this->ui->cmbDevices->currentText().trimmed() : QString();
+			}
+			fplayer::Service::PushOptions options;
+			options.fps = spFps->value();
+			options.bitrateKbps = spBitrate->value();
+			options.keepAspectRatio = chkKeepAspect->isChecked();
+			QString sizeText = cmbSize->currentText().trimmed();
+			if (sizeText.isEmpty() || sizeText == tr("跟随当前"))
+			{
+				sizeText = cmbSize->currentData().toString().trimmed();
+			}
+			if (!sizeText.isEmpty())
+			{
+				const QRegularExpression re(R"((\d+)\s*x\s*(\d+))", QRegularExpression::CaseInsensitiveOption);
+				const auto m = re.match(sizeText);
+				if (m.hasMatch())
+				{
+					options.width = m.captured(1).toInt();
+					options.height = m.captured(2).toInt();
+				}
+				else
+				{
+					QMessageBox::warning(this, tr("推流失败"), tr("尺寸格式无效，请使用 WxH，例如 1920x1080。"));
+					return;
+				}
+			}
+			if (!this->m_service->streamStartPushByScene(pushScene, pushOutput, sceneInput, options))
+			{
+				QMessageBox::warning(this, tr("推流失败"), this->m_service->streamLastError());
+				return;
+			}
+			addRecent(m_recentPushOutputs, pushOutput);
+			btnStart->setEnabled(false);
+			cmbProtocol->setEnabled(false);
+			cmbOutput->setEnabled(false);
+			spFps->setEnabled(false);
+			cmbSize->setEnabled(false);
+			spBitrate->setEnabled(false);
+		});
+		connect(logTimer, &QTimer::timeout, &dlg, [this, btnStart, cmbProtocol, cmbOutput, spFps, cmbSize, spBitrate, fileScene]() {
+			const bool running = this->m_service->streamIsRunning();
+			if (!running)
+			{
+				btnStart->setEnabled(true);
+				cmbProtocol->setEnabled(true);
+				cmbOutput->setEnabled(true);
+				spFps->setEnabled(!fileScene);
+				cmbSize->setEnabled(!fileScene);
+				spBitrate->setEnabled(true);
+			}
+		});
+		refreshPushParams();
+		dlg.exec();
 	});
 	connect(actionPullStream, &QAction::triggered, this, [this]() {
 		QDialog dlg(this);
@@ -465,10 +724,27 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		cmbProtocol->addItem(tr("SRT"), QStringLiteral("srt://127.0.0.1:8890?mode=listener"));
 		auto* cmbInput = new QComboBox(&dlg);
 		cmbInput->setEditable(true);
-		cmbInput->addItems(m_recentPullInputs);
+		{
+			QStringList inputItems = m_recentPullInputs;
+			if (inputItems.isEmpty())
+			{
+				inputItems << QStringLiteral("rtmp://127.0.0.1:1935/live/stream");
+				inputItems << QStringLiteral("rtsp://127.0.0.1:8554/live/stream");
+				inputItems << QStringLiteral("srt://127.0.0.1:8890?mode=listener");
+			}
+			cmbInput->addItems(inputItems);
+		}
 		auto* cmbOutput = new QComboBox(&dlg);
 		cmbOutput->setEditable(true);
-		cmbOutput->addItems(m_recentPullOutputs);
+		{
+			QStringList outputItems = m_recentPullOutputs;
+			if (outputItems.isEmpty())
+			{
+				outputItems << QStringLiteral("D:/temp/pull.mp4");
+				outputItems << QStringLiteral("pull_output.mp4");
+			}
+			cmbOutput->addItems(outputItems);
+		}
 		auto* chkPreview = new QCheckBox(tr("直接预览到播放窗口"), &dlg);
 		cmbInput->lineEdit()->setPlaceholderText(tr("输入流地址，例如 rtmp://127.0.0.1:1935/live/stream"));
 		cmbOutput->lineEdit()->setPlaceholderText(tr("输出文件，例如 D:/temp/pull.mp4"));
@@ -488,9 +764,18 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		auto* logTimer = new QTimer(&dlg);
 		logTimer->setInterval(500);
 		connect(logTimer, &QTimer::timeout, &dlg, [this, lblStatus, txtLog]() {
-			lblStatus->setText(this->m_service->streamIsRunning()
-				                   ? tr("状态：运行中")
-				                   : tr("状态：已停止，退出码=%1").arg(this->m_service->streamLastExitCode()));
+			if (this->m_service->streamIsRunning())
+			{
+				lblStatus->setText(tr("状态：运行中"));
+			}
+			else if (this->m_service->streamHasCompletedSession())
+			{
+				lblStatus->setText(tr("状态：已停止，退出码=%1").arg(this->m_service->streamLastExitCode()));
+			}
+			else
+			{
+				lblStatus->setText(tr("状态：当前无拉流任务"));
+			}
 			txtLog->setPlainText(this->m_service->streamRecentLog());
 			txtLog->moveCursor(QTextCursor::End);
 		});
@@ -700,6 +985,7 @@ bool CaptureWindow::chooseAndPlayFile()
 	if (this->m_service->openMediaFile(filePath))
 	{
 		m_currentFileTitle = QFileInfo(filePath).fileName();
+		m_currentFilePath = filePath;
 		m_titleMarqueeOffset = 0;
 		updateTitleMarqueeText();
 		if (m_titleMarqueeTimer && !m_titleMarqueeTimer->isActive())
@@ -900,6 +1186,7 @@ bool CaptureWindow::selectScreen(int index)
 	{
 		return false;
 	}
+	LOG_INFO("[screen]", "start capture, backend=", screenBackendName(m_screenBackendType), " index=", index);
 	m_lastScreenIndex = index;
 	this->ui->wgtView->setBackendType(m_screenBackendType);
 	this->m_service->bindScreenPreview(this->ui->wgtView);
@@ -918,11 +1205,11 @@ bool CaptureWindow::selectScreen(int index)
 		this->ui->cmbScreenFps->setCurrentIndex(this->ui->cmbScreenFps->count() > 0 ? 0 : -1);
 		this->ui->cmbScreenFps->blockSignals(false);
 	}
-	this->m_service->screenSetFrameRate(fps > 0 ? fps : 30);
 	if (!m_service->selectScreen(index))
 	{
 		return false;
 	}
+	this->m_service->screenSetFrameRate(fps > 0 ? fps : 30);
 	m_service->screenSetActive(true);
 	if (!m_service->screenSetCursorCaptureEnabled(this->ui->chkCaptureCursor->isChecked()))
 	{
@@ -933,10 +1220,30 @@ bool CaptureWindow::selectScreen(int index)
 	else
 	{
 		this->ui->chkCaptureCursor->setEnabled(true);
-		this->ui->chkCaptureCursor->setToolTip(QString());
+		this->updateCaptureCursorCheckToolTip();
 	}
 	this->ui->btnPlay->setIcon(QIcon::fromTheme(QIcon::ThemeIcon::MediaPlaybackPause));
 	return true;
+}
+
+void CaptureWindow::updateCaptureCursorCheckToolTip()
+{
+	if (m_screenBackendType == fplayer::MediaBackendType::Dxgi)
+	{
+		this->ui->chkCaptureCursor->setToolTip(tr(
+			"DXGI 桌面复制在帧内叠加鼠标指针，通常可避免 GDI 全屏抓取导致的系统光标闪烁。"
+			"若仍异常可取消勾选（画面中不绘制指针）。"));
+		return;
+	}
+	if (m_screenBackendType == fplayer::MediaBackendType::FFmpeg)
+	{
+		this->ui->chkCaptureCursor->setToolTip(tr(
+			"Windows：FFmpeg 使用 gdigrab（GDI）采集，勾选后会在每帧叠加鼠标指针；与 BitBlt+CAPTUREBLT 及桌面合成（DWM）"
+			"叠加时，部分环境下会出现「系统鼠标」在全屏范围高频闪烁，与预览窗口位置无关。"
+			"若闪烁请取消勾选（画面中不再绘制指针，系统鼠标仍可见），或尝试降低采集帧率。"));
+		return;
+	}
+	this->ui->chkCaptureCursor->setToolTip(QString());
 }
 
 void CaptureWindow::stopScreenCapture()

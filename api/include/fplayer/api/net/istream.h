@@ -22,6 +22,8 @@ namespace fplayer
 		virtual QString lastError() const = 0;
 		virtual QString recentLog() const = 0;
 		virtual int lastExitCode() const = 0;
+		/// 是否存在“上一轮推拉流任务已结束”的结果（用于区分从未启动与已结束；未启动时不要展示 lastExitCode）。
+		virtual bool hasCompletedStreamSession() const { return false; }
 	};
 }
 
