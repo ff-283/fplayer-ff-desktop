@@ -42,6 +42,7 @@
 #include <QTextEdit>
 #include <QSpinBox>
 #include <QRegularExpression>
+#include <QStandardItemModel>
 
 namespace
 {
@@ -477,6 +478,43 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		spBitrate->setSpecialValueText(tr("跟随当前"));
 		spBitrate->setValue(0);
 		spBitrate->setSuffix(tr(" kbps"));
+		auto* cmbEncoder = new QComboBox(&dlg);
+		cmbEncoder->addItem(tr("自动（优先NVENC/AMF）"), QStringLiteral("auto"));
+		cmbEncoder->addItem(tr("CPU（x264）"), QStringLiteral("cpu"));
+		cmbEncoder->addItem(tr("NVIDIA NVENC"), QStringLiteral("nvenc"));
+		cmbEncoder->addItem(tr("AMD AMF"), QStringLiteral("amf"));
+		{
+			const QStringList availableList = this->m_service->streamAvailableVideoEncoders();
+			const QSet<QString> available(availableList.begin(), availableList.end());
+			auto* model = qobject_cast<QStandardItemModel*>(cmbEncoder->model());
+			if (model)
+			{
+				const auto disableByData = [cmbEncoder, model](const QString& dataValue, const QString& disabledText) {
+					const int idx = cmbEncoder->findData(dataValue);
+					if (idx < 0)
+					{
+						return;
+					}
+					if (QStandardItem* item = model->item(idx))
+					{
+						item->setEnabled(false);
+						item->setToolTip(disabledText);
+					}
+				};
+				if (!available.contains(QStringLiteral("nvenc")))
+				{
+					disableByData(QStringLiteral("nvenc"), tr("当前 FFmpeg/驱动环境不可用：h264_nvenc"));
+				}
+				if (!available.contains(QStringLiteral("amf")))
+				{
+					disableByData(QStringLiteral("amf"), tr("当前 FFmpeg/驱动环境不可用：h264_amf"));
+				}
+			}
+			if (!available.contains(QStringLiteral("nvenc")) && !available.contains(QStringLiteral("amf")))
+			{
+				cmbEncoder->setToolTip(tr("当前仅检测到 CPU 编码可用"));
+			}
+		}
 		auto* cmbAudioSource = new QComboBox(&dlg);
 		cmbAudioSource->addItem(tr("关闭声音"), QStringLiteral("off"));
 		cmbAudioSource->addItem(tr("系统声音（实验）"), QStringLiteral("system"));
@@ -622,6 +660,7 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		layout->addRow(tr("尺寸"), cmbSize);
 		layout->addRow(QString(), chkKeepAspect);
 		layout->addRow(tr("码率"), spBitrate);
+		layout->addRow(tr("视频编码器"), cmbEncoder);
 		layout->addRow(tr("声音来源"), cmbAudioSource);
 		layout->addRow(tr("协议模板"), cmbProtocol);
 		layout->addRow(tr("输出"), cmbOutput);
@@ -634,7 +673,8 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		buttons->addButton(btnStop, QDialogButtonBox::ActionRole);
 		layout->addRow(buttons);
 		connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
-		connect(btnStop, &QPushButton::clicked, &dlg, [this, btnStart, cmbProtocol, cmbOutput, spFps, cmbSize, spBitrate, cmbAudioSource, fileScene, screenScene]() {
+		connect(btnStop, &QPushButton::clicked, &dlg,
+		        [this, btnStart, cmbProtocol, cmbOutput, spFps, cmbSize, spBitrate, cmbEncoder, cmbAudioSource, fileScene, screenScene]() {
 			this->m_service->streamStop();
 			btnStart->setEnabled(true);
 			cmbProtocol->setEnabled(true);
@@ -642,9 +682,12 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 			spFps->setEnabled(!fileScene);
 			cmbSize->setEnabled(!fileScene);
 			spBitrate->setEnabled(true);
+			cmbEncoder->setEnabled(true);
 			cmbAudioSource->setEnabled(screenScene);
 		});
-		connect(btnStart, &QPushButton::clicked, &dlg, [this, btnStart, cmbProtocol, cmbOutput, spFps, cmbSize, spBitrate, cmbAudioSource, chkKeepAspect, fileScene, screenScene, addRecent]() {
+		connect(btnStart, &QPushButton::clicked, &dlg,
+		        [this, btnStart, cmbProtocol, cmbOutput, spFps, cmbSize, spBitrate, cmbEncoder, cmbAudioSource, chkKeepAspect, fileScene,
+		         screenScene, addRecent]() {
 			const QString pushOutput = cmbOutput->currentText().trimmed();
 			if (pushOutput.isEmpty())
 			{
@@ -675,6 +718,7 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 			options.fps = spFps->value();
 			options.bitrateKbps = spBitrate->value();
 			options.keepAspectRatio = chkKeepAspect->isChecked();
+			options.videoEncoder = cmbEncoder->currentData().toString();
 			options.audioSource = cmbAudioSource->currentData().toString();
 			QString sizeText = cmbSize->currentText().trimmed();
 			if (sizeText.isEmpty() || sizeText == tr("跟随当前"))
@@ -708,9 +752,11 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 			spFps->setEnabled(false);
 			cmbSize->setEnabled(false);
 			spBitrate->setEnabled(false);
+			cmbEncoder->setEnabled(false);
 			cmbAudioSource->setEnabled(false);
 		});
-		connect(logTimer, &QTimer::timeout, &dlg, [this, btnStart, cmbProtocol, cmbOutput, spFps, cmbSize, spBitrate, cmbAudioSource, fileScene, screenScene]() {
+		connect(logTimer, &QTimer::timeout, &dlg,
+		        [this, btnStart, cmbProtocol, cmbOutput, spFps, cmbSize, spBitrate, cmbEncoder, cmbAudioSource, fileScene, screenScene]() {
 			const bool running = this->m_service->streamIsRunning();
 			if (!running)
 			{
@@ -720,6 +766,7 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 				spFps->setEnabled(!fileScene);
 				cmbSize->setEnabled(!fileScene);
 				spBitrate->setEnabled(true);
+				cmbEncoder->setEnabled(true);
 				cmbAudioSource->setEnabled(screenScene);
 			}
 		});

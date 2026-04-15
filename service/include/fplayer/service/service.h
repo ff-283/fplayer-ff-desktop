@@ -28,6 +28,7 @@ namespace fplayer
 			int bitrateKbps = 0;
 			bool keepAspectRatio = false;
 			QString audioSource = QStringLiteral("off");
+			QString videoEncoder = QStringLiteral("auto");
 		};
 
 		enum class PushScene
@@ -104,6 +105,7 @@ namespace fplayer
 		QString streamLastError() const;
 		QString streamRecentLog() const;
 		int streamLastExitCode() const;
+		QStringList streamAvailableVideoEncoders() const;
 		bool streamHasCompletedSession() const;
 
 	private:

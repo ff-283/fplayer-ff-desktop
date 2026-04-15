@@ -24,6 +24,7 @@ namespace fplayer
 		QString lastError() const override;
 		QString recentLog() const override;
 		int lastExitCode() const override;
+		QStringList availableVideoEncoders() const override;
 		bool hasCompletedStreamSession() const override;
 
 	private:

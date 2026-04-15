@@ -26,6 +26,7 @@ namespace
 		QString device;
 		QString source;
 		QString audioSource = QStringLiteral("off");
+		QString videoEncoder = QStringLiteral("auto");
 		int fps = 30;
 		int width = 0;
 		int height = 0;
@@ -151,9 +152,120 @@ namespace
 			if (key == QStringLiteral("audio"))
 			{
 				params.audioSource = value;
+				continue;
+			}
+			if (key == QStringLiteral("encoder"))
+			{
+				params.videoEncoder = value.toLower();
 			}
 		}
 		return params;
+	}
+
+	struct VideoEncoderChoice
+	{
+		const AVCodec* codec = nullptr;
+		QString name;
+		bool isHardware = false;
+	};
+
+	VideoEncoderChoice pickVideoEncoder(const QString& prefer)
+	{
+		const QString pref = prefer.trimmed().toLower();
+		VideoEncoderChoice choice;
+		if (pref == QStringLiteral("nvenc"))
+		{
+			choice.codec = avcodec_find_encoder_by_name("h264_nvenc");
+			if (choice.codec)
+			{
+				choice.name = QStringLiteral("h264_nvenc");
+				choice.isHardware = true;
+				return choice;
+			}
+			return choice;
+		}
+		if (pref == QStringLiteral("amf"))
+		{
+			choice.codec = avcodec_find_encoder_by_name("h264_amf");
+			if (choice.codec)
+			{
+				choice.name = QStringLiteral("h264_amf");
+				choice.isHardware = true;
+				return choice;
+			}
+			return choice;
+		}
+		if (pref == QStringLiteral("cpu"))
+		{
+			choice.codec = avcodec_find_encoder_by_name("libx264");
+			if (!choice.codec)
+			{
+				choice.codec = avcodec_find_encoder(AV_CODEC_ID_H264);
+			}
+			if (!choice.codec)
+			{
+				choice.codec = avcodec_find_encoder(AV_CODEC_ID_MPEG4);
+			}
+			if (choice.codec)
+			{
+				choice.name = QString::fromLatin1(choice.codec->name ? choice.codec->name : "unknown");
+			}
+			return choice;
+		}
+		choice.codec = avcodec_find_encoder_by_name("h264_nvenc");
+		if (choice.codec)
+		{
+			choice.name = QStringLiteral("h264_nvenc");
+			choice.isHardware = true;
+			return choice;
+		}
+		choice.codec = avcodec_find_encoder_by_name("h264_amf");
+		if (choice.codec)
+		{
+			choice.name = QStringLiteral("h264_amf");
+			choice.isHardware = true;
+			return choice;
+		}
+		choice.codec = avcodec_find_encoder_by_name("libx264");
+		if (!choice.codec)
+		{
+			choice.codec = avcodec_find_encoder(AV_CODEC_ID_H264);
+		}
+		if (!choice.codec)
+		{
+			choice.codec = avcodec_find_encoder(AV_CODEC_ID_MPEG4);
+		}
+		if (choice.codec)
+		{
+			choice.name = QString::fromLatin1(choice.codec->name ? choice.codec->name : "unknown");
+		}
+		return choice;
+	}
+
+	AVPixelFormat pickEncoderPixelFormat(const AVCodec* enc, const bool preferHardware)
+	{
+		if (!enc || !enc->pix_fmts)
+		{
+			return AV_PIX_FMT_YUV420P;
+		}
+		if (preferHardware)
+		{
+			for (const AVPixelFormat* p = enc->pix_fmts; *p != AV_PIX_FMT_NONE; ++p)
+			{
+				if (*p == AV_PIX_FMT_NV12)
+				{
+					return *p;
+				}
+			}
+		}
+		for (const AVPixelFormat* p = enc->pix_fmts; *p != AV_PIX_FMT_NONE; ++p)
+		{
+			if (*p == AV_PIX_FMT_YUV420P)
+			{
+				return *p;
+			}
+		}
+		return enc->pix_fmts[0];
 	}
 
 	int estimateBitrateKbps(int width, int height, int fps)
@@ -204,6 +316,16 @@ bool fplayer::StreamFFmpeg::startPush(const QString& inputUrl, const QString& ou
 	m_stopRequest.store(false, std::memory_order_relaxed);
 	m_running.store(true, std::memory_order_relaxed);
 	m_completedSession.store(false, std::memory_order_relaxed);
+	{
+		const char* cfg = avcodec_configuration();
+		const QString cfgText = QString::fromUtf8(cfg ? cfg : "");
+		appendLogLine(QStringLiteral("[诊断] FFmpeg编码器可见性: nvenc=%1 amf=%2")
+		              .arg(avcodec_find_encoder_by_name("h264_nvenc") ? QStringLiteral("yes") : QStringLiteral("no"))
+		              .arg(avcodec_find_encoder_by_name("h264_amf") ? QStringLiteral("yes") : QStringLiteral("no")));
+		appendLogLine(QStringLiteral("[诊断] FFmpeg配置包含: --enable-nvenc=%1 --enable-amf=%2")
+		              .arg(cfgText.contains(QStringLiteral("--enable-nvenc")) ? QStringLiteral("yes") : QStringLiteral("no"))
+		              .arg(cfgText.contains(QStringLiteral("--enable-amf")) ? QStringLiteral("yes") : QStringLiteral("no")));
+	}
 	const QString screenPrefix = QStringLiteral("__screen_capture__:");
 	const QString screenPreviewPrefix = QStringLiteral("__screen_preview__:");
 	const QString cameraPrefix = QStringLiteral("__camera_capture__:");
@@ -364,6 +486,21 @@ int fplayer::StreamFFmpeg::lastExitCode() const
 {
 	QMutexLocker locker(&m_mutex);
 	return m_lastExitCode;
+}
+
+QStringList fplayer::StreamFFmpeg::availableVideoEncoders() const
+{
+	QStringList list;
+	list << QStringLiteral("cpu");
+	if (avcodec_find_encoder_by_name("h264_nvenc"))
+	{
+		list << QStringLiteral("nvenc");
+	}
+	if (avcodec_find_encoder_by_name("h264_amf"))
+	{
+		list << QStringLiteral("amf");
+	}
+	return list;
 }
 
 bool fplayer::StreamFFmpeg::hasCompletedStreamSession() const
@@ -699,7 +836,7 @@ void fplayer::StreamFFmpeg::transcodeFileLoop(const QString& outputUrl, const QS
 		}
 		encCtx->width = outW;
 		encCtx->height = outH;
-		encCtx->pix_fmt = AV_PIX_FMT_YUV420P;
+		encCtx->pix_fmt = pickEncoderPixelFormat(enc, false);
 		encCtx->time_base = AVRational{1, outFps};
 		encCtx->framerate = AVRational{outFps, 1};
 		encCtx->bit_rate = static_cast<int64_t>(outKbps) * 1000;
@@ -721,8 +858,13 @@ void fplayer::StreamFFmpeg::transcodeFileLoop(const QString& outputUrl, const QS
 		ret = avcodec_open2(encCtx, enc, nullptr);
 		if (ret < 0)
 		{
+			char errbuf[AV_ERROR_MAX_STRING_SIZE];
+			av_strerror(ret, errbuf, sizeof(errbuf));
 			exitCode = ret;
-			setLastError(QStringLiteral("打开编码器失败"));
+			setLastError(QStringLiteral("打开编码器失败: %1 (encoder=%2, pix_fmt=%3)")
+				             .arg(QString::fromUtf8(errbuf))
+				             .arg(QString::fromLatin1(enc->name ? enc->name : "unknown"))
+				             .arg(static_cast<int>(encCtx->pix_fmt)));
 			goto cleanup;
 		}
 		AVStream* outStream = avformat_new_stream(ofmt, nullptr);
@@ -1117,15 +1259,12 @@ void fplayer::StreamFFmpeg::pushScreenLoop(const QString& outputUrl, const QStri
 	ofmt->interrupt_callback.opaque = &m_stopRequest;
 
 	{
-		const AVCodec* enc = avcodec_find_encoder(AV_CODEC_ID_H264);
-		if (!enc)
-		{
-			enc = avcodec_find_encoder(AV_CODEC_ID_MPEG4);
-		}
+		const VideoEncoderChoice encChoice = pickVideoEncoder(params.videoEncoder);
+		const AVCodec* enc = encChoice.codec;
 		if (!enc)
 		{
 			exitCode = AVERROR_ENCODER_NOT_FOUND;
-			setLastError(QStringLiteral("未找到可用视频编码器(H264/MPEG4)"));
+			setLastError(QStringLiteral("未找到可用视频编码器（当前请求=%1）").arg(params.videoEncoder));
 			goto cleanup;
 		}
 		encCtx = avcodec_alloc_context3(enc);
@@ -1137,7 +1276,7 @@ void fplayer::StreamFFmpeg::pushScreenLoop(const QString& outputUrl, const QStri
 		}
 		encCtx->width = params.outWidth > 0 ? params.outWidth : decCtx->width;
 		encCtx->height = params.outHeight > 0 ? params.outHeight : decCtx->height;
-		encCtx->pix_fmt = AV_PIX_FMT_YUV420P;
+		encCtx->pix_fmt = pickEncoderPixelFormat(enc, encChoice.isHardware);
 		encCtx->time_base = AVRational{1, targetFps};
 		encCtx->framerate = AVRational{targetFps, 1};
 		encCtx->gop_size = targetFps * 2;
@@ -1152,7 +1291,14 @@ void fplayer::StreamFFmpeg::pushScreenLoop(const QString& outputUrl, const QStri
 		{
 			encCtx->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
 		}
-		if (enc->id == AV_CODEC_ID_H264 && encCtx->priv_data)
+		if (encChoice.isHardware && encCtx->priv_data)
+		{
+			av_opt_set(encCtx->priv_data, "preset", "p1", 0);
+			av_opt_set(encCtx->priv_data, "tune", "ll", 0);
+			av_opt_set(encCtx->priv_data, "rc", "cbr", 0);
+			av_opt_set(encCtx->priv_data, "zerolatency", "1", 0);
+		}
+		else if (enc->id == AV_CODEC_ID_H264 && encCtx->priv_data)
 		{
 			av_opt_set(encCtx->priv_data, "preset", "ultrafast", 0);
 			av_opt_set(encCtx->priv_data, "tune", "zerolatency", 0);
@@ -1166,6 +1312,9 @@ void fplayer::StreamFFmpeg::pushScreenLoop(const QString& outputUrl, const QStri
 		              .arg(encCtx->height)
 		              .arg(targetFps)
 		              .arg(bitrateKbps));
+		appendLogLine(QStringLiteral("[屏幕推流] 编码器=%1（%2）")
+		              .arg(encChoice.name.isEmpty() ? QString::fromLatin1(enc->name ? enc->name : "unknown") : encChoice.name)
+		              .arg(encChoice.isHardware ? QStringLiteral("硬件") : QStringLiteral("软件")));
 		if (enableAudio)
 		{
 			appendLogLine(QStringLiteral("[屏幕推流] 音频来源=%1").arg(params.audioSource));
@@ -1173,8 +1322,13 @@ void fplayer::StreamFFmpeg::pushScreenLoop(const QString& outputUrl, const QStri
 		ret = avcodec_open2(encCtx, enc, nullptr);
 		if (ret < 0)
 		{
+			char errbuf[AV_ERROR_MAX_STRING_SIZE];
+			av_strerror(ret, errbuf, sizeof(errbuf));
 			exitCode = ret;
-			setLastError(QStringLiteral("打开编码器失败"));
+			setLastError(QStringLiteral("打开编码器失败: %1 (encoder=%2, pix_fmt=%3)")
+				             .arg(QString::fromUtf8(errbuf))
+				             .arg(encChoice.name.isEmpty() ? QString::fromLatin1(enc->name ? enc->name : "unknown") : encChoice.name)
+				             .arg(static_cast<int>(encCtx->pix_fmt)));
 			goto cleanup;
 		}
 		AVStream* outStream = avformat_new_stream(ofmt, nullptr);
@@ -1612,15 +1766,12 @@ void fplayer::StreamFFmpeg::pushScreenPreviewLoop(const QString& outputUrl, cons
 	lastSerial = frame.serial;
 
 	{
-		const AVCodec* enc = avcodec_find_encoder(AV_CODEC_ID_H264);
-		if (!enc)
-		{
-			enc = avcodec_find_encoder(AV_CODEC_ID_MPEG4);
-		}
+		const VideoEncoderChoice encChoice = pickVideoEncoder(params.videoEncoder);
+		const AVCodec* enc = encChoice.codec;
 		if (!enc)
 		{
 			exitCode = AVERROR_ENCODER_NOT_FOUND;
-			setLastError(QStringLiteral("未找到可用视频编码器(H264/MPEG4)"));
+			setLastError(QStringLiteral("未找到可用视频编码器（当前请求=%1）").arg(params.videoEncoder));
 			goto cleanup;
 		}
 		encCtx = avcodec_alloc_context3(enc);
@@ -1649,7 +1800,14 @@ void fplayer::StreamFFmpeg::pushScreenPreviewLoop(const QString& outputUrl, cons
 		{
 			encCtx->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
 		}
-		if (enc->id == AV_CODEC_ID_H264 && encCtx->priv_data)
+		if (encChoice.isHardware && encCtx->priv_data)
+		{
+			av_opt_set(encCtx->priv_data, "preset", "p1", 0);
+			av_opt_set(encCtx->priv_data, "tune", "ll", 0);
+			av_opt_set(encCtx->priv_data, "rc", "cbr", 0);
+			av_opt_set(encCtx->priv_data, "zerolatency", "1", 0);
+		}
+		else if (enc->id == AV_CODEC_ID_H264 && encCtx->priv_data)
 		{
 			av_opt_set(encCtx->priv_data, "preset", "ultrafast", 0);
 			av_opt_set(encCtx->priv_data, "tune", "zerolatency", 0);
@@ -1670,13 +1828,17 @@ void fplayer::StreamFFmpeg::pushScreenPreviewLoop(const QString& outputUrl, cons
 		}
 		outStream->time_base = encCtx->time_base;
 		avcodec_parameters_from_context(outStream->codecpar, encCtx);
-		appendLogLine(QStringLiteral("[屏幕推流] 来源=DXGI预览帧 输入=%1x%2 输出=%3x%4 FPS=%5 码率=%6kbps")
+	appendLogLine(QStringLiteral("[屏幕推流] 来源=DXGI预览帧 输入=%1x%2 输出=%3x%4 FPS=%5 码率=%6kbps")
 		              .arg(frame.width)
 		              .arg(frame.height)
 		              .arg(encCtx->width)
 		              .arg(encCtx->height)
 		              .arg(targetFps)
 		              .arg(bitrateKbps));
+		appendLogLine(QStringLiteral("[屏幕推流] 编码器=%1（%2）")
+		              .arg(encChoice.name.isEmpty() ? QString::fromLatin1(enc->name ? enc->name : "unknown") : encChoice.name)
+		              .arg(encChoice.isHardware ? QStringLiteral("硬件") : QStringLiteral("软件")));
+	appendLogLine(QStringLiteral("[屏幕推流] 编码像素格式=%1").arg(static_cast<int>(encCtx->pix_fmt)));
 		appendLogLine(QStringLiteral("[屏幕推流] 编码节流=严格FPS 同分辨率=%1")
 		              .arg((frame.width == encCtx->width && frame.height == encCtx->height) ? QStringLiteral("直拷贝") : QStringLiteral("缩放")));
 		fplayer::ScreenFrameBus::instance().setPublishTargetSize(encCtx->width, encCtx->height);
@@ -1719,9 +1881,9 @@ void fplayer::StreamFFmpeg::pushScreenPreviewLoop(const QString& outputUrl, cons
 
 	srcWidth = frame.width;
 	srcHeight = frame.height;
-	if (srcWidth != encCtx->width || srcHeight != encCtx->height)
+	if (srcWidth != encCtx->width || srcHeight != encCtx->height || encCtx->pix_fmt != AV_PIX_FMT_YUV420P)
 	{
-		sws = sws_getContext(srcWidth, srcHeight, AV_PIX_FMT_YUV420P, encCtx->width, encCtx->height, AV_PIX_FMT_YUV420P, SWS_BILINEAR,
+		sws = sws_getContext(srcWidth, srcHeight, AV_PIX_FMT_YUV420P, encCtx->width, encCtx->height, encCtx->pix_fmt, SWS_BILINEAR,
 		                     nullptr, nullptr, nullptr);
 		if (!sws)
 		{
@@ -1760,9 +1922,9 @@ void fplayer::StreamFFmpeg::pushScreenPreviewLoop(const QString& outputUrl, cons
 			}
 			srcWidth = frame.width;
 			srcHeight = frame.height;
-			if (srcWidth != encCtx->width || srcHeight != encCtx->height)
+			if (srcWidth != encCtx->width || srcHeight != encCtx->height || encCtx->pix_fmt != AV_PIX_FMT_YUV420P)
 			{
-				sws = sws_getContext(srcWidth, srcHeight, AV_PIX_FMT_YUV420P, encCtx->width, encCtx->height, AV_PIX_FMT_YUV420P,
+				sws = sws_getContext(srcWidth, srcHeight, AV_PIX_FMT_YUV420P, encCtx->width, encCtx->height, encCtx->pix_fmt,
 				                     SWS_BILINEAR, nullptr, nullptr, nullptr);
 				if (!sws)
 				{

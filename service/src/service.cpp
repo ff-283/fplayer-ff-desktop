@@ -383,6 +383,10 @@ bool fplayer::Service::streamStartPushByScene(PushScene scene, const QString& ou
 		{
 			screenSpec += QStringLiteral(";bitrate=%1").arg(options.bitrateKbps);
 		}
+		if (!options.videoEncoder.trimmed().isEmpty())
+		{
+			screenSpec += QStringLiteral(";encoder=%1").arg(options.videoEncoder.trimmed().toLower());
+		}
 		if (!options.audioSource.trimmed().isEmpty())
 		{
 			screenSpec += QStringLiteral(";audio=%1").arg(options.audioSource.trimmed());
@@ -510,6 +514,15 @@ QString fplayer::Service::streamRecentLog() const
 int fplayer::Service::streamLastExitCode() const
 {
 	return m_stream ? m_stream->lastExitCode() : 0;
+}
+
+QStringList fplayer::Service::streamAvailableVideoEncoders() const
+{
+	if (!m_stream)
+	{
+		return {QStringLiteral("cpu")};
+	}
+	return m_stream->availableVideoEncoders();
 }
 
 bool fplayer::Service::streamHasCompletedSession() const
