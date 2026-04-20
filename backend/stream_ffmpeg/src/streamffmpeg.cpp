@@ -1486,25 +1486,19 @@ audio_init_done:
 				}
 				audioEncCtx->sample_rate = bestRate;
 			}
-			if (useWasapiAudio && wasapiAudio.channelLayout().nb_channels > 0)
-			{
-				av_channel_layout_copy(&audioEncCtx->ch_layout, &wasapiAudio.channelLayout());
-			}
-			else if (audioDecCtx && audioDecCtx->ch_layout.nb_channels > 0)
-			{
-				av_channel_layout_copy(&audioEncCtx->ch_layout, &audioDecCtx->ch_layout);
-			}
-			else
-			{
-				av_channel_layout_default(&audioEncCtx->ch_layout, 2);
-			}
-			if (audioEnc->ch_layouts)
+			const int srcChannels = useWasapiAudio
+				                        ? wasapiAudio.channelLayout().nb_channels
+				                        : (audioDecCtx ? audioDecCtx->ch_layout.nb_channels : 0);
+			const int targetChannels = (srcChannels == 1) ? 1 : 2;
+			av_channel_layout_uninit(&audioEncCtx->ch_layout);
+			av_channel_layout_default(&audioEncCtx->ch_layout, targetChannels);
+			if (audioEnc->ch_layouts && audioEnc->ch_layouts[0].nb_channels > 0)
 			{
 				const AVChannelLayout* best = &audioEnc->ch_layouts[0];
-				int bestDiff = qAbs(best->nb_channels - audioEncCtx->ch_layout.nb_channels);
+				int bestDiff = qAbs(best->nb_channels - targetChannels);
 				for (const AVChannelLayout* p = audioEnc->ch_layouts; p && p->nb_channels > 0; ++p)
 				{
-					const int diff = qAbs(p->nb_channels - audioEncCtx->ch_layout.nb_channels);
+					const int diff = qAbs(p->nb_channels - targetChannels);
 					if (diff < bestDiff)
 					{
 						best = p;
@@ -1512,11 +1506,36 @@ audio_init_done:
 					}
 				}
 				av_channel_layout_uninit(&audioEncCtx->ch_layout);
-				av_channel_layout_copy(&audioEncCtx->ch_layout, best);
+				if (av_channel_layout_copy(&audioEncCtx->ch_layout, best) < 0)
+				{
+					av_channel_layout_default(&audioEncCtx->ch_layout, targetChannels);
+				}
 			}
-			audioEncCtx->sample_fmt = audioEnc->sample_fmts ? audioEnc->sample_fmts[0] : AV_SAMPLE_FMT_FLTP;
+			if (audioEncCtx->ch_layout.nb_channels <= 0)
+			{
+				av_channel_layout_uninit(&audioEncCtx->ch_layout);
+				av_channel_layout_default(&audioEncCtx->ch_layout, 2);
+			}
+			audioEncCtx->sample_fmt = AV_SAMPLE_FMT_FLTP;
+			if (audioEnc->sample_fmts)
+			{
+				bool fltpSupported = false;
+				for (const AVSampleFormat* p = audioEnc->sample_fmts; *p != AV_SAMPLE_FMT_NONE; ++p)
+				{
+					if (*p == AV_SAMPLE_FMT_FLTP)
+					{
+						fltpSupported = true;
+						break;
+					}
+				}
+				if (!fltpSupported)
+				{
+					audioEncCtx->sample_fmt = audioEnc->sample_fmts[0];
+				}
+			}
 			audioEncCtx->bit_rate = 128000;
 			audioEncCtx->time_base = AVRational{1, audioEncCtx->sample_rate};
+			audioEncCtx->strict_std_compliance = FF_COMPLIANCE_EXPERIMENTAL;
 			if (ofmt->oformat->flags & AVFMT_GLOBALHEADER)
 			{
 				audioEncCtx->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
@@ -1524,6 +1543,13 @@ audio_init_done:
 			ret = avcodec_open2(audioEncCtx, audioEnc, nullptr);
 			if (ret < 0)
 			{
+				char errbuf[AV_ERROR_MAX_STRING_SIZE];
+				av_strerror(ret, errbuf, sizeof(errbuf));
+				appendLogLine(QStringLiteral("[屏幕推流] 打开音频编码器失败: %1; sr=%2 ch=%3 fmt=%4")
+					              .arg(QString::fromUtf8(errbuf))
+					              .arg(audioEncCtx->sample_rate)
+					              .arg(audioEncCtx->ch_layout.nb_channels)
+					              .arg(static_cast<int>(audioEncCtx->sample_fmt)));
 				exitCode = ret;
 				setLastError(QStringLiteral("打开音频编码器失败"));
 				goto cleanup;
@@ -2111,7 +2137,7 @@ audio_preview_init_done:
 		}
 		outStream->time_base = encCtx->time_base;
 		avcodec_parameters_from_context(outStream->codecpar, encCtx);
-		if (audioActive && audioIfmt && audioIndex >= 0)
+		if (audioActive && ((audioIfmt && audioIndex >= 0) || useWasapiAudio))
 		{
 			const AVCodec* audioEnc = avcodec_find_encoder(AV_CODEC_ID_AAC);
 			if (!audioEnc)
@@ -2127,7 +2153,10 @@ audio_preview_init_done:
 				setLastError(QStringLiteral("创建音频编码器上下文失败"));
 				goto cleanup;
 			}
-			audioEncCtx->sample_rate = audioDecCtx && audioDecCtx->sample_rate > 0 ? audioDecCtx->sample_rate : 48000;
+			const int inSampleRate = useWasapiAudio
+				                         ? (wasapiAudio.sampleRate() > 0 ? wasapiAudio.sampleRate() : 48000)
+				                         : (audioDecCtx && audioDecCtx->sample_rate > 0 ? audioDecCtx->sample_rate : 48000);
+			audioEncCtx->sample_rate = inSampleRate;
 			if (audioEnc->supported_samplerates)
 			{
 				int bestRate = audioEnc->supported_samplerates[0];
@@ -2143,21 +2172,19 @@ audio_preview_init_done:
 				}
 				audioEncCtx->sample_rate = bestRate;
 			}
-			if (audioDecCtx && audioDecCtx->ch_layout.nb_channels > 0)
-			{
-				av_channel_layout_copy(&audioEncCtx->ch_layout, &audioDecCtx->ch_layout);
-			}
-			else
-			{
-				av_channel_layout_default(&audioEncCtx->ch_layout, 2);
-			}
-			if (audioEnc->ch_layouts)
+			const int srcChannels = useWasapiAudio
+				                        ? wasapiAudio.channelLayout().nb_channels
+				                        : (audioDecCtx ? audioDecCtx->ch_layout.nb_channels : 0);
+			const int targetChannels = (srcChannels == 1) ? 1 : 2;
+			av_channel_layout_uninit(&audioEncCtx->ch_layout);
+			av_channel_layout_default(&audioEncCtx->ch_layout, targetChannels);
+			if (audioEnc->ch_layouts && audioEnc->ch_layouts[0].nb_channels > 0)
 			{
 				const AVChannelLayout* best = &audioEnc->ch_layouts[0];
-				int bestDiff = qAbs(best->nb_channels - audioEncCtx->ch_layout.nb_channels);
+				int bestDiff = qAbs(best->nb_channels - targetChannels);
 				for (const AVChannelLayout* p = audioEnc->ch_layouts; p && p->nb_channels > 0; ++p)
 				{
-					const int diff = qAbs(p->nb_channels - audioEncCtx->ch_layout.nb_channels);
+					const int diff = qAbs(p->nb_channels - targetChannels);
 					if (diff < bestDiff)
 					{
 						best = p;
@@ -2165,11 +2192,36 @@ audio_preview_init_done:
 					}
 				}
 				av_channel_layout_uninit(&audioEncCtx->ch_layout);
-				av_channel_layout_copy(&audioEncCtx->ch_layout, best);
+				if (av_channel_layout_copy(&audioEncCtx->ch_layout, best) < 0)
+				{
+					av_channel_layout_default(&audioEncCtx->ch_layout, targetChannels);
+				}
 			}
-			audioEncCtx->sample_fmt = audioEnc->sample_fmts ? audioEnc->sample_fmts[0] : AV_SAMPLE_FMT_FLTP;
+			if (audioEncCtx->ch_layout.nb_channels <= 0)
+			{
+				av_channel_layout_uninit(&audioEncCtx->ch_layout);
+				av_channel_layout_default(&audioEncCtx->ch_layout, 2);
+			}
+			audioEncCtx->sample_fmt = AV_SAMPLE_FMT_FLTP;
+			if (audioEnc->sample_fmts)
+			{
+				bool fltpSupported = false;
+				for (const AVSampleFormat* p = audioEnc->sample_fmts; *p != AV_SAMPLE_FMT_NONE; ++p)
+				{
+					if (*p == AV_SAMPLE_FMT_FLTP)
+					{
+						fltpSupported = true;
+						break;
+					}
+				}
+				if (!fltpSupported)
+				{
+					audioEncCtx->sample_fmt = audioEnc->sample_fmts[0];
+				}
+			}
 			audioEncCtx->bit_rate = 128000;
 			audioEncCtx->time_base = AVRational{1, audioEncCtx->sample_rate};
+			audioEncCtx->strict_std_compliance = FF_COMPLIANCE_EXPERIMENTAL;
 			if (ofmt->oformat->flags & AVFMT_GLOBALHEADER)
 			{
 				audioEncCtx->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
@@ -2177,6 +2229,13 @@ audio_preview_init_done:
 			ret = avcodec_open2(audioEncCtx, audioEnc, nullptr);
 			if (ret < 0)
 			{
+				char errbuf[AV_ERROR_MAX_STRING_SIZE];
+				av_strerror(ret, errbuf, sizeof(errbuf));
+				appendLogLine(QStringLiteral("[屏幕推流] 打开音频编码器失败: %1; sr=%2 ch=%3 fmt=%4")
+					              .arg(QString::fromUtf8(errbuf))
+					              .arg(audioEncCtx->sample_rate)
+					              .arg(audioEncCtx->ch_layout.nb_channels)
+					              .arg(static_cast<int>(audioEncCtx->sample_fmt)));
 				exitCode = ret;
 				setLastError(QStringLiteral("打开音频编码器失败"));
 				goto cleanup;
@@ -2197,15 +2256,25 @@ audio_preview_init_done:
 			}
 			outAudioStream->codecpar->codec_tag = 0;
 			outAudioStream->time_base = audioEncCtx->time_base;
-			const AVChannelLayout* inLayout = audioDecCtx->ch_layout.nb_channels > 0 ? &audioDecCtx->ch_layout : nullptr;
+			const AVChannelLayout* inLayout = nullptr;
+			if (useWasapiAudio)
+			{
+				inLayout = wasapiAudio.channelLayout().nb_channels > 0 ? &wasapiAudio.channelLayout() : nullptr;
+			}
+			else
+			{
+				inLayout = audioDecCtx->ch_layout.nb_channels > 0 ? &audioDecCtx->ch_layout : nullptr;
+			}
 			AVChannelLayout defaultInLayout;
 			if (!inLayout)
 			{
 				av_channel_layout_default(&defaultInLayout, 2);
 				inLayout = &defaultInLayout;
 			}
+			const AVSampleFormat inSampleFmt = useWasapiAudio ? wasapiAudio.sampleFmt() : audioDecCtx->sample_fmt;
+			const int inSampleRate2 = useWasapiAudio ? inSampleRate : audioDecCtx->sample_rate;
 			ret = swr_alloc_set_opts2(&audioSwr, &audioEncCtx->ch_layout, audioEncCtx->sample_fmt, audioEncCtx->sample_rate,
-			                          inLayout, audioDecCtx->sample_fmt, audioDecCtx->sample_rate, 0, nullptr);
+			                          inLayout, inSampleFmt, inSampleRate2, 0, nullptr);
 			if (!inLayout || inLayout == &defaultInLayout)
 			{
 				av_channel_layout_uninit(&defaultInLayout);
@@ -2299,6 +2368,9 @@ audio_preview_init_done:
 	}
 	startClock = std::chrono::steady_clock::now();
 	nextEncodeAt = startClock;
+	auto avStatWindowStart = startClock;
+	int avStatVideoPkts = 0;
+	int avStatAudioPkts = 0;
 
 	while (!m_stopRequest.load(std::memory_order_relaxed))
 	{
@@ -2330,7 +2402,11 @@ audio_preview_init_done:
 						{
 							av_packet_rescale_ts(audioOutPkt, audioEncCtx->time_base, outAudioStream->time_base);
 							audioOutPkt->stream_index = outAudioStream->index;
-							av_interleaved_write_frame(ofmt, audioOutPkt);
+							const int aw = av_interleaved_write_frame(ofmt, audioOutPkt);
+							if (aw >= 0)
+							{
+								++avStatAudioPkts;
+							}
 							av_packet_unref(audioOutPkt);
 						}
 					}
@@ -2339,11 +2415,18 @@ audio_preview_init_done:
 		}
 		else if (audioActive && audioIfmt && audioPkt && outAudioStream && audioDecCtx && audioSwr && audioEncCtx && audioOutPkt)
 		{
-			for (;;)
+			const int maxAudioPacketsPerTick = 4;
+			for (int audioDrain = 0; audioDrain < maxAudioPacketsPerTick; ++audioDrain)
 			{
 				const int audioRet = av_read_frame(audioIfmt, audioPkt);
 				if (audioRet < 0)
 				{
+					if (audioRet != AVERROR(EAGAIN) && audioRet != AVERROR_EOF)
+					{
+						char errbuf[AV_ERROR_MAX_STRING_SIZE];
+						av_strerror(audioRet, errbuf, sizeof(errbuf));
+						appendLogLine(QStringLiteral("[屏幕推流] 音频读取中断: %1").arg(QString::fromUtf8(errbuf)));
+					}
 					break;
 				}
 				if (audioPkt->stream_index == audioIndex)
@@ -2375,7 +2458,11 @@ audio_preview_init_done:
 									{
 										av_packet_rescale_ts(audioOutPkt, audioEncCtx->time_base, outAudioStream->time_base);
 										audioOutPkt->stream_index = outAudioStream->index;
-										av_interleaved_write_frame(ofmt, audioOutPkt);
+										const int aw = av_interleaved_write_frame(ofmt, audioOutPkt);
+										if (aw >= 0)
+										{
+											++avStatAudioPkts;
+										}
 										av_packet_unref(audioOutPkt);
 									}
 								}
@@ -2480,10 +2567,19 @@ audio_preview_init_done:
 				writeFailed = true;
 				break;
 			}
+			++avStatVideoPkts;
 		}
 		if (writeFailed)
 		{
 			break;
+		}
+		const auto statNow = std::chrono::steady_clock::now();
+		if (std::chrono::duration_cast<std::chrono::milliseconds>(statNow - avStatWindowStart).count() >= 1000)
+		{
+			appendLogLine(QStringLiteral("[屏幕推流] 发包统计 1s: video=%1 audio=%2").arg(avStatVideoPkts).arg(avStatAudioPkts));
+			avStatVideoPkts = 0;
+			avStatAudioPkts = 0;
+			avStatWindowStart = statNow;
 		}
 	}
 
@@ -2863,25 +2959,19 @@ void fplayer::StreamFFmpeg::pushCameraPreviewLoop(const QString& outputUrl, cons
 				}
 				audioEncCtx->sample_rate = bestRate;
 			}
-			if (useWasapiAudio && wasapiAudio.channelLayout().nb_channels > 0)
-			{
-				av_channel_layout_copy(&audioEncCtx->ch_layout, &wasapiAudio.channelLayout());
-			}
-			else if (audioDecCtx && audioDecCtx->ch_layout.nb_channels > 0)
-			{
-				av_channel_layout_copy(&audioEncCtx->ch_layout, &audioDecCtx->ch_layout);
-			}
-			else
-			{
-				av_channel_layout_default(&audioEncCtx->ch_layout, 2);
-			}
-			if (audioEnc->ch_layouts)
+			const int srcChannels = useWasapiAudio
+				                        ? wasapiAudio.channelLayout().nb_channels
+				                        : (audioDecCtx ? audioDecCtx->ch_layout.nb_channels : 0);
+			const int targetChannels = (srcChannels == 1) ? 1 : 2;
+			av_channel_layout_uninit(&audioEncCtx->ch_layout);
+			av_channel_layout_default(&audioEncCtx->ch_layout, targetChannels);
+			if (audioEnc->ch_layouts && audioEnc->ch_layouts[0].nb_channels > 0)
 			{
 				const AVChannelLayout* best = &audioEnc->ch_layouts[0];
-				int bestDiff = qAbs(best->nb_channels - audioEncCtx->ch_layout.nb_channels);
+				int bestDiff = qAbs(best->nb_channels - targetChannels);
 				for (const AVChannelLayout* p = audioEnc->ch_layouts; p && p->nb_channels > 0; ++p)
 				{
-					const int diff = qAbs(p->nb_channels - audioEncCtx->ch_layout.nb_channels);
+					const int diff = qAbs(p->nb_channels - targetChannels);
 					if (diff < bestDiff)
 					{
 						best = p;
@@ -2889,11 +2979,36 @@ void fplayer::StreamFFmpeg::pushCameraPreviewLoop(const QString& outputUrl, cons
 					}
 				}
 				av_channel_layout_uninit(&audioEncCtx->ch_layout);
-				av_channel_layout_copy(&audioEncCtx->ch_layout, best);
+				if (av_channel_layout_copy(&audioEncCtx->ch_layout, best) < 0)
+				{
+					av_channel_layout_default(&audioEncCtx->ch_layout, targetChannels);
+				}
 			}
-			audioEncCtx->sample_fmt = audioEnc->sample_fmts ? audioEnc->sample_fmts[0] : AV_SAMPLE_FMT_FLTP;
+			if (audioEncCtx->ch_layout.nb_channels <= 0)
+			{
+				av_channel_layout_uninit(&audioEncCtx->ch_layout);
+				av_channel_layout_default(&audioEncCtx->ch_layout, 2);
+			}
+			audioEncCtx->sample_fmt = AV_SAMPLE_FMT_FLTP;
+			if (audioEnc->sample_fmts)
+			{
+				bool fltpSupported = false;
+				for (const AVSampleFormat* p = audioEnc->sample_fmts; *p != AV_SAMPLE_FMT_NONE; ++p)
+				{
+					if (*p == AV_SAMPLE_FMT_FLTP)
+					{
+						fltpSupported = true;
+						break;
+					}
+				}
+				if (!fltpSupported)
+				{
+					audioEncCtx->sample_fmt = audioEnc->sample_fmts[0];
+				}
+			}
 			audioEncCtx->bit_rate = 128000;
 			audioEncCtx->time_base = AVRational{1, audioEncCtx->sample_rate};
+			audioEncCtx->strict_std_compliance = FF_COMPLIANCE_EXPERIMENTAL;
 			if (ofmt->oformat->flags & AVFMT_GLOBALHEADER)
 			{
 				audioEncCtx->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
@@ -2901,6 +3016,13 @@ void fplayer::StreamFFmpeg::pushCameraPreviewLoop(const QString& outputUrl, cons
 			ret = avcodec_open2(audioEncCtx, audioEnc, nullptr);
 			if (ret < 0)
 			{
+				char errbuf[AV_ERROR_MAX_STRING_SIZE];
+				av_strerror(ret, errbuf, sizeof(errbuf));
+				appendLogLine(QStringLiteral("[屏幕推流] 打开音频编码器失败: %1; sr=%2 ch=%3 fmt=%4")
+					              .arg(QString::fromUtf8(errbuf))
+					              .arg(audioEncCtx->sample_rate)
+					              .arg(audioEncCtx->ch_layout.nb_channels)
+					              .arg(static_cast<int>(audioEncCtx->sample_fmt)));
 				exitCode = ret;
 				setLastError(QStringLiteral("打开音频编码器失败"));
 				goto cleanup;
@@ -2989,6 +3111,9 @@ void fplayer::StreamFFmpeg::pushCameraPreviewLoop(const QString& outputUrl, cons
 		setLastError(QStringLiteral("分配编码帧缓冲失败"));
 		goto cleanup;
 	}
+	auto avStatWindowStart = std::chrono::steady_clock::now();
+	int avStatVideoPkts = 0;
+	int avStatAudioPkts = 0;
 
 	while (!m_stopRequest.load(std::memory_order_relaxed))
 	{
@@ -3020,7 +3145,11 @@ void fplayer::StreamFFmpeg::pushCameraPreviewLoop(const QString& outputUrl, cons
 						{
 							av_packet_rescale_ts(audioOutPkt, audioEncCtx->time_base, outAudioStream->time_base);
 							audioOutPkt->stream_index = outAudioStream->index;
-							av_interleaved_write_frame(ofmt, audioOutPkt);
+							const int aw = av_interleaved_write_frame(ofmt, audioOutPkt);
+							if (aw >= 0)
+							{
+								++avStatAudioPkts;
+							}
 							av_packet_unref(audioOutPkt);
 						}
 					}
@@ -3029,11 +3158,18 @@ void fplayer::StreamFFmpeg::pushCameraPreviewLoop(const QString& outputUrl, cons
 		}
 		else if (audioActive && audioIfmt && audioPkt && outAudioStream && audioDecCtx && audioSwr && audioEncCtx && audioOutPkt)
 		{
-			for (;;)
+			const int maxAudioPacketsPerTick = 4;
+			for (int audioDrain = 0; audioDrain < maxAudioPacketsPerTick; ++audioDrain)
 			{
 				const int audioRet = av_read_frame(audioIfmt, audioPkt);
 				if (audioRet < 0)
 				{
+					if (audioRet != AVERROR(EAGAIN) && audioRet != AVERROR_EOF)
+					{
+						char errbuf[AV_ERROR_MAX_STRING_SIZE];
+						av_strerror(audioRet, errbuf, sizeof(errbuf));
+						appendLogLine(QStringLiteral("[摄像头推流] 音频读取中断: %1").arg(QString::fromUtf8(errbuf)));
+					}
 					break;
 				}
 				if (audioPkt->stream_index == audioIndex)
@@ -3065,7 +3201,11 @@ void fplayer::StreamFFmpeg::pushCameraPreviewLoop(const QString& outputUrl, cons
 									{
 										av_packet_rescale_ts(audioOutPkt, audioEncCtx->time_base, outAudioStream->time_base);
 										audioOutPkt->stream_index = outAudioStream->index;
-										av_interleaved_write_frame(ofmt, audioOutPkt);
+										const int aw = av_interleaved_write_frame(ofmt, audioOutPkt);
+										if (aw >= 0)
+										{
+											++avStatAudioPkts;
+										}
 										av_packet_unref(audioOutPkt);
 									}
 								}
@@ -3115,8 +3255,20 @@ void fplayer::StreamFFmpeg::pushCameraPreviewLoop(const QString& outputUrl, cons
 		{
 			av_packet_rescale_ts(outPkt, encCtx->time_base, ofmt->streams[0]->time_base);
 			outPkt->stream_index = 0;
-			av_interleaved_write_frame(ofmt, outPkt);
+			const int vw = av_interleaved_write_frame(ofmt, outPkt);
+			if (vw >= 0)
+			{
+				++avStatVideoPkts;
+			}
 			av_packet_unref(outPkt);
+		}
+		const auto statNow = std::chrono::steady_clock::now();
+		if (std::chrono::duration_cast<std::chrono::milliseconds>(statNow - avStatWindowStart).count() >= 1000)
+		{
+			appendLogLine(QStringLiteral("[摄像头推流] 发包统计 1s: video=%1 audio=%2").arg(avStatVideoPkts).arg(avStatAudioPkts));
+			avStatVideoPkts = 0;
+			avStatAudioPkts = 0;
+			avStatWindowStart = statNow;
 		}
 	}
 
@@ -3537,25 +3689,19 @@ void fplayer::StreamFFmpeg::pushCameraLoop(const QString& outputUrl, const QStri
 				}
 				audioEncCtx->sample_rate = bestRate;
 			}
-			if (useWasapiAudio && wasapiAudio.channelLayout().nb_channels > 0)
-			{
-				av_channel_layout_copy(&audioEncCtx->ch_layout, &wasapiAudio.channelLayout());
-			}
-			else if (audioDecCtx && audioDecCtx->ch_layout.nb_channels > 0)
-			{
-				av_channel_layout_copy(&audioEncCtx->ch_layout, &audioDecCtx->ch_layout);
-			}
-			else
-			{
-				av_channel_layout_default(&audioEncCtx->ch_layout, 2);
-			}
-			if (audioEnc->ch_layouts)
+			const int srcChannels = useWasapiAudio
+				                        ? wasapiAudio.channelLayout().nb_channels
+				                        : (audioDecCtx ? audioDecCtx->ch_layout.nb_channels : 0);
+			const int targetChannels = (srcChannels == 1) ? 1 : 2;
+			av_channel_layout_uninit(&audioEncCtx->ch_layout);
+			av_channel_layout_default(&audioEncCtx->ch_layout, targetChannels);
+			if (audioEnc->ch_layouts && audioEnc->ch_layouts[0].nb_channels > 0)
 			{
 				const AVChannelLayout* best = &audioEnc->ch_layouts[0];
-				int bestDiff = qAbs(best->nb_channels - audioEncCtx->ch_layout.nb_channels);
+				int bestDiff = qAbs(best->nb_channels - targetChannels);
 				for (const AVChannelLayout* p = audioEnc->ch_layouts; p && p->nb_channels > 0; ++p)
 				{
-					const int diff = qAbs(p->nb_channels - audioEncCtx->ch_layout.nb_channels);
+					const int diff = qAbs(p->nb_channels - targetChannels);
 					if (diff < bestDiff)
 					{
 						best = p;
@@ -3563,11 +3709,36 @@ void fplayer::StreamFFmpeg::pushCameraLoop(const QString& outputUrl, const QStri
 					}
 				}
 				av_channel_layout_uninit(&audioEncCtx->ch_layout);
-				av_channel_layout_copy(&audioEncCtx->ch_layout, best);
+				if (av_channel_layout_copy(&audioEncCtx->ch_layout, best) < 0)
+				{
+					av_channel_layout_default(&audioEncCtx->ch_layout, targetChannels);
+				}
 			}
-			audioEncCtx->sample_fmt = audioEnc->sample_fmts ? audioEnc->sample_fmts[0] : AV_SAMPLE_FMT_FLTP;
+			if (audioEncCtx->ch_layout.nb_channels <= 0)
+			{
+				av_channel_layout_uninit(&audioEncCtx->ch_layout);
+				av_channel_layout_default(&audioEncCtx->ch_layout, 2);
+			}
+			audioEncCtx->sample_fmt = AV_SAMPLE_FMT_FLTP;
+			if (audioEnc->sample_fmts)
+			{
+				bool fltpSupported = false;
+				for (const AVSampleFormat* p = audioEnc->sample_fmts; *p != AV_SAMPLE_FMT_NONE; ++p)
+				{
+					if (*p == AV_SAMPLE_FMT_FLTP)
+					{
+						fltpSupported = true;
+						break;
+					}
+				}
+				if (!fltpSupported)
+				{
+					audioEncCtx->sample_fmt = audioEnc->sample_fmts[0];
+				}
+			}
 			audioEncCtx->bit_rate = 128000;
 			audioEncCtx->time_base = AVRational{1, audioEncCtx->sample_rate};
+			audioEncCtx->strict_std_compliance = FF_COMPLIANCE_EXPERIMENTAL;
 			if (ofmt->oformat->flags & AVFMT_GLOBALHEADER)
 			{
 				audioEncCtx->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
@@ -3575,6 +3746,13 @@ void fplayer::StreamFFmpeg::pushCameraLoop(const QString& outputUrl, const QStri
 			ret = avcodec_open2(audioEncCtx, audioEnc, nullptr);
 			if (ret < 0)
 			{
+				char errbuf[AV_ERROR_MAX_STRING_SIZE];
+				av_strerror(ret, errbuf, sizeof(errbuf));
+				appendLogLine(QStringLiteral("[屏幕推流] 打开音频编码器失败: %1; sr=%2 ch=%3 fmt=%4")
+					              .arg(QString::fromUtf8(errbuf))
+					              .arg(audioEncCtx->sample_rate)
+					              .arg(audioEncCtx->ch_layout.nb_channels)
+					              .arg(static_cast<int>(audioEncCtx->sample_fmt)));
 				exitCode = ret;
 				setLastError(QStringLiteral("打开音频编码器失败"));
 				goto cleanup;

@@ -105,7 +105,29 @@ namespace fplayer::windows_api
 		}
 		else
 		{
-			candidates.push_back({QStringLiteral("dshow"), req.startsWith(QStringLiteral("audio=")) ? req : (QStringLiteral("audio=") + req), false});
+			QString reqName = req;
+			if (reqName.startsWith(QStringLiteral("audio="), Qt::CaseInsensitive))
+			{
+				reqName = reqName.mid(QStringLiteral("audio=").size()).trimmed();
+			}
+			if (reqName.startsWith('"') && reqName.endsWith('"') && reqName.size() >= 2)
+			{
+				reqName = reqName.mid(1, reqName.size() - 2).trimmed();
+			}
+			candidates.push_back({QStringLiteral("dshow"), QStringLiteral("audio=") + reqName, false});
+			candidates.push_back({QStringLiteral("dshow"), QStringLiteral("audio=\"") + reqName + QStringLiteral("\""), false});
+
+			const QStringList names = listDshowAudioDeviceNames();
+			for (const QString& n : names)
+			{
+				const QString nl = n.trimmed().toLower();
+				const QString rl = reqName.toLower();
+				if (nl == rl || nl.contains(rl) || rl.contains(nl))
+				{
+					candidates.push_back({QStringLiteral("dshow"), QStringLiteral("audio=") + n, false});
+					candidates.push_back({QStringLiteral("dshow"), QStringLiteral("audio=\"") + n + QStringLiteral("\""), false});
+				}
+			}
 		}
 		{
 			QSet<QString> dedup;
