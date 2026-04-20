@@ -387,9 +387,13 @@ bool fplayer::Service::streamStartPushByScene(PushScene scene, const QString& ou
 		{
 			screenSpec += QStringLiteral(";encoder=%1").arg(options.videoEncoder.trimmed().toLower());
 		}
-		if (!options.audioSource.trimmed().isEmpty())
+		if (!options.audioInputSource.trimmed().isEmpty())
 		{
-			screenSpec += QStringLiteral(";audio=%1").arg(options.audioSource.trimmed());
+			screenSpec += QStringLiteral(";audio_in=%1").arg(options.audioInputSource.trimmed());
+		}
+		if (!options.audioOutputSource.trimmed().isEmpty())
+		{
+			screenSpec += QStringLiteral(";audio_out=%1").arg(options.audioOutputSource.trimmed());
 		}
 		return m_stream->startPush(screenSpec, outputUrl);
 	}
@@ -430,7 +434,17 @@ bool fplayer::Service::streamStartPushByScene(PushScene scene, const QString& ou
 		}
 		if (cameraSpec.isEmpty())
 		{
-			return m_stream->startPush(QStringLiteral("__camera_capture__:"), outputUrl);
+			QStringList fallbackParams;
+			if (!options.audioInputSource.trimmed().isEmpty())
+			{
+				fallbackParams << QStringLiteral("audio_in=%1").arg(options.audioInputSource.trimmed());
+			}
+			if (!options.audioOutputSource.trimmed().isEmpty())
+			{
+				fallbackParams << QStringLiteral("audio_out=%1").arg(options.audioOutputSource.trimmed());
+			}
+			const QString tail = fallbackParams.isEmpty() ? QString() : fallbackParams.join(';');
+			return m_stream->startPush(QStringLiteral("__camera_capture__:") + tail, outputUrl);
 		}
 		if (!cameraSpec.startsWith(QStringLiteral("video=")))
 		{
@@ -472,9 +486,13 @@ bool fplayer::Service::streamStartPushByScene(PushScene scene, const QString& ou
 		{
 			params << QStringLiteral("bitrate=%1").arg(options.bitrateKbps);
 		}
-		if (!options.audioSource.trimmed().isEmpty())
+		if (!options.audioInputSource.trimmed().isEmpty())
 		{
-			params << QStringLiteral("audio=%1").arg(options.audioSource.trimmed());
+			params << QStringLiteral("audio_in=%1").arg(options.audioInputSource.trimmed());
+		}
+		if (!options.audioOutputSource.trimmed().isEmpty())
+		{
+			params << QStringLiteral("audio_out=%1").arg(options.audioOutputSource.trimmed());
 		}
 		return m_stream->startPush(QStringLiteral("__camera_preview__:") + params.join(';'), outputUrl);
 	}

@@ -27,7 +27,8 @@ namespace fplayer
 			int height = 0;
 			int bitrateKbps = 0;
 			bool keepAspectRatio = false;
-			QString audioSource = QStringLiteral("off");
+			QString audioInputSource = QStringLiteral("off");
+			QString audioOutputSource = QStringLiteral("off");
 			QString videoEncoder = QStringLiteral("auto");
 		};
 

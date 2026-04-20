@@ -614,9 +614,8 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 				cmbEncoder->setToolTip(tr("当前仅检测到 CPU 编码可用"));
 			}
 		}
-		auto* cmbAudioSource = new QComboBox(&dlg);
-		cmbAudioSource->addItem(tr("关闭声音"), QStringLiteral("off"));
-		cmbAudioSource->addItem(tr("系统声音（实验）"), QStringLiteral("system"));
+		auto* cmbAudioInput = new QComboBox(&dlg);
+		cmbAudioInput->addItem(tr("关闭输入设备"), QStringLiteral("off"));
 		{
 			const auto audioInputs = QMediaDevices::audioInputs();
 			QSet<QString> dedup;
@@ -628,11 +627,30 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 					continue;
 				}
 				dedup.insert(name);
-				cmbAudioSource->addItem(tr("麦克风：%1").arg(name), name);
+				cmbAudioInput->addItem(tr("麦克风：%1").arg(name), name);
 			}
 		}
-		cmbAudioSource->setCurrentIndex(0);
-		cmbAudioSource->setEnabled(screenScene);
+		cmbAudioInput->setCurrentIndex(0);
+		auto* cmbAudioOutput = new QComboBox(&dlg);
+		cmbAudioOutput->addItem(tr("关闭输出设备"), QStringLiteral("off"));
+		cmbAudioOutput->addItem(tr("系统声音（实验）"), QStringLiteral("system"));
+		{
+			const auto audioOutputs = QMediaDevices::audioOutputs();
+			QSet<QString> dedup;
+			for (const auto& dev : audioOutputs)
+			{
+				const QString name = dev.description().trimmed();
+				if (name.isEmpty() || dedup.contains(name))
+				{
+					continue;
+				}
+				dedup.insert(name);
+				cmbAudioOutput->addItem(tr("扬声器：%1").arg(name), name);
+			}
+		}
+		cmbAudioOutput->setCurrentIndex(0);
+		cmbAudioInput->setEnabled(!fileScene);
+		cmbAudioOutput->setEnabled(!fileScene);
 		auto* chkKeepAspect = new QCheckBox(tr("保持宽高比"), &dlg);
 		chkKeepAspect->setChecked(true);
 		if (screenScene)
@@ -780,7 +798,8 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		layout->addRow(QString(), chkKeepAspect);
 		layout->addRow(tr("码率"), spBitrate);
 		layout->addRow(tr("视频编码器"), cmbEncoder);
-		layout->addRow(tr("声音来源"), cmbAudioSource);
+		layout->addRow(tr("输入设备"), cmbAudioInput);
+		layout->addRow(tr("输出设备"), cmbAudioOutput);
 		layout->addRow(tr("协议模板"), cmbProtocol);
 		layout->addRow(tr("输出"), cmbOutput);
 		layout->addRow(lblStatus);
@@ -793,7 +812,8 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		layout->addRow(buttons);
 		connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
 		connect(btnStop, &QPushButton::clicked, &dlg,
-		        [this, btnStart, cmbProtocol, cmbOutput, spFps, cmbSize, spBitrate, cmbEncoder, cmbAudioSource, fileScene, screenScene]() {
+		        [this, btnStart, cmbProtocol, cmbOutput, spFps, cmbSize, spBitrate, cmbEncoder, cmbAudioInput, cmbAudioOutput,
+		         fileScene, screenScene]() {
 			this->m_service->streamStop();
 			btnStart->setEnabled(true);
 			cmbProtocol->setEnabled(true);
@@ -802,11 +822,12 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 			cmbSize->setEnabled(!fileScene);
 			spBitrate->setEnabled(true);
 			cmbEncoder->setEnabled(true);
-			cmbAudioSource->setEnabled(screenScene);
+			cmbAudioInput->setEnabled(!fileScene);
+			cmbAudioOutput->setEnabled(!fileScene);
 		});
 		connect(btnStart, &QPushButton::clicked, &dlg,
-		        [this, btnStart, cmbProtocol, cmbOutput, spFps, cmbSize, spBitrate, cmbEncoder, cmbAudioSource, chkKeepAspect, fileScene,
-		         screenScene, addRecent]() {
+		        [this, btnStart, cmbProtocol, cmbOutput, spFps, cmbSize, spBitrate, cmbEncoder, cmbAudioInput, cmbAudioOutput,
+		         chkKeepAspect, fileScene, screenScene, addRecent]() {
 			const QString pushOutput = cmbOutput->currentText().trimmed();
 			if (pushOutput.isEmpty())
 			{
@@ -838,7 +859,8 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 			options.bitrateKbps = spBitrate->value();
 			options.keepAspectRatio = chkKeepAspect->isChecked();
 			options.videoEncoder = cmbEncoder->currentData().toString();
-			options.audioSource = cmbAudioSource->currentData().toString();
+			options.audioInputSource = cmbAudioInput->currentData().toString();
+			options.audioOutputSource = cmbAudioOutput->currentData().toString();
 			QString sizeText = cmbSize->currentText().trimmed();
 			if (sizeText.isEmpty() || sizeText == tr("跟随当前"))
 			{
@@ -872,10 +894,12 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 			cmbSize->setEnabled(false);
 			spBitrate->setEnabled(false);
 			cmbEncoder->setEnabled(false);
-			cmbAudioSource->setEnabled(false);
+			cmbAudioInput->setEnabled(false);
+			cmbAudioOutput->setEnabled(false);
 		});
 		connect(logTimer, &QTimer::timeout, &dlg,
-		        [this, btnStart, cmbProtocol, cmbOutput, spFps, cmbSize, spBitrate, cmbEncoder, cmbAudioSource, fileScene, screenScene]() {
+		        [this, btnStart, cmbProtocol, cmbOutput, spFps, cmbSize, spBitrate, cmbEncoder, cmbAudioInput, cmbAudioOutput,
+		         fileScene, screenScene]() {
 			const bool running = this->m_service->streamIsRunning();
 			if (!running)
 			{
@@ -886,7 +910,8 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 				cmbSize->setEnabled(!fileScene);
 				spBitrate->setEnabled(true);
 				cmbEncoder->setEnabled(true);
-				cmbAudioSource->setEnabled(screenScene);
+				cmbAudioInput->setEnabled(!fileScene);
+				cmbAudioOutput->setEnabled(!fileScene);
 			}
 		});
 		refreshPushParams();

@@ -9,6 +9,11 @@
 #include <fplayer/backend/stream_ffmpeg/export.h>
 #include <fplayer/api/net/istream.h>
 
+namespace fplayer::streamffmpeg_helpers
+{
+	struct PushInputRoute;
+}
+
 namespace fplayer
 {
 	class FPLAYER_BACKEND_STREAM_FFMPEG_EXPORT StreamFFmpeg : public QObject, public IStream
@@ -41,6 +46,8 @@ namespace fplayer
 		/// 使用当前摄像头预览帧编码推流，避免设备二次占用。
 		void pushCameraPreviewLoop(const QString& outputUrl, const QString& captureSpec);
 
+		bool startPushWorkerByRoute(const streamffmpeg_helpers::PushInputRoute& route, const QString& inputUrl, const QString& outputUrl);
+		bool startPullWorker(const QString& inputUrl, const QString& outputUrl);
 		void appendLogLine(const QString& line);
 		void setLastError(const QString& error);
 		static int interruptCallback(void* opaque);

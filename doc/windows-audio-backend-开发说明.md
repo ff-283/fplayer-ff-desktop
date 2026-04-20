@@ -24,55 +24,101 @@
 - `backend/stream_ffmpeg/src/streamffmpeg.cpp`
   - 职责：推流编排与编码封装，不再承载 Windows API 实现细节。
   - 使用方式：
-    1. 先调用 `openDshowAudioInputWithFallback(...)`
-    2. `dshow` 失败且 `audio=system` 时，切到 `WasapiLoopbackCapture`
-    3. 将采集 PCM 通过 `swr` 转换后喂给 AAC 编码器
+    1. 分别按 `audio_in`（输入设备）与 `audio_out`（输出设备）尝试打开音频链路
+    2. 每一路优先调用 `openDshowAudioInputWithFallback(...)`
+    3. `dshow` 失败时，自动尝试切到 `WasapiLoopbackCapture`
+    4. 两路 PCM 各自经 `swr` 转换后写入独立 FIFO，并在编码前混音为单路 AAC
+
+- `backend/stream_ffmpeg/src/audio_pipeline.h/.cpp`
+  - 职责：音频处理公共能力（当前已下沉“平面样本混音”）。
+  - 对外接口：
+    - `mixPlanarInPlace(...)`
+    - `mixFromFifoIntoFrame(...)`
+    - `fillAudioEncFrameFromFifos(...)`
+    - `fillAudioEncFrameFromFifosWithPadding(...)`
+  - 说明：`Screen/Camera` 各场景在编码前混音与编码帧填充均复用该模块（含第二路 FIFO 读取与释放、尾包补静音），避免重复实现引入行为漂移。
 
 ## 当前回退策略
 
-1. 用户未开启音频（`audio=off`）  
+1. 用户未开启音频（`audio_in=off` 且 `audio_out=off`）  
    -> 仅视频推流
 
 2. 用户开启音频  
-   -> 先走 `dshow` 探测/打开
+   -> 按 `audio_out`、`audio_in` 分别走 `dshow` 探测/打开（可单路、可双路）
 
-3. `dshow` 打开失败且来源为 `system`  
+3. `dshow` 打开失败  
    -> 尝试 native WASAPI loopback（`default render endpoint`）
 
-4. 两者都失败  
+4. 双路中某一路失败  
+   -> 记录失败明细并降级单音频
+
+5. 两路都失败  
    -> 记录失败明细并降级为无声推流
 
 ## 场景支持矩阵（当前实现）
 
 - `PushScene::Screen`
   - `__screen_preview__`（DXGI 预览推流）：
-    - 支持音频（dshow -> native WASAPI 回退）
+    - 支持音频（输入设备 + 输出设备，可混音；每路 dshow -> native WASAPI 回退）
+    - 音视频分线程采集/编码（音频线程独立）
   - `__screen_capture__`（gdigrab 推流）：
-    - 支持音频（dshow）
+    - 支持音频（输入设备 + 输出设备，可混音；每路 dshow -> native WASAPI 回退）
+    - 音视频分线程采集/编码（音频线程独立）
 
 - `PushScene::Camera`
   - `__camera_preview__`（当前默认）：
-    - 支持音频（dshow -> native WASAPI 回退）
-    - `Service` 已透传 `audio` 参数到 camera spec
+    - 支持音频（输入设备 + 输出设备，可混音；每路 dshow -> native WASAPI 回退）
+    - `Service` 已透传 `audio_in/audio_out` 参数到 camera spec
+    - 音视频分线程采集/编码（音频线程独立）
   - `__camera_capture__`（备用）：
-    - 支持音频（dshow -> native WASAPI 回退）
+    - 支持音频（输入设备 + 输出设备，可混音；每路 dshow -> native WASAPI 回退）
+    - 音视频分线程采集/编码（音频线程独立）
 
 - `PushScene::File`
   - 直推 remux/copy：
     - 保留源音频
   - `__file_transcode__`：
     - 视频转码 + 音频流 copy（若源存在音频）
+  - 说明：
+    - 文件模式继续沿用源文件自带音视频，不走“设备采集分线程”路径
 
 ## 日志关键字
 
 - `音频设备=...`
-  - 表示音频链路成功启动
+  - 表示主音频链路成功启动
+
+- `音频主设备=...` / `第二音频源...`
+  - 表示进入双音频设备路径（输入/输出分开采集）
+
+- `音频诊断 1s: main_reads=... second_reads=...`
+  - 表示主/副音频链路每秒读到的帧次数与样本量，可用于判断“输出设备是否真的有数据进入”
 
 - `dshow音频不可用，已切换系统API回采`
   - 表示从 FFmpeg dshow 自动切换到了 native WASAPI
 
 - `音频采集初始化失败，已自动降级为无声推流`
   - 表示最终未拿到可用音频输入
+
+## 配置示例（联调对照）
+
+以下示例用于 `PushScene::Screen` / `PushScene::Camera` 的非文件推流场景：
+
+- 仅采集麦克风（输入设备）  
+  - `audio_in=麦克风阵列 (Realtek...)`
+  - `audio_out=`（留空）
+
+- 仅采集系统播放（输出设备/回采）  
+  - `audio_in=`（留空）
+  - `audio_out=扬声器 (Realtek...)`
+
+- 同时采集输入 + 输出并混音（推荐直播场景）  
+  - `audio_in=麦克风阵列 (Realtek...)`
+  - `audio_out=扬声器 (Realtek...)`
+
+说明：
+
+- 双路模式下任一路初始化失败，会记录日志并自动降级单路，不中断推流。
+- 两路都失败才会降级为无声推流。
 
 ## 典型排障
 
@@ -82,14 +128,13 @@
 
 ### 2) `dshow:audio=... -> I/O error`
 说明系统无可用回采设备或设备被占用。  
-观察是否后续出现“切换系统API回采”日志。
+观察是否后续出现“切换系统API回采”与“音频诊断 1s”日志。
 
 ### 3) 推流中断 `-10054` / `-138`
 通常是网络/服务端连接问题，不是音频采集本身问题。
 
 ## 后续建议
 
-- 将 `pushScreenLoop` 的音频路径进一步抽象为统一 `audio pipeline` helper（与 `pushScreenPreviewLoop` 对齐）。
 - 在 UI 增加“音频诊断”按钮，展示：
   - dshow 枚举设备
   - 当前是否启用 native WASAPI
