@@ -65,14 +65,14 @@
 -DQt6_DIR=D:/SoftWare/Qt/Qt6.10.2/6.10.2/msvc2022_64/lib/cmake/Qt6
 -DCMAKE_INSTALL_PREFIX:PATH=D:/Code/LIB/FPlayer-desketop/msvc2022/debug
 -DFPLAYER_BUILD_MEDIA_FFMPEG:BOOL=ON
--DFPLAYER_BUILD_NET_FFMPEG:BOOL=ON
+-DFPLAYER_BUILD_STREAM_FFMPEG:BOOL=ON
 
 ------------------------------------------------------------------------------
 -DCMAKE_PREFIX_PATH=D:/SoftWare/Qt/Qt6.10.2/6.10.2/mingw_64
 -DQt6_DIR=D:/SoftWare/Qt/Qt6.10.2/6.10.2/mingw_64/lib/cmake/Qt6
 -DCMAKE_INSTALL_PREFIX:PATH=D:/Code/LIB/FPlayer-desketop/mingw64/debug
 -DFPLAYER_BUILD_MEDIA_FFMPEG:BOOL=ON
--DFPLAYER_BUILD_NET_FFMPEG:BOOL=ON
+-DFPLAYER_BUILD_STREAM_FFMPEG:BOOL=ON
 ```
 
 

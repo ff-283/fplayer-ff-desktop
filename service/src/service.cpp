@@ -61,7 +61,7 @@ void fplayer::Service::initStream(MediaBackendType backend)
 	if (this->m_stream == nullptr)
 	{
 		LOG_WARN("fplayer::Service::initStream(MediaBackend backend) ==> 推拉流获取失败");
-		m_streamInitErrorHint = QStringLiteral("stream backend unavailable: ensure CMake option FPLAYER_BUILD_NET_FFMPEG=ON then reconfigure/rebuild");
+		m_streamInitErrorHint = QStringLiteral("stream backend unavailable: ensure CMake option FPLAYER_BUILD_STREAM_FFMPEG=ON then reconfigure/rebuild");
 	}
 	else
 	{
@@ -471,6 +471,10 @@ bool fplayer::Service::streamStartPushByScene(PushScene scene, const QString& ou
 		if (options.bitrateKbps > 0)
 		{
 			params << QStringLiteral("bitrate=%1").arg(options.bitrateKbps);
+		}
+		if (!options.audioSource.trimmed().isEmpty())
+		{
+			params << QStringLiteral("audio=%1").arg(options.audioSource.trimmed());
 		}
 		return m_stream->startPush(QStringLiteral("__camera_preview__:") + params.join(';'), outputUrl);
 	}

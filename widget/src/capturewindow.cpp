@@ -740,8 +740,27 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 			{
 				lblStatus->setText(tr("状态：当前无推流任务"));
 			}
-			txtLog->setPlainText(this->m_service->streamRecentLog());
-			txtLog->moveCursor(QTextCursor::End);
+			const QString latestLog = this->m_service->streamRecentLog();
+			// 用户正在选择文本时不重刷，避免复制被打断。
+			if (!txtLog->textCursor().hasSelection())
+			{
+				const QString currentLog = txtLog->toPlainText();
+				if (latestLog.startsWith(currentLog))
+				{
+					if (latestLog.size() > currentLog.size())
+					{
+						txtLog->moveCursor(QTextCursor::End);
+						txtLog->insertPlainText(latestLog.mid(currentLog.size()));
+						txtLog->moveCursor(QTextCursor::End);
+					}
+				}
+				else if (currentLog != latestLog)
+				{
+					// 日志被清空或滚动裁剪时，回退到整段同步一次。
+					txtLog->setPlainText(latestLog);
+					txtLog->moveCursor(QTextCursor::End);
+				}
+			}
 		});
 		logTimer->start();
 		connect(cmbProtocol, &QComboBox::currentTextChanged, &dlg, [cmbProtocol, cmbOutput]() {
@@ -948,8 +967,27 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 			{
 				lblStatus->setText(tr("状态：当前无拉流任务"));
 			}
-			txtLog->setPlainText(this->m_service->streamRecentLog());
-			txtLog->moveCursor(QTextCursor::End);
+			const QString latestLog = this->m_service->streamRecentLog();
+			// 用户正在选择文本时不重刷，避免复制被打断。
+			if (!txtLog->textCursor().hasSelection())
+			{
+				const QString currentLog = txtLog->toPlainText();
+				if (latestLog.startsWith(currentLog))
+				{
+					if (latestLog.size() > currentLog.size())
+					{
+						txtLog->moveCursor(QTextCursor::End);
+						txtLog->insertPlainText(latestLog.mid(currentLog.size()));
+						txtLog->moveCursor(QTextCursor::End);
+					}
+				}
+				else if (currentLog != latestLog)
+				{
+					// 日志被清空或滚动裁剪时，回退到整段同步一次。
+					txtLog->setPlainText(latestLog);
+					txtLog->moveCursor(QTextCursor::End);
+				}
+			}
 		});
 		logTimer->start();
 		connect(cmbProtocol, &QComboBox::currentTextChanged, &dlg, [cmbProtocol, cmbInput]() {

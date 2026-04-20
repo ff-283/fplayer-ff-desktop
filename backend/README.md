@@ -44,8 +44,8 @@ FPlayer-desktop/
       src/
       CMakeLists.txt
 
-    net_ffmpeg/                 # RTSP/RTMP/HLS/UDP 推拉流/网络播放（用 FFmpeg avformat）
-      include/fplayer/backend_net_ffmpeg/
+    stream_ffmpeg/              # RTSP/RTMP/HLS/UDP 推拉流/网络播放（用 FFmpeg avformat）
+      include/fplayer/backend_stream_ffmpeg/
       src/
       CMakeLists.txt
 
@@ -91,7 +91,7 @@ FPlayer-desktop/
 * `media_qt6`：依赖 Qt6::Multimedia
 * `rtc_webrtc`：依赖 webrtc
 * `net_qt6`：依赖 Qt6::Network
-* `net_ffmpeg`：依赖 FFmpeg avformat
+* `stream_ffmpeg`：依赖 FFmpeg avformat
 
 互相之间尽量别依赖（除非你明确写一个 bridge 包）。
 
@@ -110,7 +110,7 @@ FPlayer-desktop/
 * `fplayer_core`（只含你的头+factory）
 * `fplayer_backend_media_ffmpeg`
 * `fplayer_backend_media_qt6`
-* `fplayer_backend_net_ffmpeg`
+* `fplayer_backend_stream_ffmpeg`
 * `fplayer_backend_net_qt6`
 * `fplayer_backend_rtc_webrtc`
 * `fplayer_desktop_app`（链接 core + 你选的 backend）
@@ -150,4 +150,4 @@ bridge/
 
 ---
 
-你照这个结构改，最大的收益是：后端实现怎么折腾都不会污染 UI 和其他后端，工程规模上来以后也不容易失控。接下来你只需要按“先播放器双实现 -> 再 net_ffmpeg 推拉 -> 再 rtc_webrtc”这个顺序逐步填坑就行。
+你照这个结构改，最大的收益是：后端实现怎么折腾都不会污染 UI 和其他后端，工程规模上来以后也不容易失控。接下来你只需要按“先播放器双实现 -> 再 stream_ffmpeg 推拉 -> 再 rtc_webrtc”这个顺序逐步填坑就行。

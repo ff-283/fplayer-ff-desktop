@@ -18,9 +18,9 @@ if(FPLAYER_BUILD_MEDIA_DXGI AND WIN32)
     target_compile_definitions(${PROJECT_NAME} PUBLIC FPLAYER_WITH_SCREEN_DXGI=1)
 endif()
 
-if(FPLAYER_BUILD_NET_FFMPEG)
-    target_link_libraries(${PROJECT_NAME} PUBLIC FPlayer_Backend_Net_FFmpeg)
-    target_compile_definitions(${PROJECT_NAME} PUBLIC FPLAYER_WITH_NET_FFMPEG=1)
+if(FPLAYER_BUILD_STREAM_FFMPEG)
+    target_link_libraries(${PROJECT_NAME} PUBLIC FPlayer_Backend_Stream_FFmpeg)
+    target_compile_definitions(${PROJECT_NAME} PUBLIC FPLAYER_WITH_STREAM_FFMPEG=1)
 endif()
 
 target_link_libraries(${PROJECT_NAME} PRIVATE Logger)

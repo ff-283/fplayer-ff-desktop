@@ -6,8 +6,8 @@
 #if defined(_WIN32) && defined(FPLAYER_WITH_SCREEN_DXGI)
 #include <fplayer/backend/desktopcapture_dxgi/screencapturedxgi.h>
 #endif
-#if defined(FPLAYER_WITH_NET_FFMPEG)
-#include <fplayer/backend/net_ffmpeg/streamffmpeg.h>
+#if defined(FPLAYER_WITH_STREAM_FFMPEG)
+#include <fplayer/backend/stream_ffmpeg/streamffmpeg.h>
 #endif
 
 #include <fplayer/backend/media_qt6/cameraqt6.h>
@@ -84,7 +84,7 @@ std::shared_ptr<fplayer::IStream> fplayer::RunTime::createStream(MediaBackendTyp
 	switch (backend)
 	{
 	case MediaBackendType::FFmpeg:
-#if defined(FPLAYER_WITH_NET_FFMPEG)
+#if defined(FPLAYER_WITH_STREAM_FFMPEG)
 		m_stream = std::make_shared<fplayer::StreamFFmpeg>();
 #endif
 		break;
