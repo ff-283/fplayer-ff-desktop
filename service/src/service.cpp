@@ -580,6 +580,16 @@ QString fplayer::Service::streamRecentLog() const
 	return m_stream ? m_stream->recentLog() : QString();
 }
 
+QString fplayer::Service::streamRecentPushLog() const
+{
+	return m_stream ? m_stream->recentPushLog() : QString();
+}
+
+QString fplayer::Service::streamRecentPullLog() const
+{
+	return m_stream ? m_stream->recentPullLog() : QString();
+}
+
 int fplayer::Service::streamLastExitCode() const
 {
 	return m_stream ? m_stream->lastExitCode() : 0;

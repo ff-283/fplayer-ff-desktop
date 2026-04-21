@@ -1735,7 +1735,7 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 			{
 				lblStatus->setText(tr("状态：当前无推流任务"));
 			}
-			const QString latestLog = this->m_service->streamRecentLog();
+			const QString latestLog = this->m_service->streamRecentPushLog();
 			syncStreamLogView(txtLog, latestLog);
 		});
 		logTimer->start();
@@ -2148,7 +2148,7 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 			{
 				lblStatus->setText(tr("状态：当前无拉流任务"));
 			}
-			const QString latestLog = this->m_service->streamRecentLog();
+			const QString latestLog = this->m_service->streamRecentPullLog();
 			const QString extraLog = dlg->property("pullExtraLog").toString();
 			const QString mergedLog = extraLog.isEmpty() ? latestLog : (latestLog + extraLog);
 			if (running && m_pullPreviewDialog && !dlg->property("pullPreviewAutoOpened").toBool() &&
@@ -2906,14 +2906,28 @@ void CaptureWindow::addComposeFileSource()
 			auto& src = m_composeSources[idx];
 			if (src.kind == ComposeSourceItem::SourceKind::Screen && src.service && src.view)
 			{
-				// 拖动/缩放后仅在该路原本处于播放态时才重绑并激活，避免暂停素材被误恢复。
+				// 拖动/缩放后仅在该路原本处于播放态时才做一次完整重启（false->true），避免黑屏卡住。
 				if (composeSourceIsPlaying(idx))
 				{
-					src.service->bindScreenPreview(src.view);
-					src.service->selectScreen(qMax(0, src.deviceIndex));
-					src.service->screenSetFrameRate(qMax(1, src.screenFps));
-					src.service->screenSetCursorCaptureEnabled(src.screenCaptureCursor);
-					src.service->screenSetActive(true);
+					QTimer::singleShot(80, this, [this, sub]() {
+						const int refreshIdx = std::distance(
+							m_composeSources.begin(),
+							std::find_if(m_composeSources.begin(), m_composeSources.end(), [sub](const ComposeSourceItem& i) {
+								return i.subWindow == sub;
+							}));
+						if (refreshIdx < 0 || refreshIdx >= m_composeSources.size())
+						{
+							return;
+						}
+						auto& refreshSrc = m_composeSources[refreshIdx];
+						if (refreshSrc.kind != ComposeSourceItem::SourceKind::Screen || !refreshSrc.service ||
+							!composeSourceIsPlaying(refreshIdx))
+						{
+							return;
+						}
+						refreshComposeScreenCaptureState(m_composeSelectedIndex, refreshIdx);
+						forceRefreshComposePreview();
+					});
 				}
 			}
 		}
@@ -3157,14 +3171,28 @@ void CaptureWindow::addComposeScreenSource()
 			auto& src = m_composeSources[idx];
 			if (src.kind == ComposeSourceItem::SourceKind::Screen && src.service && src.view)
 			{
-				// 拖动/缩放后仅在该路原本处于播放态时才重绑并激活，避免暂停素材被误恢复。
+				// 拖动/缩放后仅在该路原本处于播放态时才做一次完整重启（false->true），避免黑屏卡住。
 				if (composeSourceIsPlaying(idx))
 				{
-					src.service->bindScreenPreview(src.view);
-					src.service->selectScreen(qMax(0, src.deviceIndex));
-					src.service->screenSetFrameRate(qMax(1, src.screenFps));
-					src.service->screenSetCursorCaptureEnabled(src.screenCaptureCursor);
-					src.service->screenSetActive(true);
+					QTimer::singleShot(80, this, [this, sub]() {
+						const int refreshIdx = std::distance(
+							m_composeSources.begin(),
+							std::find_if(m_composeSources.begin(), m_composeSources.end(), [sub](const ComposeSourceItem& i) {
+								return i.subWindow == sub;
+							}));
+						if (refreshIdx < 0 || refreshIdx >= m_composeSources.size())
+						{
+							return;
+						}
+						auto& refreshSrc = m_composeSources[refreshIdx];
+						if (refreshSrc.kind != ComposeSourceItem::SourceKind::Screen || !refreshSrc.service ||
+							!composeSourceIsPlaying(refreshIdx))
+						{
+							return;
+						}
+						refreshComposeScreenCaptureState(m_composeSelectedIndex, refreshIdx);
+						forceRefreshComposePreview();
+					});
 				}
 			}
 		}

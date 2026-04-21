@@ -28,6 +28,8 @@ namespace fplayer
 		bool isRunning() const override;
 		QString lastError() const override;
 		QString recentLog() const override;
+		QString recentPushLog() const override;
+		QString recentPullLog() const override;
 		int lastExitCode() const override;
 		QStringList availableVideoEncoders() const override;
 		bool hasCompletedStreamSession() const override;
@@ -65,6 +67,15 @@ namespace fplayer
 		std::atomic<bool> m_running{false};
 		QString m_lastError;
 		QString m_recentLog;
+		QString m_recentPushLog;
+		QString m_recentPullLog;
+		enum class LogTarget
+		{
+			All,
+			Push,
+			Pull
+		};
+		LogTarget m_activeLogTarget = LogTarget::All;
 		int m_lastExitCode = 0;
 		std::atomic<bool> m_completedSession{false};
 		std::atomic<bool> m_previewPaused{false};

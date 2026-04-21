@@ -113,6 +113,8 @@ namespace fplayer
 		bool streamIsRunning() const;
 		QString streamLastError() const;
 		QString streamRecentLog() const;
+		QString streamRecentPushLog() const;
+		QString streamRecentPullLog() const;
 		int streamLastExitCode() const;
 		QStringList streamAvailableVideoEncoders() const;
 		bool streamHasCompletedSession() const;

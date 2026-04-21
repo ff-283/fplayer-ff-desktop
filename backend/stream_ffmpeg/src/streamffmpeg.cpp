@@ -114,6 +114,8 @@ bool fplayer::StreamFFmpeg::startPush(const QString& inputUrl, const QString& ou
 		QMutexLocker locker(&m_mutex);
 		m_lastError.clear();
 		m_recentLog.clear();
+		m_recentPushLog.clear();
+		m_activeLogTarget = LogTarget::Push;
 		m_lastExitCode = 0;
 	}
 	m_stopRequest.store(false, std::memory_order_relaxed);
@@ -219,6 +221,8 @@ bool fplayer::StreamFFmpeg::startPull(const QString& inputUrl, const QString& ou
 		QMutexLocker locker(&m_mutex);
 		m_lastError.clear();
 		m_recentLog.clear();
+		m_recentPullLog.clear();
+		m_activeLogTarget = LogTarget::Pull;
 		m_lastExitCode = 0;
 	}
 	m_stopRequest.store(false, std::memory_order_relaxed);
@@ -286,6 +290,18 @@ QString fplayer::StreamFFmpeg::recentLog() const
 	return m_recentLog;
 }
 
+QString fplayer::StreamFFmpeg::recentPushLog() const
+{
+	QMutexLocker locker(&m_mutex);
+	return m_recentPushLog;
+}
+
+QString fplayer::StreamFFmpeg::recentPullLog() const
+{
+	QMutexLocker locker(&m_mutex);
+	return m_recentPullLog;
+}
+
 int fplayer::StreamFFmpeg::lastExitCode() const
 {
 	QMutexLocker locker(&m_mutex);
@@ -335,7 +351,16 @@ float fplayer::StreamFFmpeg::previewVolume() const
 void fplayer::StreamFFmpeg::appendLogLine(const QString& line)
 {
 	QMutexLocker locker(&m_mutex);
-	appendLimited(m_recentLog, line + QLatin1Char('\n'));
+	const QString withNewline = line + QLatin1Char('\n');
+	appendLimited(m_recentLog, withNewline);
+	if (m_activeLogTarget == LogTarget::Push)
+	{
+		appendLimited(m_recentPushLog, withNewline);
+	}
+	else if (m_activeLogTarget == LogTarget::Pull)
+	{
+		appendLimited(m_recentPullLog, withNewline);
+	}
 }
 
 void fplayer::StreamFFmpeg::setLastError(const QString& error)
