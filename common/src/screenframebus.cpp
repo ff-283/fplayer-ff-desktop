@@ -9,54 +9,85 @@ fplayer::ScreenFrameBus& fplayer::ScreenFrameBus::instance()
 }
 
 void fplayer::ScreenFrameBus::publish(const QByteArray& y, const QByteArray& u, const QByteArray& v, int width, int height,
-                                      int yStride, int uStride, int vStride)
+                                      int yStride, int uStride, int vStride, const QString& sourceId)
 {
 	QMutexLocker locker(&m_mutex);
-	m_frame.y = y;
-	m_frame.u = u;
-	m_frame.v = v;
-	m_frame.width = width;
-	m_frame.height = height;
-	m_frame.yStride = yStride;
-	m_frame.uStride = uStride;
-	m_frame.vStride = vStride;
-	m_frame.serial = ++m_serial;
-	m_frame.valid = true;
-	m_latestSerial.store(m_frame.serial, std::memory_order_release);
+	const QString sid = sourceId.trimmed().isEmpty() ? QStringLiteral("default") : sourceId.trimmed();
+	auto it = m_channels.find(sid);
+	if (it == m_channels.end())
+	{
+		it = m_channels.insert(sid, Channel{});
+	}
+	Channel& ch = it.value();
+	ch.frame.y = y;
+	ch.frame.u = u;
+	ch.frame.v = v;
+	ch.frame.width = width;
+	ch.frame.height = height;
+	ch.frame.yStride = yStride;
+	ch.frame.uStride = uStride;
+	ch.frame.vStride = vStride;
+	ch.frame.serial = ++ch.serial;
+	ch.frame.valid = true;
+	ch.latestSerial = ch.frame.serial;
 }
 
-fplayer::ScreenFrame fplayer::ScreenFrameBus::snapshot() const
+fplayer::ScreenFrame fplayer::ScreenFrameBus::snapshot(const QString& sourceId) const
 {
 	QMutexLocker locker(&m_mutex);
-	return m_frame;
+	const QString sid = sourceId.trimmed().isEmpty() ? QStringLiteral("default") : sourceId.trimmed();
+	const auto it = m_channels.constFind(sid);
+	return (it == m_channels.constEnd()) ? ScreenFrame{} : it.value().frame;
 }
 
-bool fplayer::ScreenFrameBus::snapshotIfNew(quint64 lastSerial, ScreenFrame& outFrame) const
+bool fplayer::ScreenFrameBus::snapshotIfNew(quint64 lastSerial, ScreenFrame& outFrame, const QString& sourceId) const
 {
-	const quint64 latest = m_latestSerial.load(std::memory_order_acquire);
+	QMutexLocker locker(&m_mutex);
+	const QString sid = sourceId.trimmed().isEmpty() ? QStringLiteral("default") : sourceId.trimmed();
+	const auto it = m_channels.constFind(sid);
+	if (it == m_channels.constEnd())
+	{
+		return false;
+	}
+	const Channel& ch = it.value();
+	const quint64 latest = ch.latestSerial;
 	if (latest <= lastSerial)
 	{
 		return false;
 	}
-	QMutexLocker locker(&m_mutex);
-	if (!m_frame.valid || m_frame.serial == lastSerial)
+	if (!ch.frame.valid || ch.frame.serial == lastSerial)
 	{
 		return false;
 	}
-	outFrame = m_frame;
+	outFrame = ch.frame;
 	return true;
 }
 
-void fplayer::ScreenFrameBus::setPublishTargetSize(int width, int height)
+void fplayer::ScreenFrameBus::setPublishTargetSize(int width, int height, const QString& sourceId)
 {
 	QMutexLocker locker(&m_mutex);
-	m_targetWidth = width > 0 ? width : 0;
-	m_targetHeight = height > 0 ? height : 0;
+	const QString sid = sourceId.trimmed().isEmpty() ? QStringLiteral("default") : sourceId.trimmed();
+	auto it = m_channels.find(sid);
+	if (it == m_channels.end())
+	{
+		it = m_channels.insert(sid, Channel{});
+	}
+	Channel& ch = it.value();
+	ch.targetWidth = width > 0 ? width : 0;
+	ch.targetHeight = height > 0 ? height : 0;
 }
 
-void fplayer::ScreenFrameBus::publishTargetSize(int& width, int& height) const
+void fplayer::ScreenFrameBus::publishTargetSize(int& width, int& height, const QString& sourceId) const
 {
 	QMutexLocker locker(&m_mutex);
-	width = m_targetWidth;
-	height = m_targetHeight;
+	const QString sid = sourceId.trimmed().isEmpty() ? QStringLiteral("default") : sourceId.trimmed();
+	const auto it = m_channels.constFind(sid);
+	if (it == m_channels.constEnd())
+	{
+		width = 0;
+		height = 0;
+		return;
+	}
+	width = it.value().targetWidth;
+	height = it.value().targetHeight;
 }

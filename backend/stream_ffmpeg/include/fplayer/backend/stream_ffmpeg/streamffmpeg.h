@@ -45,6 +45,8 @@ namespace fplayer
 		void pushCameraLoop(const QString& outputUrl, const QString& captureSpec);
 		/// 使用当前摄像头预览帧编码推流，避免设备二次占用。
 		void pushCameraPreviewLoop(const QString& outputUrl, const QString& captureSpec);
+		/// 组合场景：按布局合成预览帧后推流（最小可用版，先支持摄像头/屏幕）。
+		void pushComposeSceneLoop(const QString& outputUrl, const QString& sceneSpec);
 
 		bool startPushWorkerByRoute(const streamffmpeg_helpers::PushInputRoute& route, const QString& inputUrl, const QString& outputUrl);
 		bool startPullWorker(const QString& inputUrl, const QString& outputUrl);

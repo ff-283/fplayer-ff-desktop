@@ -9,6 +9,7 @@ extern "C"
 #include <libavutil/error.h>
 #include <libavutil/hwcontext.h>
 #include <libavutil/opt.h>
+#include <libavutil/time.h>
 #include <libswresample/swresample.h>
 #include <libswscale/swscale.h>
 }
@@ -27,6 +28,8 @@ extern "C"
 #include <cstring>
 #include <mutex>
 #include <vector>
+#include <QVector>
+#include <QRect>
 
 namespace
 {
@@ -121,6 +124,12 @@ bool fplayer::StreamFFmpeg::startPushWorkerByRoute(const PushInputRoute& route, 
 		{
 			m_worker = std::make_unique<std::thread>([this, outputUrl, route]() {
 				pushScreenLoop(outputUrl, route.spec);
+			});
+		}
+		else if (route.kind == PushInputKind::ComposeScene)
+		{
+			m_worker = std::make_unique<std::thread>([this, outputUrl, route]() {
+				pushComposeSceneLoop(outputUrl, route.spec);
 			});
 		}
 		else if (route.kind == PushInputKind::ScreenPreview)
@@ -458,6 +467,392 @@ cleanup:
 		av_packet_free(&pkt);
 	}
 
+	{
+		QMutexLocker locker(&m_mutex);
+		m_lastExitCode = exitCode;
+	}
+	m_completedSession.store(true, std::memory_order_relaxed);
+	m_running.store(false, std::memory_order_relaxed);
+}
+
+void fplayer::StreamFFmpeg::pushComposeSceneLoop(const QString& outputUrl, const QString& sceneSpec)
+{
+	struct ComposeItem
+	{
+		enum class Kind
+		{
+			Camera,
+			Screen,
+			File
+		};
+		Kind kind = Kind::Screen;
+		QString sourceId;
+		QRect rect;
+	};
+
+	const CaptureParams params = parseCaptureParams(sceneSpec);
+	const int targetFps = qMax(1, params.fps);
+	int sceneW = 0;
+	int sceneH = 0;
+	QVector<ComposeItem> items;
+	{
+		const QStringList parts = sceneSpec.split(';', Qt::SkipEmptyParts);
+		for (const QString& raw : parts)
+		{
+			const int eq = raw.indexOf('=');
+			if (eq <= 0)
+			{
+				continue;
+			}
+			const QString key = raw.left(eq).trimmed().toLower();
+			const QString value = raw.mid(eq + 1).trimmed();
+			if (key == QStringLiteral("scene_w"))
+			{
+				sceneW = value.toInt();
+				continue;
+			}
+			if (key == QStringLiteral("scene_h"))
+			{
+				sceneH = value.toInt();
+				continue;
+			}
+			if (!key.startsWith(QStringLiteral("src")))
+			{
+				continue;
+			}
+			const QStringList seg = value.split(',', Qt::SkipEmptyParts);
+			if (seg.size() < 5)
+			{
+				continue;
+			}
+			ComposeItem it;
+			const QString k = seg.at(0).trimmed().toLower();
+			if (k == QStringLiteral("camera"))
+			{
+				it.kind = ComposeItem::Kind::Camera;
+			}
+			else if (k == QStringLiteral("file"))
+			{
+				it.kind = ComposeItem::Kind::File;
+			}
+			else
+			{
+				it.kind = ComposeItem::Kind::Screen;
+			}
+			if (seg.size() >= 6)
+			{
+				it.sourceId = seg.at(1).trimmed();
+				it.rect = QRect(seg.at(2).toInt(), seg.at(3).toInt(), qMax(1, seg.at(4).toInt()), qMax(1, seg.at(5).toInt()));
+			}
+			else
+			{
+				it.sourceId = QStringLiteral("default");
+				it.rect = QRect(seg.at(1).toInt(), seg.at(2).toInt(), qMax(1, seg.at(3).toInt()), qMax(1, seg.at(4).toInt()));
+			}
+			if (it.sourceId.isEmpty())
+			{
+				it.sourceId = QStringLiteral("default");
+			}
+			items.push_back(it);
+		}
+	}
+
+	int outW = params.outWidth > 0 ? params.outWidth : sceneW;
+	int outH = params.outHeight > 0 ? params.outHeight : sceneH;
+	if (outW <= 0 || outH <= 0)
+	{
+		outW = 1280;
+		outH = 720;
+	}
+	outW = qMax(2, outW) & ~1;
+	outH = qMax(2, outH) & ~1;
+	if (sceneW <= 0 || sceneH <= 0)
+	{
+		sceneW = outW;
+		sceneH = outH;
+	}
+	if (items.isEmpty())
+	{
+		setLastError(QStringLiteral("组合场景为空"));
+		m_running.store(false, std::memory_order_relaxed);
+		return;
+	}
+
+	AVFormatContext* ofmt = nullptr;
+	AVCodecContext* encCtx = nullptr;
+	AVPacket* outPkt = av_packet_alloc();
+	AVFrame* encFrame = av_frame_alloc();
+	int exitCode = 0;
+	int ret = 0;
+	bool wroteHeader = false;
+	int64_t pts = 0;
+	int64_t frameIntervalUs = qMax<int64_t>(1000, 1000000LL / targetFps);
+	int64_t startUs = 0;
+	int64_t nextFrameUs = 0;
+	QByteArray outUtf8;
+	const char* outPath = nullptr;
+	auto drawPlaneNearest = [](uint8_t* dst, const int dstStride, const int dstW, const int dstH,
+	                           const QByteArray& srcPlane, const int srcStride, const int srcW, const int srcH) {
+		if (!dst || srcPlane.isEmpty() || dstW <= 0 || dstH <= 0 || srcW <= 0 || srcH <= 0 || srcStride <= 0)
+		{
+			return;
+		}
+		const auto* src = reinterpret_cast<const uint8_t*>(srcPlane.constData());
+		for (int y = 0; y < dstH; ++y)
+		{
+			const int sy = qBound(0, (y * srcH) / qMax(1, dstH), srcH - 1);
+			uint8_t* d = dst + y * dstStride;
+			const uint8_t* s = src + sy * srcStride;
+			for (int x = 0; x < dstW; ++x)
+			{
+				const int sx = qBound(0, (x * srcW) / qMax(1, dstW), srcW - 1);
+				d[x] = s[sx];
+			}
+		}
+	};
+	if (!outPkt || !encFrame)
+	{
+		exitCode = AVERROR(ENOMEM);
+		setLastError(QStringLiteral("组合推流资源分配失败"));
+		goto cleanup;
+	}
+
+	outUtf8 = outputUrl.toUtf8();
+	outPath = outUtf8.constData();
+	ret = avformat_alloc_output_context2(&ofmt, nullptr, "flv", outPath);
+	if (ret < 0 || !ofmt)
+	{
+		exitCode = ret < 0 ? ret : AVERROR_UNKNOWN;
+		setLastError(QStringLiteral("组合推流创建输出上下文失败"));
+		goto cleanup;
+	}
+	ofmt->interrupt_callback.callback = &StreamFFmpeg::interruptCallback;
+	ofmt->interrupt_callback.opaque = &m_stopRequest;
+
+	{
+		// 组合推流先稳定优先：固定 CPU 编码，避免部分驱动/硬编路径在场景合成下触发异常崩溃。
+		const QList<VideoEncoderChoice> candidates = pickVideoEncoderCandidates(QStringLiteral("cpu"));
+		const AVCodec* enc = nullptr;
+		QString lastOpenError;
+		for (const auto& c : candidates)
+		{
+			if (!c.codec)
+			{
+				continue;
+			}
+			if (encCtx)
+			{
+				avcodec_free_context(&encCtx);
+			}
+			encCtx = avcodec_alloc_context3(c.codec);
+			if (!encCtx)
+			{
+				continue;
+			}
+			encCtx->width = outW;
+			encCtx->height = outH;
+			encCtx->pix_fmt = pickEncoderPixelFormat(c.codec, c.isHardware);
+			encCtx->time_base = AVRational{1, targetFps};
+			encCtx->framerate = AVRational{targetFps, 1};
+			encCtx->gop_size = targetFps * 2;
+			encCtx->max_b_frames = 0;
+			const int bitrateKbps = params.bitrateKbps > 0 ? params.bitrateKbps : estimateBitrateKbps(outW, outH, targetFps);
+			encCtx->bit_rate = static_cast<int64_t>(bitrateKbps) * 1000;
+			encCtx->rc_max_rate = encCtx->bit_rate;
+			encCtx->rc_buffer_size = encCtx->bit_rate * 2;
+			if (ofmt->oformat->flags & AVFMT_GLOBALHEADER)
+			{
+				encCtx->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
+			}
+			if (c.codec->id == AV_CODEC_ID_H264 && encCtx->priv_data)
+			{
+				av_opt_set(encCtx->priv_data, "preset", "superfast", 0);
+				av_opt_set(encCtx->priv_data, "tune", "zerolatency", 0);
+			}
+			ret = avcodec_open2(encCtx, c.codec, nullptr);
+			if (ret >= 0)
+			{
+				enc = c.codec;
+				break;
+			}
+			char errbuf[AV_ERROR_MAX_STRING_SIZE];
+			av_strerror(ret, errbuf, sizeof(errbuf));
+			lastOpenError = QString::fromUtf8(errbuf);
+		}
+		if (!enc)
+		{
+			exitCode = ret < 0 ? ret : AVERROR_ENCODER_NOT_FOUND;
+			setLastError(QStringLiteral("组合推流打开编码器失败: %1").arg(lastOpenError));
+			goto cleanup;
+		}
+		AVStream* outStream = avformat_new_stream(ofmt, nullptr);
+		if (!outStream)
+		{
+			exitCode = AVERROR(ENOMEM);
+			setLastError(QStringLiteral("组合推流创建输出流失败"));
+			goto cleanup;
+		}
+		outStream->time_base = encCtx->time_base;
+		avcodec_parameters_from_context(outStream->codecpar, encCtx);
+	}
+
+	if (!(ofmt->oformat->flags & AVFMT_NOFILE))
+	{
+	ret = avio_open2(&ofmt->pb, outPath, AVIO_FLAG_WRITE, nullptr, nullptr);
+		if (ret < 0)
+		{
+			exitCode = ret;
+			setLastError(QStringLiteral("组合推流打开输出失败"));
+			goto cleanup;
+		}
+	}
+	ret = avformat_write_header(ofmt, nullptr);
+	if (ret < 0)
+	{
+		exitCode = ret;
+		setLastError(QStringLiteral("组合推流写输出头失败"));
+		goto cleanup;
+	}
+	wroteHeader = true;
+
+	encFrame->format = encCtx->pix_fmt;
+	encFrame->width = encCtx->width;
+	encFrame->height = encCtx->height;
+	ret = av_frame_get_buffer(encFrame, 32);
+	if (ret < 0)
+	{
+		exitCode = ret;
+		setLastError(QStringLiteral("组合推流分配编码帧失败"));
+		goto cleanup;
+	}
+	appendLogLine(QStringLiteral("[组合推流] 场景=%1x%2 输出=%3x%4 源数量=%5").arg(sceneW).arg(sceneH).arg(outW).arg(outH).arg(items.size()));
+	if (!params.audioOutputSource.trimmed().isEmpty() && params.audioOutputSource.trimmed() != QStringLiteral("off"))
+	{
+		appendLogLine(QStringLiteral("[组合推流] 当前版本暂未启用组合音频混音，输出将为无声视频。"));
+	}
+
+	startUs = av_gettime_relative();
+	nextFrameUs = startUs;
+	while (!m_stopRequest.load(std::memory_order_relaxed))
+	{
+		const int64_t nowUs = av_gettime_relative();
+		if (nowUs < nextFrameUs)
+		{
+			av_usleep(static_cast<unsigned>(nextFrameUs - nowUs));
+		}
+		av_frame_make_writable(encFrame);
+		for (int y = 0; y < encCtx->height; ++y)
+		{
+			memset(encFrame->data[0] + y * encFrame->linesize[0], 16, encCtx->width);
+		}
+		for (int y = 0; y < encCtx->height / 2; ++y)
+		{
+			memset(encFrame->data[1] + y * encFrame->linesize[1], 128, encCtx->width / 2);
+			memset(encFrame->data[2] + y * encFrame->linesize[2], 128, encCtx->width / 2);
+		}
+
+		for (const ComposeItem& it : items)
+		{
+			int dx = it.rect.x() * outW / qMax(1, sceneW);
+			int dy = it.rect.y() * outH / qMax(1, sceneH);
+			int dw = qMax(2, it.rect.width() * outW / qMax(1, sceneW)) & ~1;
+			int dh = qMax(2, it.rect.height() * outH / qMax(1, sceneH)) & ~1;
+			if (dx < 0 || dy < 0 || dx + dw > outW || dy + dh > outH)
+			{
+				dx = qBound(0, dx, qMax(0, outW - 2));
+				dy = qBound(0, dy, qMax(0, outH - 2));
+				dw = qMin(dw, outW - dx) & ~1;
+				dh = qMin(dh, outH - dy) & ~1;
+			}
+			if (dw <= 0 || dh <= 0)
+			{
+				continue;
+			}
+			if (it.kind == ComposeItem::Kind::Camera)
+			{
+				const auto cam = fplayer::CameraFrameBus::instance().snapshot();
+				if (!cam.valid || cam.width <= 0 || cam.height <= 0)
+				{
+					continue;
+				}
+				drawPlaneNearest(encFrame->data[0] + dy * encFrame->linesize[0] + dx, encFrame->linesize[0], dw, dh,
+				                 cam.y, cam.yStride, cam.width, cam.height);
+				drawPlaneNearest(encFrame->data[1] + (dy / 2) * encFrame->linesize[1] + dx / 2, encFrame->linesize[1], dw / 2, dh / 2,
+				                 cam.u, cam.uStride, cam.width / 2, cam.height / 2);
+				drawPlaneNearest(encFrame->data[2] + (dy / 2) * encFrame->linesize[2] + dx / 2, encFrame->linesize[2], dw / 2, dh / 2,
+				                 cam.v, cam.vStride, cam.width / 2, cam.height / 2);
+				continue;
+			}
+			if (it.kind == ComposeItem::Kind::Screen)
+			{
+				const auto scr = fplayer::ScreenFrameBus::instance().snapshot(it.sourceId);
+				if (!scr.valid || scr.width <= 0 || scr.height <= 0)
+				{
+					continue;
+				}
+				drawPlaneNearest(encFrame->data[0] + dy * encFrame->linesize[0] + dx, encFrame->linesize[0], dw, dh,
+				                 scr.y, scr.yStride, scr.width, scr.height);
+				drawPlaneNearest(encFrame->data[1] + (dy / 2) * encFrame->linesize[1] + dx / 2, encFrame->linesize[1], dw / 2, dh / 2,
+				                 scr.u, scr.uStride, scr.width / 2, scr.height / 2);
+				drawPlaneNearest(encFrame->data[2] + (dy / 2) * encFrame->linesize[2] + dx / 2, encFrame->linesize[2], dw / 2, dh / 2,
+				                 scr.v, scr.vStride, scr.width / 2, scr.height / 2);
+			}
+		}
+
+		encFrame->pts = av_rescale_q(nextFrameUs - startUs, AVRational{1, 1000000}, encCtx->time_base);
+		ret = avcodec_send_frame(encCtx, encFrame);
+		if (ret >= 0)
+		{
+			while (avcodec_receive_packet(encCtx, outPkt) == 0)
+			{
+				av_packet_rescale_ts(outPkt, encCtx->time_base, ofmt->streams[0]->time_base);
+				outPkt->stream_index = 0;
+				av_interleaved_write_frame(ofmt, outPkt);
+				av_packet_unref(outPkt);
+			}
+		}
+		++pts;
+		nextFrameUs += frameIntervalUs;
+		if (nextFrameUs < av_gettime_relative() - frameIntervalUs * 3)
+		{
+			nextFrameUs = av_gettime_relative();
+		}
+	}
+
+	avcodec_send_frame(encCtx, nullptr);
+	while (avcodec_receive_packet(encCtx, outPkt) == 0)
+	{
+		av_packet_rescale_ts(outPkt, encCtx->time_base, ofmt->streams[0]->time_base);
+		outPkt->stream_index = 0;
+		av_interleaved_write_frame(ofmt, outPkt);
+		av_packet_unref(outPkt);
+	}
+	if (wroteHeader)
+	{
+		av_write_trailer(ofmt);
+	}
+
+cleanup:
+	if (encFrame)
+	{
+		av_frame_free(&encFrame);
+	}
+	if (outPkt)
+	{
+		av_packet_free(&outPkt);
+	}
+	if (encCtx)
+	{
+		avcodec_free_context(&encCtx);
+	}
+	if (ofmt)
+	{
+		if (!(ofmt->oformat->flags & AVFMT_NOFILE) && ofmt->pb)
+		{
+			avio_closep(&ofmt->pb);
+		}
+		avformat_free_context(ofmt);
+	}
 	{
 		QMutexLocker locker(&m_mutex);
 		m_lastExitCode = exitCode;

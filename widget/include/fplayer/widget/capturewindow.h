@@ -13,6 +13,7 @@
 #include <QHash>
 #include <QSet>
 #include <QStringList>
+#include <QList>
 #include <fplayer/widget/export.h>
 #include <fplayer/api/media/mediabackendtype.h>
 
@@ -32,6 +33,18 @@ class QComboBox;
 class QMenuBar;
 class QToolButton;
 class QResizeEvent;
+class QSplitter;
+class QMdiArea;
+class QWidget;
+class QListWidget;
+class QPushButton;
+class QMdiSubWindow;
+class QPoint;
+class QRect;
+namespace fplayer
+{
+	class FVideoView;
+}
 QT_BEGIN_NAMESPACE
 
 namespace Ui
@@ -83,7 +96,33 @@ private:
 	void stopScreenCapture();
 	int preferredFpsForScreen(int screenIndex) const;
 	void updateCaptureCursorCheckToolTip();
+	void ensureComposeWorkspace();
+	void setComposeMode(bool enabled);
+	void clearComposeSources();
+	void addComposeFileSource();
+	void addComposeCameraSource();
+	void addComposeScreenSource();
+	void removeComposeSourceAt(int index);
+	void refreshComposeSourceListSelection();
+	void refreshComposeSourceListItems();
+	void updateComposeSelectionHighlight();
+	void bringComposeSourceToFront(int index);
+	void sendComposeSourceToBack(int index);
+	void moveComposeSourceUp(int index);
+	void moveComposeSourceDown(int index);
+	void setComposeCropMode(int index, bool enabled);
+	void requestComposeSourceContextMenu(const QPoint& globalPos, int index);
+	void syncComposeControlPanel();
+	void refreshComposeScreenCaptureState(int activeScreenSourceIndex);
+	void applyComposeZOrder();
+	void applyComposeAspectRatio();
+	void resizeWindowForComposeAspect();
+	void remapComposeSourcesToViewport(const QRect& oldBounds, const QRect& newBounds);
+	void forceRefreshComposePreview();
+	bool buildComposeScreenCaptureSpec(QString& spec, int fps, int outW, int outH, int bitrateKbps, const QString& encoder,
+	                                   const QString& audioIn, const QString& audioOut) const;
 	bool m_isFileMode = false;
+	bool m_isComposeMode = false;
 	CaptureMode m_captureMode = CaptureMode::Camera;
 	fplayer::MediaBackendType m_cameraBackendType = fplayer::MediaBackendType::Qt6;
 	QMenuBar* m_modeMenuBar = nullptr;
@@ -107,6 +146,42 @@ private:
 	QStringList m_recentPullInputs;
 	QStringList m_recentPullOutputs;
 	fplayer::MediaBackendType m_screenBackendType = fplayer::MediaBackendType::Qt6;
+	QSplitter* m_composeSplitter = nullptr;
+	QMdiArea* m_composeMdiArea = nullptr;
+	QWidget* m_composePreviewHost = nullptr;
+	QListWidget* m_composeSourceList = nullptr;
+	QComboBox* m_composeAspectCombo = nullptr;
+	QPushButton* m_btnComposeAddFile = nullptr;
+	QPushButton* m_btnComposeAddCamera = nullptr;
+	QPushButton* m_btnComposeAddScreen = nullptr;
+	int m_composeAspectW = 16;
+	int m_composeAspectH = 9;
+	bool m_adjustingComposeWindowSize = false;
+	QTimer* m_composeZOrderGuardTimer = nullptr;
+	struct ComposeSourceItem
+	{
+		enum class SourceKind
+		{
+			File,
+			Camera,
+			Screen
+		};
+		SourceKind kind = SourceKind::File;
+		fplayer::Service* service = nullptr;
+		QWidget* container = nullptr;
+		fplayer::FVideoView* view = nullptr;
+		QMdiSubWindow* subWindow = nullptr;
+		QString title;
+		QString sourceId;
+		bool cropMode = false;
+		bool keepAspectResize = false;
+		int deviceIndex = 0;
+		int formatIndex = 0;
+		int screenFps = 30;
+		bool screenCaptureCursor = false;
+	};
+	QList<ComposeSourceItem> m_composeSources;
+	int m_composeSelectedIndex = -1;
 };
 
 

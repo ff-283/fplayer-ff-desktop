@@ -95,6 +95,8 @@ namespace fplayer
 		bool screenSetFrameRate(int fps);
 		int screenFrameRate() const;
 		bool screenCanControlFrameRate() const;
+		void screenSetFrameBusSourceId(const QString& sourceId);
+		QString screenFrameBusSourceId() const;
 		MediaBackendType screenBackendType() const;
 		bool streamStartPush(const QString& inputUrl, const QString& outputUrl);
 		bool streamStartPushByScene(PushScene scene, const QString& outputUrl, const QString& sceneInput = QString());

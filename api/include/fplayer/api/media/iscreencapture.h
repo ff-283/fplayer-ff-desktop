@@ -43,6 +43,8 @@ namespace fplayer
 		virtual bool setFrameRate(int fps) = 0;
 		virtual int frameRate() const = 0;
 		virtual bool canControlFrameRate() const = 0;
+		virtual void setFrameBusSourceId(const QString& sourceId);
+		virtual QString frameBusSourceId() const;
 
 		MediaBackendType backendType() const;
 
@@ -50,6 +52,7 @@ namespace fplayer
 		MediaBackendType m_backendType = MediaBackendType::Qt6;
 		int m_screenIndex = 0;
 		int m_fps = 30;
+		QString m_frameBusSourceId = QStringLiteral("default");
 	};
 }
 

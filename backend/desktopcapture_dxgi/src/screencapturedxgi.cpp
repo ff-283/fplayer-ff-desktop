@@ -730,7 +730,7 @@ bool fplayer::ScreenCaptureDxgi::captureOneFrame()
 	// 推流链路按目标尺寸独立缩放并发布到总线。
 	int targetW = 0;
 	int targetH = 0;
-	fplayer::ScreenFrameBus::instance().publishTargetSize(targetW, targetH);
+	fplayer::ScreenFrameBus::instance().publishTargetSize(targetW, targetH, m_frameBusSourceId);
 	const bool pushRequested = (targetW > 0 && targetH > 0);
 	if (targetW <= 0 || targetH <= 0)
 	{
@@ -744,7 +744,7 @@ bool fplayer::ScreenCaptureDxgi::captureOneFrame()
 	if (!pushRequested)
 	{
 		fplayer::ScreenFrameBus::instance().publish(m_previewY, m_previewU, m_previewV, previewW, previewH, previewStride[0], previewStride[1],
-		                                            previewStride[2]);
+		                                            previewStride[2], m_frameBusSourceId);
 		return true;
 	}
 
@@ -752,7 +752,7 @@ bool fplayer::ScreenCaptureDxgi::captureOneFrame()
 	if (targetW == previewW && targetH == previewH)
 	{
 		fplayer::ScreenFrameBus::instance().publish(m_previewY, m_previewU, m_previewV, previewW, previewH, previewStride[0], previewStride[1],
-		                                            previewStride[2]);
+		                                            previewStride[2], m_frameBusSourceId);
 		return true;
 	}
 
@@ -795,7 +795,8 @@ bool fplayer::ScreenCaptureDxgi::captureOneFrame()
 	};
 	int pushStride[4] = {pushYStride, pushUStride, pushVStride, 0};
 	sws_scale(swsPush, srcSlice, srcStrideArr, 0, th, pushYuv, pushStride);
-	fplayer::ScreenFrameBus::instance().publish(m_pushY, m_pushU, m_pushV, targetW, targetH, pushStride[0], pushStride[1], pushStride[2]);
+	fplayer::ScreenFrameBus::instance().publish(m_pushY, m_pushU, m_pushV, targetW, targetH, pushStride[0], pushStride[1], pushStride[2],
+	                                            m_frameBusSourceId);
 	return true;
 }
 

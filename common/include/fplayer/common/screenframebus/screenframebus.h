@@ -3,6 +3,7 @@
 
 #include <atomic>
 #include <QByteArray>
+#include <QHash>
 #include <QMutex>
 #include <fplayer/common/export.h>
 
@@ -28,23 +29,27 @@ namespace fplayer
 		static ScreenFrameBus& instance();
 
 		void publish(const QByteArray& y, const QByteArray& u, const QByteArray& v, int width, int height,
-		             int yStride, int uStride, int vStride);
+		             int yStride, int uStride, int vStride, const QString& sourceId = QStringLiteral("default"));
 
-		ScreenFrame snapshot() const;
-		bool snapshotIfNew(quint64 lastSerial, ScreenFrame& outFrame) const;
-		void setPublishTargetSize(int width, int height);
-		void publishTargetSize(int& width, int& height) const;
+		ScreenFrame snapshot(const QString& sourceId = QStringLiteral("default")) const;
+		bool snapshotIfNew(quint64 lastSerial, ScreenFrame& outFrame, const QString& sourceId = QStringLiteral("default")) const;
+		void setPublishTargetSize(int width, int height, const QString& sourceId = QStringLiteral("default"));
+		void publishTargetSize(int& width, int& height, const QString& sourceId = QStringLiteral("default")) const;
 
 	private:
 		ScreenFrameBus() = default;
 
 	private:
 		mutable QMutex m_mutex;
-		ScreenFrame m_frame;
-		quint64 m_serial = 0;
-		std::atomic<quint64> m_latestSerial{0};
-		int m_targetWidth = 0;
-		int m_targetHeight = 0;
+		struct Channel
+		{
+			ScreenFrame frame;
+			quint64 serial = 0;
+			quint64 latestSerial = 0;
+			int targetWidth = 0;
+			int targetHeight = 0;
+		};
+		mutable QHash<QString, Channel> m_channels;
 	};
 }
 

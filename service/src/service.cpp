@@ -313,6 +313,19 @@ bool fplayer::Service::screenCanControlFrameRate() const
 	return m_screenCapture && m_screenCapture->canControlFrameRate();
 }
 
+void fplayer::Service::screenSetFrameBusSourceId(const QString& sourceId)
+{
+	if (m_screenCapture)
+	{
+		m_screenCapture->setFrameBusSourceId(sourceId);
+	}
+}
+
+QString fplayer::Service::screenFrameBusSourceId() const
+{
+	return m_screenCapture ? m_screenCapture->frameBusSourceId() : QStringLiteral("default");
+}
+
 fplayer::MediaBackendType fplayer::Service::screenBackendType() const
 {
 	return m_screenCapture ? m_screenCapture->backendType() : MediaBackendType::Qt6;

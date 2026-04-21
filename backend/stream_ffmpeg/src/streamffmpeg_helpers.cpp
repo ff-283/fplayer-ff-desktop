@@ -49,6 +49,7 @@ namespace fplayer::streamffmpeg_helpers
 
 	PushInputRoute parsePushInputRoute(const QString& inputUrl)
 	{
+		const QString composePrefix = QStringLiteral("__compose_scene__:");
 		const QString screenPrefix = QStringLiteral("__screen_capture__:");
 		const QString screenPreviewPrefix = QStringLiteral("__screen_preview__:");
 		const QString cameraPrefix = QStringLiteral("__camera_capture__:");
@@ -56,6 +57,12 @@ namespace fplayer::streamffmpeg_helpers
 		const QString fileTranscodePrefix = QStringLiteral("__file_transcode__:");
 
 		PushInputRoute route;
+		if (inputUrl.startsWith(composePrefix))
+		{
+			route.kind = PushInputKind::ComposeScene;
+			route.spec = inputUrl.mid(composePrefix.size()).trimmed();
+			return route;
+		}
 		if ((inputUrl == QStringLiteral("__screen_capture__")) || inputUrl.startsWith(screenPrefix))
 		{
 			route.kind = PushInputKind::ScreenCapture;
@@ -95,6 +102,8 @@ namespace fplayer::streamffmpeg_helpers
 	{
 		switch (kind)
 		{
+		case PushInputKind::ComposeScene:
+			return QStringLiteral("[推流] 已启动（组合场景推流）");
 		case PushInputKind::ScreenCapture:
 			return QStringLiteral("[推流] 已启动（桌面采集直推）");
 		case PushInputKind::ScreenPreview:

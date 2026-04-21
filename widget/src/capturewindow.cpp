@@ -43,6 +43,27 @@
 #include <QSpinBox>
 #include <QRegularExpression>
 #include <QStandardItemModel>
+#include <QSplitter>
+#include <QMdiArea>
+#include <QMdiSubWindow>
+#include <QListWidget>
+#include <QFrame>
+#include <QAction>
+#include <QContextMenuEvent>
+#include <QHBoxLayout>
+#include <QMouseEvent>
+#include <QPainter>
+#include <QEvent>
+#include <QRubberBand>
+#include <QToolTip>
+#include <QWindow>
+#include <QPropertyAnimation>
+#include <QEasingCurve>
+#include <QUuid>
+#include <QApplication>
+#include <functional>
+#include <algorithm>
+#include <iterator>
 #if defined(_WIN32)
 #define NOMINMAX
 #include <windows.h>
@@ -51,6 +72,660 @@
 
 namespace
 {
+class AspectRatioHostWidget final : public QWidget
+{
+public:
+	explicit AspectRatioHostWidget(QWidget* parent = nullptr) : QWidget(parent)
+	{
+		setAttribute(Qt::WA_StyledBackground, true);
+		setStyleSheet(QStringLiteral("background:#262626;border:1px solid #3a3a3a;"));
+	}
+
+	void setAspectRatio(const int w, const int h)
+	{
+		if (w <= 0 || h <= 0)
+		{
+			return;
+		}
+		m_aspectW = w;
+		m_aspectH = h;
+		updateContentGeometry();
+	}
+
+	void attachContent(QWidget* content)
+	{
+		m_content = content;
+		if (m_content)
+		{
+			m_content->setParent(this);
+			m_content->show();
+		}
+		updateContentGeometry();
+	}
+
+protected:
+	void resizeEvent(QResizeEvent* event) override
+	{
+		QWidget::resizeEvent(event);
+		updateContentGeometry();
+	}
+
+private:
+	void updateContentGeometry()
+	{
+		if (!m_content || m_aspectW <= 0 || m_aspectH <= 0)
+		{
+			return;
+		}
+		const QRect r = rect();
+		if (r.width() <= 0 || r.height() <= 0)
+		{
+			return;
+		}
+		const double ratio = static_cast<double>(m_aspectW) / static_cast<double>(m_aspectH);
+		int cw = r.width();
+		int ch = static_cast<int>(cw / ratio);
+		if (ch > r.height())
+		{
+			ch = r.height();
+			cw = static_cast<int>(ch * ratio);
+		}
+		const int x = (r.width() - cw) / 2;
+		const int y = (r.height() - ch) / 2;
+		m_content->setGeometry(x, y, qMax(1, cw), qMax(1, ch));
+	}
+
+	int m_aspectW = 16;
+	int m_aspectH = 9;
+	QWidget* m_content = nullptr;
+};
+
+class ComposeSourceWidget final : public QWidget
+{
+public:
+	enum class DragMode
+	{
+		None,
+		Move,
+		ResizeLeft,
+		ResizeRight,
+		ResizeTop,
+		ResizeBottom,
+		ResizeTopLeft,
+		ResizeTopRight,
+		ResizeBottomLeft,
+		ResizeBottomRight
+	};
+
+	explicit ComposeSourceWidget(QWidget* parent = nullptr) : QWidget(parent)
+	{
+		setMouseTracking(true);
+		setAttribute(Qt::WA_StyledBackground, true);
+		setStyleSheet(QStringLiteral("background:#101010;border:1px solid #6f6f6f;"));
+		auto* layout = new QHBoxLayout(this);
+		layout->setContentsMargins(2, 2, 2, 2);
+		layout->setSpacing(0);
+	}
+
+	void setInnerView(fplayer::FVideoView* view)
+	{
+		m_view = view;
+		if (!layout() || !view)
+		{
+			return;
+		}
+		view->installEventFilter(this);
+		layout()->addWidget(view);
+	}
+
+	void setSelected(const bool selected)
+	{
+		if (m_selected == selected)
+		{
+			return;
+		}
+		m_selected = selected;
+		applyVisualStyle();
+		update();
+	}
+
+	void setCropMode(const bool enabled)
+	{
+		if (m_cropMode == enabled)
+		{
+			return;
+		}
+		m_cropMode = enabled;
+		applyVisualStyle();
+		updateCursorForPosition(mapFromGlobal(QCursor::pos()));
+		update();
+	}
+
+	void setAspectResizeEnabled(const bool enabled)
+	{
+		m_aspectResizeEnabled = enabled;
+	}
+
+	bool isDragging() const
+	{
+		return m_dragInProgress;
+	}
+
+	std::function<void()> onSelected;
+	std::function<void(const QPoint&)> onContextMenu;
+	std::function<void()> onCropFinished;
+	std::function<void()> onDragFinished;
+
+protected:
+	void paintEvent(QPaintEvent* event) override
+	{
+		QWidget::paintEvent(event);
+		QPainter p(this);
+		const QColor border = m_cropMode ? QColor(255, 170, 0) : (m_selected ? QColor(0, 170, 255) : QColor(110, 110, 110));
+		const int w = m_selected || m_cropMode ? 2 : 1;
+		p.setPen(QPen(border, w));
+		p.setBrush(Qt::NoBrush);
+		p.drawRect(rect().adjusted(0, 0, -1, -1));
+	}
+
+	void contextMenuEvent(QContextMenuEvent* event) override
+	{
+		if (onContextMenu)
+		{
+			onContextMenu(event->globalPos());
+		}
+		event->accept();
+	}
+
+	void mousePressEvent(QMouseEvent* event) override
+	{
+		if (event->button() != Qt::LeftButton)
+		{
+			QWidget::mousePressEvent(event);
+			return;
+		}
+		if (onSelected)
+		{
+			onSelected();
+		}
+		m_dragMode = detectDragMode(event->pos());
+		m_dragInProgress = (m_dragMode != DragMode::None);
+		m_dragOriginGlobal = event->globalPosition().toPoint();
+		m_originGeometry = currentSubWindowGeometry();
+		m_previewGeometry = m_originGeometry;
+		m_dragChanged = false;
+		if (m_dragMode != DragMode::None)
+		{
+			if (auto* sub = subWindow())
+			{
+				if (!m_dragRubberBand)
+				{
+					m_dragRubberBand = new QRubberBand(QRubberBand::Rectangle, sub->parentWidget());
+				}
+				if (!m_vGuideBand)
+				{
+					m_vGuideBand = new QRubberBand(QRubberBand::Rectangle, sub->parentWidget());
+				}
+				if (!m_hGuideBand)
+				{
+					m_hGuideBand = new QRubberBand(QRubberBand::Rectangle, sub->parentWidget());
+				}
+				m_vGuideBand->hide();
+				m_hGuideBand->hide();
+				m_dragRubberBand->setGeometry(sub->geometry());
+				m_dragRubberBand->show();
+			}
+		}
+		event->accept();
+	}
+
+	void mouseMoveEvent(QMouseEvent* event) override
+	{
+		updateCursorForPosition(event->pos());
+		if (!(event->buttons() & Qt::LeftButton) || m_dragMode == DragMode::None)
+		{
+			QWidget::mouseMoveEvent(event);
+			return;
+		}
+		const QPoint delta = event->globalPosition().toPoint() - m_dragOriginGlobal;
+		QRect g = m_originGeometry;
+		const int minW = 120;
+		const int minH = 90;
+		auto applyResize = [&](const bool left, const bool right, const bool top, const bool bottom) {
+			if (left)
+			{
+				g.setLeft(g.left() + delta.x());
+				if (g.width() < minW)
+				{
+					g.setLeft(g.right() - minW + 1);
+				}
+			}
+			if (right)
+			{
+				g.setRight(g.right() + delta.x());
+				if (g.width() < minW)
+				{
+					g.setRight(g.left() + minW - 1);
+				}
+			}
+			if (top)
+			{
+				g.setTop(g.top() + delta.y());
+				if (g.height() < minH)
+				{
+					g.setTop(g.bottom() - minH + 1);
+				}
+			}
+			if (bottom)
+			{
+				g.setBottom(g.bottom() + delta.y());
+				if (g.height() < minH)
+				{
+					g.setBottom(g.top() + minH - 1);
+				}
+			}
+		};
+		switch (m_dragMode)
+		{
+		case DragMode::Move:
+			g.moveTopLeft(m_originGeometry.topLeft() + delta);
+			break;
+		case DragMode::ResizeLeft:
+			applyResize(true, false, false, false);
+			break;
+		case DragMode::ResizeRight:
+			applyResize(false, true, false, false);
+			break;
+		case DragMode::ResizeTop:
+			applyResize(false, false, true, false);
+			break;
+		case DragMode::ResizeBottom:
+			applyResize(false, false, false, true);
+			break;
+		case DragMode::ResizeTopLeft:
+			applyResize(true, false, true, false);
+			break;
+		case DragMode::ResizeTopRight:
+			applyResize(false, true, true, false);
+			break;
+		case DragMode::ResizeBottomLeft:
+			applyResize(true, false, false, true);
+			break;
+		case DragMode::ResizeBottomRight:
+			applyResize(false, true, false, true);
+			break;
+		case DragMode::None:
+			break;
+		}
+		if (m_aspectResizeEnabled && m_dragMode != DragMode::Move && m_dragMode != DragMode::None)
+		{
+			const double ratio = m_originGeometry.height() > 0
+				                     ? static_cast<double>(m_originGeometry.width()) / static_cast<double>(m_originGeometry.height())
+				                     : 1.0;
+			const QPoint anchor = [&]() -> QPoint {
+				switch (m_dragMode)
+				{
+				case DragMode::ResizeLeft:
+				case DragMode::ResizeTopLeft:
+				case DragMode::ResizeBottomLeft:
+					return QPoint(m_originGeometry.right(), m_originGeometry.center().y());
+				case DragMode::ResizeRight:
+				case DragMode::ResizeTopRight:
+				case DragMode::ResizeBottomRight:
+					return QPoint(m_originGeometry.left(), m_originGeometry.center().y());
+				case DragMode::ResizeTop:
+					return QPoint(m_originGeometry.center().x(), m_originGeometry.bottom());
+				case DragMode::ResizeBottom:
+					return QPoint(m_originGeometry.center().x(), m_originGeometry.top());
+				default:
+					return m_originGeometry.center();
+				}
+			}();
+			int newW = qMax(minW, g.width());
+			int newH = qMax(minH, static_cast<int>(newW / ratio));
+			if (newH < minH)
+			{
+				newH = minH;
+				newW = qMax(minW, static_cast<int>(newH * ratio));
+			}
+			QRect ar(QPoint(0, 0), QSize(newW, newH));
+			if (m_dragMode == DragMode::ResizeLeft || m_dragMode == DragMode::ResizeTopLeft || m_dragMode == DragMode::ResizeBottomLeft)
+			{
+				ar.moveRight(anchor.x());
+			}
+			else if (m_dragMode == DragMode::ResizeRight || m_dragMode == DragMode::ResizeTopRight ||
+			         m_dragMode == DragMode::ResizeBottomRight)
+			{
+				ar.moveLeft(anchor.x());
+			}
+			else
+			{
+				ar.moveCenter(g.center());
+			}
+			if (m_dragMode == DragMode::ResizeTop || m_dragMode == DragMode::ResizeTopLeft || m_dragMode == DragMode::ResizeTopRight)
+			{
+				ar.moveBottom(m_originGeometry.bottom());
+			}
+			else if (m_dragMode == DragMode::ResizeBottom || m_dragMode == DragMode::ResizeBottomLeft ||
+			         m_dragMode == DragMode::ResizeBottomRight)
+			{
+				ar.moveTop(m_originGeometry.top());
+			}
+			g = ar;
+		}
+		applyMoveSnapAndGuides(g);
+		m_previewGeometry = g;
+		if (m_dragRubberBand && m_dragRubberBand->isVisible())
+		{
+			m_dragRubberBand->setGeometry(g);
+			m_dragChanged = true;
+		}
+		else if (auto* sub = subWindow())
+		{
+			sub->setGeometry(g);
+			m_dragChanged = true;
+		}
+		QToolTip::showText(event->globalPosition().toPoint(),
+		                   QStringLiteral("%1 x %2").arg(g.width()).arg(g.height()),
+		                   this);
+		event->accept();
+	}
+
+	void mouseReleaseEvent(QMouseEvent* event) override
+	{
+		const bool shouldFinishCrop = m_cropMode && m_dragChanged;
+		const bool shouldNotifyDragFinished = m_dragChanged;
+		if (m_dragRubberBand && m_dragRubberBand->isVisible())
+		{
+			if (auto* sub = subWindow())
+			{
+				sub->setGeometry(m_dragRubberBand->geometry());
+			}
+			m_dragRubberBand->hide();
+		}
+		if (m_vGuideBand)
+		{
+			m_vGuideBand->hide();
+		}
+		if (m_hGuideBand)
+		{
+			m_hGuideBand->hide();
+		}
+		QToolTip::hideText();
+		m_dragMode = DragMode::None;
+		m_dragInProgress = false;
+		m_dragChanged = false;
+		updateCursorForPosition(event->pos());
+		QWidget::mouseReleaseEvent(event);
+		if (shouldFinishCrop && onCropFinished)
+		{
+			onCropFinished();
+		}
+		if (shouldNotifyDragFinished && onDragFinished)
+		{
+			onDragFinished();
+		}
+	}
+
+private:
+	bool eventFilter(QObject* watched, QEvent* event) override
+	{
+		if (watched == m_view)
+		{
+			if (event->type() == QEvent::MouseButtonPress)
+			{
+				if (onSelected)
+				{
+					onSelected();
+				}
+			}
+			else if (event->type() == QEvent::ContextMenu)
+			{
+				const QPoint globalPos = QCursor::pos();
+				if (onContextMenu)
+				{
+					onContextMenu(globalPos);
+					return true;
+				}
+			}
+		}
+		return QWidget::eventFilter(watched, event);
+	}
+
+	QMdiSubWindow* subWindow() const
+	{
+		return qobject_cast<QMdiSubWindow*>(parentWidget());
+	}
+
+	QRect currentSubWindowGeometry() const
+	{
+		if (auto* sub = subWindow())
+		{
+			return sub->geometry();
+		}
+		return geometry();
+	}
+
+	DragMode detectDragMode(const QPoint& pos) const
+	{
+		constexpr int kHit = 8;
+		const QRect r = rect();
+		const bool left = pos.x() <= kHit;
+		const bool right = pos.x() >= r.width() - kHit;
+		const bool top = pos.y() <= kHit;
+		const bool bottom = pos.y() >= r.height() - kHit;
+		if (top && left)
+		{
+			return DragMode::ResizeTopLeft;
+		}
+		if (top && right)
+		{
+			return DragMode::ResizeTopRight;
+		}
+		if (bottom && left)
+		{
+			return DragMode::ResizeBottomLeft;
+		}
+		if (bottom && right)
+		{
+			return DragMode::ResizeBottomRight;
+		}
+		if (left)
+		{
+			return m_cropMode ? DragMode::ResizeLeft : DragMode::ResizeLeft;
+		}
+		if (right)
+		{
+			return m_cropMode ? DragMode::ResizeRight : DragMode::ResizeRight;
+		}
+		if (top)
+		{
+			return m_cropMode ? DragMode::ResizeTop : DragMode::ResizeTop;
+		}
+		if (bottom)
+		{
+			return m_cropMode ? DragMode::ResizeBottom : DragMode::ResizeBottom;
+		}
+		return DragMode::Move;
+	}
+
+	void updateCursorForPosition(const QPoint& pos)
+	{
+		switch (detectDragMode(pos))
+		{
+		case DragMode::ResizeLeft:
+		case DragMode::ResizeRight:
+			setCursor(Qt::SizeHorCursor);
+			break;
+		case DragMode::ResizeTop:
+		case DragMode::ResizeBottom:
+			setCursor(Qt::SizeVerCursor);
+			break;
+		case DragMode::ResizeTopLeft:
+		case DragMode::ResizeBottomRight:
+			setCursor(Qt::SizeFDiagCursor);
+			break;
+		case DragMode::ResizeTopRight:
+		case DragMode::ResizeBottomLeft:
+			setCursor(Qt::SizeBDiagCursor);
+			break;
+		case DragMode::Move:
+			setCursor(Qt::SizeAllCursor);
+			break;
+		case DragMode::None:
+			unsetCursor();
+			break;
+		}
+	}
+
+	void applyMoveSnapAndGuides(QRect& g)
+	{
+		if (m_dragMode != DragMode::Move)
+		{
+			if (m_vGuideBand)
+			{
+				m_vGuideBand->hide();
+			}
+			if (m_hGuideBand)
+			{
+				m_hGuideBand->hide();
+			}
+			return;
+		}
+		auto* sub = subWindow();
+		if (!sub || !sub->parentWidget())
+		{
+			return;
+		}
+		constexpr int snapDist = 8;
+		const QRect areaRect = sub->parentWidget()->rect();
+		struct SnapHit
+		{
+			int dist = 999999;
+			int delta = 0;
+			int guide = -1;
+			bool hit = false;
+		};
+		SnapHit xHit;
+		SnapHit yHit;
+		auto tryAxis = [](SnapHit& hit, const int from, const int target) {
+			const int d = target - from;
+			const int ad = qAbs(d);
+			if (ad < hit.dist)
+			{
+				hit.dist = ad;
+				hit.delta = d;
+				hit.guide = target;
+				hit.hit = true;
+			}
+		};
+
+		const int l = g.left();
+		const int r = g.right();
+		const int cx = g.center().x();
+		const int t = g.top();
+		const int b = g.bottom();
+		const int cy = g.center().y();
+
+		const QList<int> xTargets{areaRect.left(), areaRect.center().x(), areaRect.right()};
+		const QList<int> yTargets{areaRect.top(), areaRect.center().y(), areaRect.bottom()};
+		for (const int target : xTargets)
+		{
+			tryAxis(xHit, l, target);
+			tryAxis(xHit, cx, target);
+			tryAxis(xHit, r, target);
+		}
+		for (const int target : yTargets)
+		{
+			tryAxis(yHit, t, target);
+			tryAxis(yHit, cy, target);
+			tryAxis(yHit, b, target);
+		}
+
+		if (auto* area = sub->mdiArea())
+		{
+			const auto wins = area->subWindowList(QMdiArea::StackingOrder);
+			for (QMdiSubWindow* w : wins)
+			{
+				if (!w || w == sub)
+				{
+					continue;
+				}
+				const QRect wr = w->geometry();
+				const QList<int> xs{wr.left(), wr.center().x(), wr.right()};
+				const QList<int> ys{wr.top(), wr.center().y(), wr.bottom()};
+				for (const int target : xs)
+				{
+					tryAxis(xHit, l, target);
+					tryAxis(xHit, cx, target);
+					tryAxis(xHit, r, target);
+				}
+				for (const int target : ys)
+				{
+					tryAxis(yHit, t, target);
+					tryAxis(yHit, cy, target);
+					tryAxis(yHit, b, target);
+				}
+			}
+		}
+
+		if (xHit.hit && xHit.dist <= snapDist)
+		{
+			g.translate(xHit.delta, 0);
+			if (m_vGuideBand)
+			{
+				m_vGuideBand->setGeometry(xHit.guide, areaRect.top(), 1, areaRect.height());
+				m_vGuideBand->show();
+			}
+		}
+		else if (m_vGuideBand)
+		{
+			m_vGuideBand->hide();
+		}
+		if (yHit.hit && yHit.dist <= snapDist)
+		{
+			g.translate(0, yHit.delta);
+			if (m_hGuideBand)
+			{
+				m_hGuideBand->setGeometry(areaRect.left(), yHit.guide, areaRect.width(), 1);
+				m_hGuideBand->show();
+			}
+		}
+		else if (m_hGuideBand)
+		{
+			m_hGuideBand->hide();
+		}
+	}
+
+	void applyVisualStyle()
+	{
+		QString border = QStringLiteral("#6f6f6f");
+		if (m_cropMode)
+		{
+			border = QStringLiteral("#ffb000");
+		}
+		else if (m_selected)
+		{
+			border = QStringLiteral("#00aaff");
+		}
+		setStyleSheet(QStringLiteral("background:#101010;border:2px solid %1;").arg(border));
+	}
+
+	fplayer::FVideoView* m_view = nullptr;
+	bool m_selected = false;
+	bool m_cropMode = false;
+	DragMode m_dragMode = DragMode::None;
+	QRect m_originGeometry;
+	QRect m_previewGeometry;
+	QPoint m_dragOriginGlobal;
+	bool m_dragChanged = false;
+	QRubberBand* m_dragRubberBand = nullptr;
+	QRubberBand* m_vGuideBand = nullptr;
+	QRubberBand* m_hGuideBand = nullptr;
+	bool m_aspectResizeEnabled = false;
+	bool m_dragInProgress = false;
+};
+
 const char* screenBackendName(const fplayer::MediaBackendType backend)
 {
 	switch (backend)
@@ -180,9 +855,12 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 	actionFileMode->setCheckable(true);
 	auto* actionScreenMode = modeMenu->addAction(tr("屏幕捕获模式"));
 	actionScreenMode->setCheckable(true);
+	auto* actionComposeMode = modeMenu->addAction(tr("组合式推流"));
+	actionComposeMode->setCheckable(true);
 	actionGroup->addAction(actionCameraMode);
 	actionGroup->addAction(actionFileMode);
 	actionGroup->addAction(actionScreenMode);
+	actionGroup->addAction(actionComposeMode);
 	auto* actionPushStream = streamMenu->addAction(tr("推流"));
 	auto* actionPullStream = streamMenu->addAction(tr("拉流"));
 	actionCameraMode->setChecked(true);
@@ -296,6 +974,45 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		{
 			return;
 		}
+		if (m_isComposeMode)
+		{
+			if (m_composeSelectedIndex < 0 || m_composeSelectedIndex >= m_composeSources.size())
+			{
+				return;
+			}
+			auto& src = m_composeSources[m_composeSelectedIndex];
+			if (!src.service)
+			{
+				return;
+			}
+			if (src.kind == CaptureWindow::ComposeSourceItem::SourceKind::Screen)
+			{
+				src.deviceIndex = index;
+				src.service->screenSetActive(false);
+				src.service->selectScreen(index);
+				const int fps = ui->cmbScreenFps->currentData().toInt();
+				src.screenFps = fps > 0 ? fps : src.screenFps;
+				if (fps > 0)
+				{
+					src.service->screenSetFrameRate(fps);
+				}
+				src.service->screenSetCursorCaptureEnabled(src.screenCaptureCursor);
+				refreshComposeScreenCaptureState(m_composeSelectedIndex);
+				ui->cmbScreenFps->setToolTip(tr("当前帧率：%1 FPS").arg(src.service->screenFrameRate()));
+				return;
+			}
+			if (src.kind == CaptureWindow::ComposeSourceItem::SourceKind::Camera)
+			{
+				src.deviceIndex = index;
+				src.service->selectCamera(index);
+				QStringList formats(src.service->getCameraFormats(index));
+				this->ui->cmbFormats->clear();
+				this->ui->cmbFormats->addItems(formats);
+				src.formatIndex = formats.isEmpty() ? -1 : qBound(0, src.formatIndex, formats.size() - 1);
+				this->ui->cmbFormats->setCurrentIndex(src.formatIndex);
+			}
+			return;
+		}
 		if (m_captureMode == CaptureMode::Screen)
 		{
 			this->selectScreen(index);
@@ -309,6 +1026,21 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 
 	});
 	connect(this->ui->chkCaptureCursor, &QCheckBox::toggled, this, [this](const bool checked) {
+		if (m_isComposeMode)
+		{
+			if (m_composeSelectedIndex < 0 || m_composeSelectedIndex >= m_composeSources.size())
+			{
+				return;
+			}
+			auto& src = m_composeSources[m_composeSelectedIndex];
+			if (src.kind != CaptureWindow::ComposeSourceItem::SourceKind::Screen || !src.service)
+			{
+				return;
+			}
+			src.screenCaptureCursor = checked;
+			src.service->screenSetCursorCaptureEnabled(checked);
+			return;
+		}
 		if (m_captureMode != CaptureMode::Screen)
 		{
 			return;
@@ -323,7 +1055,27 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		}
 	});
 	connect(this->ui->cmbScreenFps, &QComboBox::currentIndexChanged, this, [this](int index) {
-		if (m_captureMode != CaptureMode::Screen || index < 0)
+		if (index < 0)
+		{
+			return;
+		}
+		if (m_isComposeMode)
+		{
+			if (m_composeSelectedIndex < 0 || m_composeSelectedIndex >= m_composeSources.size())
+			{
+				return;
+			}
+			auto& src = m_composeSources[m_composeSelectedIndex];
+			if (src.kind != CaptureWindow::ComposeSourceItem::SourceKind::Screen || !src.service)
+			{
+				return;
+			}
+			src.screenFps = this->ui->cmbScreenFps->itemData(index).toInt();
+			src.service->screenSetFrameRate(src.screenFps);
+			ui->cmbScreenFps->setToolTip(tr("当前帧率：%1 FPS").arg(src.service->screenFrameRate()));
+			return;
+		}
+		if (m_captureMode != CaptureMode::Screen)
 		{
 			return;
 		}
@@ -345,11 +1097,25 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 
 	// 摄像头格式变更
 	connect(this->ui->cmbFormats, &QComboBox::currentIndexChanged, [this](int index) {
-		if (m_captureMode != CaptureMode::Camera)
+		if (index < 0)
 		{
 			return;
 		}
-		if (index < 0)
+		if (m_isComposeMode)
+		{
+			if (m_composeSelectedIndex < 0 || m_composeSelectedIndex >= m_composeSources.size())
+			{
+				return;
+			}
+			auto& src = m_composeSources[m_composeSelectedIndex];
+			if (src.kind == CaptureWindow::ComposeSourceItem::SourceKind::Camera && src.service)
+			{
+				src.formatIndex = index;
+				src.service->selectCameraFormat(index);
+			}
+			return;
+		}
+		if (m_captureMode != CaptureMode::Camera)
 		{
 			return;
 		}
@@ -376,6 +1142,7 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 	});
 
 	auto switchToCameraMode = [this]() {
+		setComposeMode(false);
 		m_isFileMode = false;
 		m_captureMode = CaptureMode::Camera;
 		stopScreenCapture();
@@ -403,6 +1170,7 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 			this->m_service->cameraIsPlaying() ? QIcon::ThemeIcon::MediaPlaybackPause : QIcon::ThemeIcon::MediaPlaybackStart));
 	};
 	auto switchToFileMode = [this]() -> bool {
+		setComposeMode(false);
 		m_captureMode = CaptureMode::File;
 		stopScreenCapture();
 		this->ui->wgtView->setBackendType(fplayer::MediaBackendType::FFmpeg);
@@ -427,6 +1195,7 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		return true;
 	};
 	auto switchToScreenMode = [this]() -> bool {
+		setComposeMode(false);
 		m_isFileMode = false;
 		m_captureMode = CaptureMode::Screen;
 		LOG_INFO("[screen]", "switch to screen mode, backend=", screenBackendName(m_screenBackendType));
@@ -485,6 +1254,9 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 			        switchToCameraMode();
 		        }
 	        });
+	connect(actionComposeMode, &QAction::triggered, this, [this]() {
+		setComposeMode(true);
+	});
 	connect(actionPushStream, &QAction::triggered, this, [this]() {
 		QDialog dlg(this);
 		dlg.setWindowTitle(tr("推流配置"));
@@ -510,9 +1282,12 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		cmbProtocol->addItem(tr("SRT"), QStringLiteral("srt://127.0.0.1:8890?mode=caller"));
 		const bool fileScene = (m_captureMode == CaptureMode::File);
 		const bool screenScene = (m_captureMode == CaptureMode::Screen);
+		const bool composeScene = m_isComposeMode;
 		auto* lblInputMode = new QLabel(screenScene
 			                                ? tr("来源：屏幕采集后端（由 Service 统一编排）")
-			                                : (fileScene ? tr("来源：当前文件模式媒体源") : tr("来源：当前摄像头模式")),
+			                                : (fileScene
+				                                   ? tr("来源：当前文件模式媒体源")
+				                                   : (composeScene ? tr("来源：组合预览窗口（所见即所得）") : tr("来源：当前摄像头模式"))),
 		                            &dlg);
 		lblInputMode->setWordWrap(true);
 		lblInputMode->setMinimumHeight(lblInputMode->fontMetrics().lineSpacing() * 2 + 6);
@@ -711,9 +1486,14 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		lblPushParams->setWordWrap(true);
 		lblPushParams->setTextInteractionFlags(Qt::TextSelectableByMouse);
 		lblPushParams->setMinimumHeight(lblPushParams->fontMetrics().lineSpacing() * 4 + 8);
-		auto refreshPushParams = [this, lblPushParams, lblInputValue, fileScene, screenScene]() {
+		auto refreshPushParams = [this, lblPushParams, lblInputValue, fileScene, screenScene, composeScene]() {
 			if (!lblPushParams)
 			{
+				return;
+			}
+			if (composeScene)
+			{
+				lblPushParams->setText(tr("模式：组合式推流\n来源：中间预览窗口内容\n布局：可在窗口中自由拖动缩放素材\n编码：H264（不可用时 MPEG4）"));
 				return;
 			}
 			if (screenScene)
@@ -827,11 +1607,62 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		});
 		connect(btnStart, &QPushButton::clicked, &dlg,
 		        [this, btnStart, cmbProtocol, cmbOutput, spFps, cmbSize, spBitrate, cmbEncoder, cmbAudioInput, cmbAudioOutput,
-		         chkKeepAspect, fileScene, screenScene, addRecent]() {
+		         chkKeepAspect, fileScene, screenScene, composeScene, addRecent]() {
 			const QString pushOutput = cmbOutput->currentText().trimmed();
 			if (pushOutput.isEmpty())
 			{
 				QMessageBox::warning(this, tr("推流失败"), tr("输出地址不能为空。"));
+				return;
+			}
+			if (composeScene)
+			{
+				int outW = 0;
+				int outH = 0;
+				QString sizeText = cmbSize->currentText().trimmed();
+				if (sizeText.isEmpty() || sizeText == tr("跟随当前"))
+				{
+					sizeText = cmbSize->currentData().toString().trimmed();
+				}
+				if (!sizeText.isEmpty())
+				{
+					const QRegularExpression sizeRe(R"((\d+)\s*x\s*(\d+))", QRegularExpression::CaseInsensitiveOption);
+					const auto sizeM = sizeRe.match(sizeText);
+					if (!sizeM.hasMatch())
+					{
+						QMessageBox::warning(this, tr("推流失败"), tr("尺寸格式无效，请使用 WxH，例如 1920x1080。"));
+						return;
+					}
+					outW = sizeM.captured(1).toInt();
+					outH = sizeM.captured(2).toInt();
+				}
+				QString inputSpec;
+				if (!buildComposeScreenCaptureSpec(inputSpec,
+				                                  spFps->value(),
+				                                  outW,
+				                                  outH,
+				                                  spBitrate->value(),
+				                                  cmbEncoder->currentData().toString(),
+				                                  cmbAudioInput->currentData().toString(),
+				                                  cmbAudioOutput->currentData().toString()))
+				{
+					QMessageBox::warning(this, tr("推流失败"), tr("组合预览窗口不可用，请先切换到组合式推流并添加至少一个素材源。"));
+					return;
+				}
+				if (!this->m_service->streamStartPush(inputSpec, pushOutput))
+				{
+					QMessageBox::warning(this, tr("推流失败"), this->m_service->streamLastError());
+					return;
+				}
+				addRecent(m_recentPushOutputs, pushOutput);
+				btnStart->setEnabled(false);
+				cmbProtocol->setEnabled(false);
+				cmbOutput->setEnabled(false);
+				spFps->setEnabled(false);
+				cmbSize->setEnabled(false);
+				spBitrate->setEnabled(false);
+				cmbEncoder->setEnabled(false);
+				cmbAudioInput->setEnabled(false);
+				cmbAudioOutput->setEnabled(false);
 				return;
 			}
 			fplayer::Service::PushScene pushScene = fplayer::Service::PushScene::Camera;
@@ -1234,6 +2065,7 @@ bool CaptureWindow::chooseAndPlayFile()
 
 CaptureWindow::~CaptureWindow()
 {
+	clearComposeSources();
 	stopScreenCapture();
 	if (m_service)
 	{
@@ -1254,6 +2086,1099 @@ CaptureWindow::~CaptureWindow()
 		m_service = nullptr;
 	}
 	delete ui;
+}
+
+void CaptureWindow::ensureComposeWorkspace()
+{
+	if (m_composeSplitter)
+	{
+		return;
+	}
+	m_composeSplitter = new QSplitter(Qt::Horizontal, this);
+	auto* leftPanel = new QWidget(m_composeSplitter);
+	leftPanel->setMinimumWidth(220);
+	auto* leftLayout = new QVBoxLayout(leftPanel);
+	leftLayout->setContentsMargins(8, 8, 8, 8);
+	leftLayout->setSpacing(8);
+	auto* titleLabel = new QLabel(tr("视频流来源"), leftPanel);
+	titleLabel->setStyleSheet(QStringLiteral("font-weight:600;"));
+	auto* aspectLabel = new QLabel(tr("画布比例"), leftPanel);
+	m_composeAspectCombo = new QComboBox(leftPanel);
+	m_composeAspectCombo->addItem(QStringLiteral("16:9 (横屏直播)"), QStringLiteral("16:9"));
+	m_composeAspectCombo->addItem(QStringLiteral("9:16 (手机竖屏)"), QStringLiteral("9:16"));
+	m_composeAspectCombo->addItem(QStringLiteral("4:3"), QStringLiteral("4:3"));
+	m_composeAspectCombo->addItem(QStringLiteral("3:4"), QStringLiteral("3:4"));
+	m_composeAspectCombo->addItem(QStringLiteral("1:1"), QStringLiteral("1:1"));
+	m_composeAspectCombo->setCurrentIndex(0);
+	m_btnComposeAddFile = new QPushButton(tr("追加文件播放"), leftPanel);
+	m_btnComposeAddCamera = new QPushButton(tr("追加摄像头"), leftPanel);
+	m_btnComposeAddScreen = new QPushButton(tr("追加屏幕"), leftPanel);
+	m_composeSourceList = new QListWidget(leftPanel);
+	m_composeSourceList->setSelectionMode(QAbstractItemView::SingleSelection);
+	leftLayout->addWidget(titleLabel);
+	leftLayout->addWidget(aspectLabel);
+	leftLayout->addWidget(m_composeAspectCombo);
+	leftLayout->addWidget(m_btnComposeAddFile);
+	leftLayout->addWidget(m_btnComposeAddCamera);
+	leftLayout->addWidget(m_btnComposeAddScreen);
+	leftLayout->addWidget(m_composeSourceList, 1);
+
+	m_composePreviewHost = new AspectRatioHostWidget(m_composeSplitter);
+	m_composeMdiArea = new QMdiArea(m_composePreviewHost);
+	m_composeMdiArea->setBackground(QBrush(QColor(0, 0, 0)));
+	m_composeMdiArea->setStyleSheet(QStringLiteral("QMdiArea{border:2px solid #4b4b4b;background:#000000;}"));
+	m_composeMdiArea->setViewMode(QMdiArea::SubWindowView);
+	m_composeMdiArea->setOption(QMdiArea::DontMaximizeSubWindowOnActivation, true);
+	m_composeMdiArea->setOption(QMdiArea::DontMaximizeSubWindowOnActivation, true);
+	m_composeMdiArea->setActivationOrder(QMdiArea::StackingOrder);
+	m_composeMdiArea->setUpdatesEnabled(true);
+	if (m_composeMdiArea->viewport())
+	{
+		m_composeMdiArea->viewport()->setAutoFillBackground(true);
+		m_composeMdiArea->viewport()->setAttribute(Qt::WA_OpaquePaintEvent, true);
+	}
+	static_cast<AspectRatioHostWidget*>(m_composePreviewHost)->attachContent(m_composeMdiArea);
+	static_cast<AspectRatioHostWidget*>(m_composePreviewHost)->setAspectRatio(m_composeAspectW, m_composeAspectH);
+	m_composeSplitter->setStretchFactor(0, 0);
+	m_composeSplitter->setStretchFactor(1, 1);
+	m_composeSplitter->hide();
+	ui->verticalLayout->insertWidget(0, m_composeSplitter, 1);
+
+	connect(m_btnComposeAddFile, &QPushButton::clicked, this, &CaptureWindow::addComposeFileSource);
+	connect(m_btnComposeAddCamera, &QPushButton::clicked, this, &CaptureWindow::addComposeCameraSource);
+	connect(m_btnComposeAddScreen, &QPushButton::clicked, this, &CaptureWindow::addComposeScreenSource);
+	connect(m_composeAspectCombo, &QComboBox::currentIndexChanged, this, [this](const int index) {
+		if (!m_composeAspectCombo || index < 0)
+		{
+			return;
+		}
+		const QString text = m_composeAspectCombo->itemData(index).toString();
+		const auto parts = text.split(':');
+		if (parts.size() == 2)
+		{
+			bool wOk = false;
+			bool hOk = false;
+			const int w = parts.at(0).toInt(&wOk);
+			const int h = parts.at(1).toInt(&hOk);
+			if (wOk && hOk && w > 0 && h > 0)
+			{
+				m_composeAspectW = w;
+				m_composeAspectH = h;
+				applyComposeAspectRatio();
+			}
+		}
+	});
+	connect(m_composeMdiArea, &QMdiArea::subWindowActivated, this, [this](QMdiSubWindow*) {
+		if (!m_isComposeMode)
+		{
+			return;
+		}
+		QTimer::singleShot(0, this, [this]() {
+			applyComposeZOrder();
+		});
+	});
+	connect(qApp, &QApplication::applicationStateChanged, this, [this](Qt::ApplicationState state) {
+		if (!m_isComposeMode || state != Qt::ApplicationActive)
+		{
+			return;
+		}
+		QTimer::singleShot(0, this, [this]() {
+			applyComposeZOrder();
+		});
+	});
+	m_composeZOrderGuardTimer = new QTimer(this);
+	m_composeZOrderGuardTimer->setInterval(400);
+	connect(m_composeZOrderGuardTimer, &QTimer::timeout, this, [this]() {
+		if (!m_isComposeMode)
+		{
+			return;
+		}
+		for (const auto& src : m_composeSources)
+		{
+			auto* container = static_cast<ComposeSourceWidget*>(src.container);
+			if (container && container->isDragging())
+			{
+				return;
+			}
+		}
+		applyComposeZOrder();
+	});
+	m_composeSourceList->setContextMenuPolicy(Qt::CustomContextMenu);
+	connect(m_composeSourceList, &QListWidget::customContextMenuRequested, this, [this](const QPoint& pos) {
+		if (!m_composeSourceList)
+		{
+			return;
+		}
+		const int row = m_composeSourceList->indexAt(pos).row();
+		if (row < 0 || row >= m_composeSources.size())
+		{
+			return;
+		}
+		QMenu menu(this);
+		auto* actionDelete = menu.addAction(tr("删除"));
+		if (menu.exec(m_composeSourceList->viewport()->mapToGlobal(pos)) == actionDelete)
+		{
+			removeComposeSourceAt(row);
+		}
+	});
+	connect(m_composeSourceList, &QListWidget::currentRowChanged, this, [this](const int row) {
+		if (row < 0 || row >= m_composeSources.size())
+		{
+			return;
+		}
+		m_composeSelectedIndex = row;
+		updateComposeSelectionHighlight();
+		syncComposeControlPanel();
+	});
+}
+
+void CaptureWindow::setComposeMode(const bool enabled)
+{
+	ensureComposeWorkspace();
+	if (enabled)
+	{
+		m_isComposeMode = true;
+		m_captureMode = CaptureMode::Screen;
+		m_isFileMode = false;
+		stopScreenCapture();
+		m_service->playerPause();
+		m_service->cameraPause();
+		ui->wgtView->hide();
+		m_composeSplitter->show();
+		applyComposeAspectRatio();
+		ui->wgtDevices->setVisible(false);
+		ui->cmbFormats->setVisible(false);
+		ui->chkCaptureCursor->setVisible(false);
+		ui->cmbScreenFps->setVisible(false);
+		m_fileProgress->setVisible(false);
+		m_fileProgressLabel->setVisible(false);
+		m_speedCombo->setVisible(false);
+		m_debugStatsLabel->setVisible(false);
+		m_fileProgressTimer->stop();
+		m_debugStatsTimer->stop();
+		if (m_composeSources.isEmpty())
+		{
+			addComposeCameraSource();
+		}
+		refreshComposeScreenCaptureState(m_composeSelectedIndex);
+		if (m_composeZOrderGuardTimer && !m_composeZOrderGuardTimer->isActive())
+		{
+			m_composeZOrderGuardTimer->start();
+		}
+		syncComposeControlPanel();
+		return;
+	}
+	if (!m_isComposeMode)
+	{
+		return;
+	}
+	m_isComposeMode = false;
+	if (m_composeZOrderGuardTimer && m_composeZOrderGuardTimer->isActive())
+	{
+		m_composeZOrderGuardTimer->stop();
+	}
+	// 退出组合模式时，必须停掉组合场景里的屏幕采集，避免与普通屏幕模式抢占采集资源。
+	for (auto& src : m_composeSources)
+	{
+		if (src.kind == ComposeSourceItem::SourceKind::Screen && src.service)
+		{
+			src.service->screenSetActive(false);
+		}
+	}
+	if (m_composeSplitter)
+	{
+		m_composeSplitter->hide();
+	}
+	ui->wgtView->show();
+}
+
+void CaptureWindow::clearComposeSources()
+{
+	while (!m_composeSources.isEmpty())
+	{
+		removeComposeSourceAt(m_composeSources.size() - 1);
+	}
+	m_composeSelectedIndex = -1;
+}
+
+void CaptureWindow::addComposeFileSource()
+{
+	ensureComposeWorkspace();
+	const QString filePath = QFileDialog::getOpenFileName(
+		this,
+		tr("选择媒体文件"),
+		QString(),
+		tr("Media Files (*.mp4 *.mkv *.mov *.avi *.flv *.wmv *.mp3 *.aac *.wav *.flac);;All Files (*.*)")
+	);
+	if (filePath.isEmpty())
+	{
+		return;
+	}
+	auto* svc = new fplayer::Service();
+	svc->initPlayer(fplayer::MediaBackendType::FFmpeg);
+	auto* container = new ComposeSourceWidget();
+	auto* view = new fplayer::FVideoView(container);
+	view->setBackendType(fplayer::MediaBackendType::FFmpeg);
+	view->setAttribute(Qt::WA_TransparentForMouseEvents, true);
+	container->setInnerView(view);
+	svc->bindPlayerPreview(view);
+	if (!svc->openMediaFile(filePath))
+	{
+		delete svc;
+		delete container;
+		QMessageBox::warning(this, tr("追加失败"), tr("无法打开该媒体文件。"));
+		return;
+	}
+	auto* sub = m_composeMdiArea->addSubWindow(container, Qt::FramelessWindowHint);
+	sub->setFocusPolicy(Qt::NoFocus);
+	sub->setAttribute(Qt::WA_ShowWithoutActivating, true);
+	sub->setWindowTitle(QFileInfo(filePath).fileName());
+	sub->resize(480, 270);
+	sub->show();
+	ComposeSourceItem item;
+	item.kind = ComposeSourceItem::SourceKind::File;
+	item.service = svc;
+	item.container = container;
+	item.view = view;
+	item.subWindow = sub;
+	item.title = sub->windowTitle();
+	container->onSelected = [this, sub]() {
+		if (!sub)
+		{
+			return;
+		}
+		const int idx = std::distance(m_composeSources.begin(), std::find_if(m_composeSources.begin(), m_composeSources.end(),
+		                                                                      [sub](const ComposeSourceItem& i) {
+			                                                                      return i.subWindow == sub;
+		                                                                      }));
+		if (idx >= 0 && idx < m_composeSources.size())
+		{
+			m_composeSelectedIndex = idx;
+			refreshComposeSourceListSelection();
+			updateComposeSelectionHighlight();
+			if (auto* c = static_cast<ComposeSourceWidget*>(m_composeSources[idx].container))
+			{
+				c->setAspectResizeEnabled(m_composeSources[idx].keepAspectResize);
+			}
+			syncComposeControlPanel();
+		}
+	};
+	container->onContextMenu = [this, sub](const QPoint& globalPos) {
+		const int idx = std::distance(m_composeSources.begin(), std::find_if(m_composeSources.begin(), m_composeSources.end(),
+		                                                                      [sub](const ComposeSourceItem& i) {
+			                                                                      return i.subWindow == sub;
+		                                                                      }));
+		if (idx >= 0 && idx < m_composeSources.size())
+		{
+			requestComposeSourceContextMenu(globalPos, idx);
+		}
+	};
+	container->onCropFinished = [this, sub]() {
+		const int idx = std::distance(m_composeSources.begin(), std::find_if(m_composeSources.begin(), m_composeSources.end(),
+		                                                                      [sub](const ComposeSourceItem& i) {
+			                                                                      return i.subWindow == sub;
+		                                                                      }));
+		if (idx >= 0 && idx < m_composeSources.size())
+		{
+			setComposeCropMode(idx, false);
+		}
+	};
+	container->onDragFinished = [this, sub]() {
+		const int idx = std::distance(m_composeSources.begin(), std::find_if(m_composeSources.begin(), m_composeSources.end(),
+		                                                                      [sub](const ComposeSourceItem& i) {
+			                                                                      return i.subWindow == sub;
+		                                                                      }));
+		if (idx >= 0 && idx < m_composeSources.size())
+		{
+			auto& src = m_composeSources[idx];
+			if (src.kind == ComposeSourceItem::SourceKind::Screen && src.service && src.view)
+			{
+				src.service->bindScreenPreview(src.view);
+				src.service->selectScreen(qMax(0, src.deviceIndex));
+				src.service->screenSetFrameRate(qMax(1, src.screenFps));
+				src.service->screenSetCursorCaptureEnabled(src.screenCaptureCursor);
+				src.service->screenSetActive(true);
+			}
+		}
+		forceRefreshComposePreview();
+	};
+	m_composeSources.push_back(item);
+	m_composeSourceList->addItem(item.title);
+	m_composeSelectedIndex = m_composeSources.size() - 1;
+	refreshComposeSourceListSelection();
+	updateComposeSelectionHighlight();
+	syncComposeControlPanel();
+	refreshComposeScreenCaptureState(m_composeSelectedIndex);
+}
+
+void CaptureWindow::addComposeCameraSource()
+{
+	ensureComposeWorkspace();
+	auto* svc = new fplayer::Service();
+	svc->initCamera(m_cameraBackendType);
+	auto* container = new ComposeSourceWidget();
+	auto* view = new fplayer::FVideoView(container);
+	view->setBackendType(m_cameraBackendType);
+	view->setAttribute(Qt::WA_TransparentForMouseEvents, true);
+	container->setInnerView(view);
+	svc->bindCameraPreview(view);
+	const auto cameras = svc->getCameraList();
+	if (cameras.isEmpty())
+	{
+		delete svc;
+		delete container;
+		QMessageBox::warning(this, tr("追加失败"), tr("未检测到可用摄像头。"));
+		return;
+	}
+	svc->selectCamera(0);
+	const auto fmts = svc->getCameraFormats(0);
+	if (!fmts.isEmpty())
+	{
+		svc->selectCameraFormat(0);
+	}
+	auto* sub = m_composeMdiArea->addSubWindow(container, Qt::FramelessWindowHint);
+	sub->setFocusPolicy(Qt::NoFocus);
+	sub->setAttribute(Qt::WA_ShowWithoutActivating, true);
+	sub->setWindowTitle(tr("摄像头：%1").arg(cameras.first()));
+	sub->resize(480, 270);
+	sub->show();
+	ComposeSourceItem item;
+	item.kind = ComposeSourceItem::SourceKind::Camera;
+	item.service = svc;
+	item.container = container;
+	item.view = view;
+	item.subWindow = sub;
+	item.title = sub->windowTitle();
+	item.deviceIndex = 0;
+	item.formatIndex = 0;
+	container->onSelected = [this, sub]() {
+		const int idx = std::distance(m_composeSources.begin(), std::find_if(m_composeSources.begin(), m_composeSources.end(),
+		                                                                      [sub](const ComposeSourceItem& i) {
+			                                                                      return i.subWindow == sub;
+		                                                                      }));
+		if (idx >= 0 && idx < m_composeSources.size())
+		{
+			m_composeSelectedIndex = idx;
+			refreshComposeSourceListSelection();
+			updateComposeSelectionHighlight();
+			if (auto* c = static_cast<ComposeSourceWidget*>(m_composeSources[idx].container))
+			{
+				c->setAspectResizeEnabled(m_composeSources[idx].keepAspectResize);
+			}
+			syncComposeControlPanel();
+		}
+	};
+	container->onContextMenu = [this, sub](const QPoint& globalPos) {
+		const int idx = std::distance(m_composeSources.begin(), std::find_if(m_composeSources.begin(), m_composeSources.end(),
+		                                                                      [sub](const ComposeSourceItem& i) {
+			                                                                      return i.subWindow == sub;
+		                                                                      }));
+		if (idx >= 0 && idx < m_composeSources.size())
+		{
+			requestComposeSourceContextMenu(globalPos, idx);
+		}
+	};
+	container->onCropFinished = [this, sub]() {
+		const int idx = std::distance(m_composeSources.begin(), std::find_if(m_composeSources.begin(), m_composeSources.end(),
+		                                                                      [sub](const ComposeSourceItem& i) {
+			                                                                      return i.subWindow == sub;
+		                                                                      }));
+		if (idx >= 0 && idx < m_composeSources.size())
+		{
+			setComposeCropMode(idx, false);
+		}
+	};
+	container->onDragFinished = [this]() {
+		syncComposeControlPanel();
+		forceRefreshComposePreview();
+	};
+	m_composeSources.push_back(item);
+	m_composeSourceList->addItem(item.title);
+	m_composeSelectedIndex = m_composeSources.size() - 1;
+	refreshComposeSourceListSelection();
+	updateComposeSelectionHighlight();
+	syncComposeControlPanel();
+	refreshComposeScreenCaptureState(m_composeSelectedIndex);
+}
+
+void CaptureWindow::addComposeScreenSource()
+{
+	ensureComposeWorkspace();
+	auto* svc = new fplayer::Service();
+	svc->initScreenCapture(m_screenBackendType);
+	const QString screenSourceId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+	svc->screenSetFrameBusSourceId(screenSourceId);
+	auto* container = new ComposeSourceWidget();
+	auto* view = new fplayer::FVideoView(container);
+	view->setBackendType(m_screenBackendType);
+	view->setAttribute(Qt::WA_TransparentForMouseEvents, true);
+	container->setInnerView(view);
+	svc->bindScreenPreview(view);
+	const auto screens = svc->getScreenList();
+	if (screens.isEmpty())
+	{
+		delete svc;
+		delete container;
+		QMessageBox::warning(this, tr("追加失败"), tr("未检测到可用屏幕。"));
+		return;
+	}
+	svc->selectScreen(0);
+	svc->screenSetActive(true);
+	auto* sub = m_composeMdiArea->addSubWindow(container, Qt::FramelessWindowHint);
+	sub->setFocusPolicy(Qt::NoFocus);
+	sub->setAttribute(Qt::WA_ShowWithoutActivating, true);
+	sub->setWindowTitle(tr("屏幕：%1").arg(screens.first()));
+	sub->resize(640, 360);
+	sub->show();
+	ComposeSourceItem item;
+	item.kind = ComposeSourceItem::SourceKind::Screen;
+	item.service = svc;
+	item.container = container;
+	item.view = view;
+	item.subWindow = sub;
+	item.title = sub->windowTitle();
+	item.sourceId = screenSourceId;
+	item.deviceIndex = 0;
+	item.screenFps = qMax(1, svc->screenFrameRate());
+	item.screenCaptureCursor = false;
+	container->onSelected = [this, sub]() {
+		const int idx = std::distance(m_composeSources.begin(), std::find_if(m_composeSources.begin(), m_composeSources.end(),
+		                                                                      [sub](const ComposeSourceItem& i) {
+			                                                                      return i.subWindow == sub;
+		                                                                      }));
+		if (idx >= 0 && idx < m_composeSources.size())
+		{
+			m_composeSelectedIndex = idx;
+			refreshComposeSourceListSelection();
+			updateComposeSelectionHighlight();
+			if (auto* c = static_cast<ComposeSourceWidget*>(m_composeSources[idx].container))
+			{
+				c->setAspectResizeEnabled(m_composeSources[idx].keepAspectResize);
+			}
+			syncComposeControlPanel();
+		}
+	};
+	container->onContextMenu = [this, sub](const QPoint& globalPos) {
+		const int idx = std::distance(m_composeSources.begin(), std::find_if(m_composeSources.begin(), m_composeSources.end(),
+		                                                                      [sub](const ComposeSourceItem& i) {
+			                                                                      return i.subWindow == sub;
+		                                                                      }));
+		if (idx >= 0 && idx < m_composeSources.size())
+		{
+			requestComposeSourceContextMenu(globalPos, idx);
+		}
+	};
+	container->onCropFinished = [this, sub]() {
+		const int idx = std::distance(m_composeSources.begin(), std::find_if(m_composeSources.begin(), m_composeSources.end(),
+		                                                                      [sub](const ComposeSourceItem& i) {
+			                                                                      return i.subWindow == sub;
+		                                                                      }));
+		if (idx >= 0 && idx < m_composeSources.size())
+		{
+			setComposeCropMode(idx, false);
+		}
+	};
+	container->onDragFinished = [this, sub]() {
+		const int idx = std::distance(m_composeSources.begin(), std::find_if(m_composeSources.begin(), m_composeSources.end(),
+		                                                                      [sub](const ComposeSourceItem& i) {
+			                                                                      return i.subWindow == sub;
+		                                                                      }));
+		if (idx >= 0 && idx < m_composeSources.size())
+		{
+			auto& src = m_composeSources[idx];
+			if (src.kind == ComposeSourceItem::SourceKind::Screen && src.service && src.view)
+			{
+				src.service->bindScreenPreview(src.view);
+				src.service->selectScreen(qMax(0, src.deviceIndex));
+				src.service->screenSetFrameRate(qMax(1, src.screenFps));
+				src.service->screenSetCursorCaptureEnabled(src.screenCaptureCursor);
+				src.service->screenSetActive(true);
+			}
+		}
+		forceRefreshComposePreview();
+	};
+	m_composeSources.push_back(item);
+	m_composeSourceList->addItem(item.title);
+	m_composeSelectedIndex = m_composeSources.size() - 1;
+	refreshComposeSourceListSelection();
+	updateComposeSelectionHighlight();
+	syncComposeControlPanel();
+	refreshComposeScreenCaptureState(m_composeSelectedIndex);
+}
+
+void CaptureWindow::removeComposeSourceAt(const int index)
+{
+	if (index < 0 || index >= m_composeSources.size())
+	{
+		return;
+	}
+	ComposeSourceItem item = m_composeSources.takeAt(index);
+	if (item.service)
+	{
+		item.service->cameraPause();
+		item.service->playerStop();
+		item.service->screenSetActive(false);
+		delete item.service;
+		item.service = nullptr;
+	}
+	if (item.subWindow)
+	{
+		item.subWindow->close();
+		item.subWindow->deleteLater();
+		item.subWindow = nullptr;
+	}
+	if (m_composeSourceList)
+	{
+		delete m_composeSourceList->takeItem(index);
+	}
+	if (m_composeSelectedIndex >= m_composeSources.size())
+	{
+		m_composeSelectedIndex = m_composeSources.size() - 1;
+	}
+	refreshComposeSourceListSelection();
+	updateComposeSelectionHighlight();
+	syncComposeControlPanel();
+	refreshComposeScreenCaptureState(m_composeSelectedIndex);
+}
+
+void CaptureWindow::refreshComposeSourceListSelection()
+{
+	if (!m_composeSourceList)
+	{
+		return;
+	}
+	m_composeSourceList->blockSignals(true);
+	m_composeSourceList->setCurrentRow(m_composeSelectedIndex);
+	m_composeSourceList->blockSignals(false);
+}
+
+void CaptureWindow::refreshComposeSourceListItems()
+{
+	if (!m_composeSourceList)
+	{
+		return;
+	}
+	m_composeSourceList->blockSignals(true);
+	m_composeSourceList->clear();
+	for (const auto& src : m_composeSources)
+	{
+		m_composeSourceList->addItem(src.title);
+	}
+	m_composeSourceList->setCurrentRow(m_composeSelectedIndex);
+	m_composeSourceList->blockSignals(false);
+}
+
+void CaptureWindow::updateComposeSelectionHighlight()
+{
+	for (int i = 0; i < m_composeSources.size(); ++i)
+	{
+		auto* container = static_cast<ComposeSourceWidget*>(m_composeSources[i].container);
+		if (!container)
+		{
+			continue;
+		}
+		container->setSelected(i == m_composeSelectedIndex);
+		container->setCropMode(i == m_composeSelectedIndex && m_composeSources[i].cropMode);
+	}
+	applyComposeZOrder();
+}
+
+void CaptureWindow::applyComposeZOrder()
+{
+	if (!m_composeMdiArea)
+	{
+		return;
+	}
+	// m_composeSources 顺序即 z-order：前面的在底部，后面的在顶部。
+	for (int i = 0; i < m_composeSources.size(); ++i)
+	{
+		auto& src = m_composeSources[i];
+		QMdiSubWindow* sub = src.subWindow;
+		if (!sub || sub->mdiArea() != m_composeMdiArea)
+		{
+			src.subWindow = nullptr;
+			continue;
+		}
+		sub->lower();
+	}
+	for (int i = 0; i < m_composeSources.size(); ++i)
+	{
+		auto& src = m_composeSources[i];
+		QMdiSubWindow* sub = src.subWindow;
+		if (!sub || sub->mdiArea() != m_composeMdiArea)
+		{
+			src.subWindow = nullptr;
+			continue;
+		}
+		sub->raise();
+	}
+}
+
+void CaptureWindow::bringComposeSourceToFront(const int index)
+{
+	if (index < 0 || index >= m_composeSources.size() || !m_composeSources[index].subWindow)
+	{
+		return;
+	}
+	const ComposeSourceItem item = m_composeSources.takeAt(index);
+	m_composeSources.push_back(item);
+	m_composeSelectedIndex = m_composeSources.size() - 1;
+	refreshComposeSourceListItems();
+	applyComposeZOrder();
+}
+
+void CaptureWindow::sendComposeSourceToBack(const int index)
+{
+	if (index < 0 || index >= m_composeSources.size() || !m_composeSources[index].subWindow)
+	{
+		return;
+	}
+	const ComposeSourceItem item = m_composeSources.takeAt(index);
+	m_composeSources.push_front(item);
+	m_composeSelectedIndex = 0;
+	refreshComposeSourceListItems();
+	applyComposeZOrder();
+}
+
+void CaptureWindow::moveComposeSourceUp(const int index)
+{
+	if (index < 0 || index >= m_composeSources.size() - 1)
+	{
+		return;
+	}
+	m_composeSources.swapItemsAt(index, index + 1);
+	m_composeSelectedIndex = index + 1;
+	refreshComposeSourceListItems();
+	applyComposeZOrder();
+}
+
+void CaptureWindow::moveComposeSourceDown(const int index)
+{
+	if (index <= 0 || index >= m_composeSources.size())
+	{
+		return;
+	}
+	m_composeSources.swapItemsAt(index, index - 1);
+	m_composeSelectedIndex = index - 1;
+	refreshComposeSourceListItems();
+	applyComposeZOrder();
+}
+
+void CaptureWindow::setComposeCropMode(const int index, const bool enabled)
+{
+	if (index < 0 || index >= m_composeSources.size())
+	{
+		return;
+	}
+	for (int i = 0; i < m_composeSources.size(); ++i)
+	{
+		m_composeSources[i].cropMode = false;
+	}
+	m_composeSources[index].cropMode = enabled;
+	m_composeSelectedIndex = index;
+	refreshComposeSourceListSelection();
+	updateComposeSelectionHighlight();
+	syncComposeControlPanel();
+}
+
+void CaptureWindow::syncComposeControlPanel()
+{
+	if (!m_isComposeMode || m_composeSelectedIndex < 0 || m_composeSelectedIndex >= m_composeSources.size())
+	{
+		ui->wgtDevices->setVisible(false);
+		ui->cmbFormats->setVisible(false);
+		ui->chkCaptureCursor->setVisible(false);
+		ui->cmbScreenFps->setVisible(false);
+		return;
+	}
+	auto& src = m_composeSources[m_composeSelectedIndex];
+	if (!src.service)
+	{
+		return;
+	}
+	if (src.kind == ComposeSourceItem::SourceKind::Camera)
+	{
+		ui->wgtDevices->setVisible(true);
+		ui->cmbFormats->setVisible(true);
+		ui->chkCaptureCursor->setVisible(false);
+		ui->cmbScreenFps->setVisible(false);
+		ui->cmbDevices->blockSignals(true);
+		ui->cmbFormats->blockSignals(true);
+		ui->cmbDevices->clear();
+		ui->cmbDevices->addItems(src.service->getCameraList());
+		const int dev = qBound(0, src.deviceIndex, qMax(0, ui->cmbDevices->count() - 1));
+		ui->cmbDevices->setCurrentIndex(ui->cmbDevices->count() > 0 ? dev : -1);
+		src.deviceIndex = ui->cmbDevices->currentIndex();
+		ui->cmbFormats->clear();
+		if (ui->cmbDevices->currentIndex() >= 0)
+		{
+			ui->cmbFormats->addItems(src.service->getCameraFormats(ui->cmbDevices->currentIndex()));
+			src.formatIndex = ui->cmbFormats->count() > 0 ? qBound(0, src.formatIndex, ui->cmbFormats->count() - 1) : -1;
+			ui->cmbFormats->setCurrentIndex(src.formatIndex);
+		}
+		ui->cmbFormats->blockSignals(false);
+		ui->cmbDevices->blockSignals(false);
+		return;
+	}
+	if (src.kind == ComposeSourceItem::SourceKind::Screen)
+	{
+		ui->wgtDevices->setVisible(true);
+		ui->cmbFormats->setVisible(false);
+		ui->chkCaptureCursor->setVisible(true);
+		ui->cmbScreenFps->setVisible(true);
+		ui->cmbDevices->blockSignals(true);
+		ui->cmbDevices->clear();
+		ui->cmbDevices->addItems(src.service->getScreenList());
+		src.deviceIndex = ui->cmbDevices->count() > 0 ? qBound(0, src.deviceIndex, ui->cmbDevices->count() - 1) : -1;
+		ui->cmbDevices->setCurrentIndex(src.deviceIndex);
+		ui->cmbDevices->blockSignals(false);
+		ui->cmbScreenFps->blockSignals(true);
+		ui->cmbScreenFps->clear();
+		const auto screens = QGuiApplication::screens();
+		qreal refreshRate = 60.0;
+		if (src.deviceIndex >= 0 && src.deviceIndex < screens.size() && screens.at(src.deviceIndex))
+		{
+			refreshRate = screens.at(src.deviceIndex)->refreshRate();
+		}
+		const QList<int> fpsCandidates{15, 24, 25, 30, 45, 50, 60, 75, 90, 100, 120, 144, 165, 180, 200, 240};
+		for (const int fps : fpsCandidates)
+		{
+			if (fps <= static_cast<int>(refreshRate + 0.5))
+			{
+				ui->cmbScreenFps->addItem(tr("%1 FPS").arg(fps), fps);
+			}
+		}
+		if (ui->cmbScreenFps->count() <= 0)
+		{
+			const int fallback = qMax(15, static_cast<int>(refreshRate + 0.5));
+			ui->cmbScreenFps->addItem(tr("%1 FPS").arg(fallback), fallback);
+		}
+		src.screenFps = src.screenFps > 0 ? src.screenFps : qMax(1, src.service->screenFrameRate());
+		const int fpsIndex = ui->cmbScreenFps->findData(src.screenFps);
+		ui->cmbScreenFps->setCurrentIndex(fpsIndex >= 0 ? fpsIndex : 0);
+		ui->chkCaptureCursor->setChecked(src.screenCaptureCursor);
+		ui->cmbScreenFps->setToolTip(tr("当前帧率：%1 FPS").arg(src.service->screenFrameRate()));
+		ui->cmbScreenFps->blockSignals(false);
+		refreshComposeScreenCaptureState(m_composeSelectedIndex);
+		return;
+	}
+	ui->wgtDevices->setVisible(false);
+	ui->cmbFormats->setVisible(false);
+	ui->chkCaptureCursor->setVisible(false);
+	ui->cmbScreenFps->setVisible(false);
+}
+
+void CaptureWindow::applyComposeAspectRatio()
+{
+	if (!m_composePreviewHost || !m_composeMdiArea || m_composeAspectW <= 0 || m_composeAspectH <= 0)
+	{
+		return;
+	}
+	const QRect oldBounds = m_composeMdiArea->viewport() ? m_composeMdiArea->viewport()->rect() : QRect();
+	resizeWindowForComposeAspect();
+	auto* host = static_cast<AspectRatioHostWidget*>(m_composePreviewHost);
+	host->setAspectRatio(m_composeAspectW, m_composeAspectH);
+	const QRect newBounds = m_composeMdiArea->viewport() ? m_composeMdiArea->viewport()->rect() : QRect();
+	remapComposeSourcesToViewport(oldBounds, newBounds);
+	const QRect bounds = m_composeMdiArea->viewport() ? m_composeMdiArea->viewport()->rect() : m_composeMdiArea->rect();
+	const auto windows = m_composeMdiArea->subWindowList(QMdiArea::StackingOrder);
+	for (QMdiSubWindow* sub : windows)
+	{
+		if (!sub)
+		{
+			continue;
+		}
+		QRect g = sub->geometry();
+		if (g.width() > bounds.width())
+		{
+			g.setWidth(bounds.width());
+		}
+		if (g.height() > bounds.height())
+		{
+			g.setHeight(bounds.height());
+		}
+		if (g.right() > bounds.right())
+		{
+			g.moveRight(bounds.right());
+		}
+		if (g.bottom() > bounds.bottom())
+		{
+			g.moveBottom(bounds.bottom());
+		}
+		if (g.left() < bounds.left())
+		{
+			g.moveLeft(bounds.left());
+		}
+		if (g.top() < bounds.top())
+		{
+			g.moveTop(bounds.top());
+		}
+		sub->setGeometry(g);
+	}
+	forceRefreshComposePreview();
+}
+
+void CaptureWindow::refreshComposeScreenCaptureState(const int activeScreenSourceIndex)
+{
+	if (!m_isComposeMode)
+	{
+		return;
+	}
+	if (m_service)
+	{
+		m_service->screenSetActive(false);
+	}
+	for (int i = 0; i < m_composeSources.size(); ++i)
+	{
+		auto& src = m_composeSources[i];
+		if (src.kind != ComposeSourceItem::SourceKind::Screen || !src.service)
+		{
+			continue;
+		}
+		if (i == activeScreenSourceIndex)
+		{
+			src.service->screenSetActive(false);
+			src.service->selectScreen(qMax(0, src.deviceIndex));
+			src.service->screenSetFrameRate(qMax(1, src.screenFps));
+			src.service->screenSetCursorCaptureEnabled(src.screenCaptureCursor);
+			src.service->screenSetActive(true);
+		}
+		else
+		{
+			// 防止多采集实例并发引发底层争用/崩溃，非当前屏幕源保持非激活。
+			src.service->screenSetActive(false);
+		}
+	}
+}
+
+void CaptureWindow::resizeWindowForComposeAspect()
+{
+	if (!m_isComposeMode || m_adjustingComposeWindowSize || !m_composePreviewHost || !ui || !ui->wgtDown)
+	{
+		return;
+	}
+	m_adjustingComposeWindowSize = true;
+	const int leftWidth = m_composeSplitter ? qMax(220, m_composeSplitter->sizes().isEmpty() ? 260 : m_composeSplitter->sizes().at(0)) :
+	                                      260;
+	const int targetPreviewH = qMax(360, m_composePreviewHost->height());
+	const int targetPreviewW = qMax(320, targetPreviewH * m_composeAspectW / qMax(1, m_composeAspectH));
+	const int targetW = leftWidth + targetPreviewW + 16;
+	const int menuH = m_modeMenuBar ? m_modeMenuBar->height() : 24;
+	const int bottomH = ui->wgtDown ? ui->wgtDown->height() : 40;
+	const int targetH = targetPreviewH + bottomH + menuH + 12;
+	const QRect targetGeom(x(), y(), targetW, targetH);
+	auto* anim = new QPropertyAnimation(this, "geometry");
+	anim->setDuration(160);
+	anim->setEasingCurve(QEasingCurve::OutCubic);
+	anim->setStartValue(geometry());
+	anim->setEndValue(targetGeom);
+	connect(anim, &QPropertyAnimation::finished, this, [this, anim]() {
+		anim->deleteLater();
+		m_adjustingComposeWindowSize = false;
+	});
+	anim->start();
+	return;
+}
+
+void CaptureWindow::remapComposeSourcesToViewport(const QRect& oldBounds, const QRect& newBounds)
+{
+	if (!m_composeMdiArea || oldBounds.width() <= 0 || oldBounds.height() <= 0 || newBounds.width() <= 0 || newBounds.height() <= 0)
+	{
+		return;
+	}
+	const double sx = static_cast<double>(newBounds.width()) / static_cast<double>(oldBounds.width());
+	const double sy = static_cast<double>(newBounds.height()) / static_cast<double>(oldBounds.height());
+	const auto windows = m_composeMdiArea->subWindowList(QMdiArea::StackingOrder);
+	for (QMdiSubWindow* sub : windows)
+	{
+		if (!sub)
+		{
+			continue;
+		}
+		const QRect g = sub->geometry();
+		const int nx = static_cast<int>(g.x() * sx);
+		const int ny = static_cast<int>(g.y() * sy);
+		const int nw = qMax(80, static_cast<int>(g.width() * sx));
+		const int nh = qMax(60, static_cast<int>(g.height() * sy));
+		sub->setGeometry(nx, ny, nw, nh);
+	}
+}
+
+void CaptureWindow::forceRefreshComposePreview()
+{
+	if (!m_composeMdiArea)
+	{
+		return;
+	}
+	// 原生视频渲染控件在 MDI 内频繁几何变化后，偶发残影；拖拽结束时强制刷新一次画布和子项。
+	m_composeMdiArea->update();
+	if (QWidget* vp = m_composeMdiArea->viewport())
+	{
+		vp->update();
+		vp->repaint();
+	}
+	const auto windows = m_composeMdiArea->subWindowList(QMdiArea::StackingOrder);
+	for (QMdiSubWindow* sub : windows)
+	{
+		if (!sub)
+		{
+			continue;
+		}
+		sub->update();
+		sub->repaint();
+	}
+}
+
+void CaptureWindow::requestComposeSourceContextMenu(const QPoint& globalPos, const int index)
+{
+	if (index < 0 || index >= m_composeSources.size())
+	{
+		return;
+	}
+	m_composeSelectedIndex = index;
+	refreshComposeSourceListSelection();
+	updateComposeSelectionHighlight();
+	QMenu menu(this);
+	auto* actionTop = menu.addAction(tr("置于顶部"));
+	auto* actionBottom = menu.addAction(tr("置于底部"));
+	auto* actionUp = menu.addAction(tr("向上调整"));
+	auto* actionDown = menu.addAction(tr("向下调整"));
+	auto* actionKeepAspect = menu.addAction(m_composeSources[index].keepAspectResize ? tr("取消锁定缩放比例") : tr("锁定缩放比例"));
+	auto* actionCrop = menu.addAction(m_composeSources[index].cropMode ? tr("退出裁剪") : tr("裁剪"));
+	menu.addSeparator();
+	auto* actionDelete = menu.addAction(tr("删除"));
+	QAction* chosen = menu.exec(globalPos);
+	if (!chosen)
+	{
+		return;
+	}
+	if (chosen == actionTop)
+	{
+		bringComposeSourceToFront(index);
+		return;
+	}
+	if (chosen == actionBottom)
+	{
+		sendComposeSourceToBack(index);
+		return;
+	}
+	if (chosen == actionUp)
+	{
+		moveComposeSourceUp(index);
+		return;
+	}
+	if (chosen == actionDown)
+	{
+		moveComposeSourceDown(index);
+		return;
+	}
+	if (chosen == actionCrop)
+	{
+		setComposeCropMode(index, !m_composeSources[index].cropMode);
+		return;
+	}
+	if (chosen == actionKeepAspect)
+	{
+		m_composeSources[index].keepAspectResize = !m_composeSources[index].keepAspectResize;
+		if (auto* c = static_cast<ComposeSourceWidget*>(m_composeSources[index].container))
+		{
+			c->setAspectResizeEnabled(m_composeSources[index].keepAspectResize);
+		}
+		return;
+	}
+	if (chosen == actionDelete)
+	{
+		removeComposeSourceAt(index);
+	}
+}
+
+bool CaptureWindow::buildComposeScreenCaptureSpec(QString& spec,
+                                                  const int fps,
+                                                  const int outW,
+                                                  const int outH,
+                                                  const int bitrateKbps,
+                                                  const QString& encoder,
+                                                  const QString& audioIn,
+                                                  const QString& audioOut) const
+{
+	spec.clear();
+	if (!m_isComposeMode || !m_composeMdiArea || m_composeSources.isEmpty())
+	{
+		return false;
+	}
+	const QWidget* target = m_composeMdiArea->viewport();
+	if (!target || target->width() <= 0 || target->height() <= 0)
+	{
+		return false;
+	}
+	QPoint global = target->mapToGlobal(QPoint(0, 0));
+	int capW = target->width();
+	int capH = target->height();
+#if defined(_WIN32)
+	// gdigrab 采集参数使用设备像素；Qt 坐标是逻辑像素，需按屏幕 DPR 转换。
+	qreal dpr = 1.0;
+	if (const QWindow* wnd = this->windowHandle())
+	{
+		dpr = wnd->devicePixelRatio();
+	}
+	else if (const QScreen* sc = this->screen())
+	{
+		dpr = sc->devicePixelRatio();
+	}
+	global.setX(qRound(static_cast<qreal>(global.x()) * dpr));
+	global.setY(qRound(static_cast<qreal>(global.y()) * dpr));
+	capW = qRound(static_cast<qreal>(capW) * dpr);
+	capH = qRound(static_cast<qreal>(capH) * dpr);
+#endif
+	QStringList parts;
+	parts << QStringLiteral("fps=%1").arg(fps > 0 ? fps : 30);
+	parts << QStringLiteral("x=%1").arg(global.x());
+	parts << QStringLiteral("y=%1").arg(global.y());
+	parts << QStringLiteral("size=%1x%2").arg(capW).arg(capH);
+	parts << QStringLiteral("scene_w=%1").arg(target->width());
+	parts << QStringLiteral("scene_h=%1").arg(target->height());
+	for (int i = 0; i < m_composeSources.size(); ++i)
+	{
+		const auto& src = m_composeSources.at(i);
+		if (!src.subWindow)
+		{
+			continue;
+		}
+		const QRect g = src.subWindow->geometry();
+		const QString kind = (src.kind == ComposeSourceItem::SourceKind::Camera)
+			                     ? QStringLiteral("camera")
+			                     : (src.kind == ComposeSourceItem::SourceKind::Screen ? QStringLiteral("screen") : QStringLiteral("file"));
+		parts << QStringLiteral("src%1=%2,%3,%4,%5,%6,%7")
+			         .arg(i)
+			         .arg(kind)
+			         .arg(src.sourceId.trimmed().isEmpty() ? QStringLiteral("default") : src.sourceId.trimmed())
+			         .arg(g.x())
+			         .arg(g.y())
+			         .arg(g.width())
+			         .arg(g.height());
+	}
+	if (outW > 0 && outH > 0)
+	{
+		parts << QStringLiteral("outsize=%1x%2").arg(outW).arg(outH);
+	}
+	if (bitrateKbps > 0)
+	{
+		parts << QStringLiteral("bitrate=%1").arg(bitrateKbps);
+	}
+	if (!encoder.trimmed().isEmpty())
+	{
+		parts << QStringLiteral("encoder=%1").arg(encoder.trimmed().toLower());
+	}
+	if (!audioIn.trimmed().isEmpty())
+	{
+		parts << QStringLiteral("audio_in=%1").arg(audioIn.trimmed());
+	}
+	if (!audioOut.trimmed().isEmpty())
+	{
+		parts << QStringLiteral("audio_out=%1").arg(audioOut.trimmed());
+	}
+	spec = QStringLiteral("__compose_scene__:") + parts.join(';');
+	return true;
 }
 
 void CaptureWindow::updateFileProgressUi()
@@ -1336,6 +3261,11 @@ void CaptureWindow::resizeEvent(QResizeEvent* event)
 {
 	QWidget::resizeEvent(event);
 	relocateTitleWidget();
+	if (m_isComposeMode && m_composePreviewHost && m_composeAspectW > 0 && m_composeAspectH > 0)
+	{
+		static_cast<AspectRatioHostWidget*>(m_composePreviewHost)->setAspectRatio(m_composeAspectW, m_composeAspectH);
+		applyComposeZOrder();
+	}
 }
 
 void CaptureWindow::refreshCameraDeviceUi()

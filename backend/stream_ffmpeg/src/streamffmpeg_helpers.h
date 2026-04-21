@@ -14,6 +14,7 @@ namespace fplayer::streamffmpeg_helpers
 {
 	enum class PushInputKind
 	{
+		ComposeScene,
 		ScreenCapture,
 		ScreenPreview,
 		CameraCapture,
