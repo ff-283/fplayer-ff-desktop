@@ -3,6 +3,8 @@
 #include <fplayer/widget/capturewindow.h>
 #include <fplayer/service/service.h>
 #include <fplayer/widget/fvideoview.h>
+#include <fplayer/common/fglwidget/fglwidget.h>
+#include <fplayer/common/screenframebus/screenframebus.h>
 
 #include <QVBoxLayout>
 #include <QCamera>
@@ -80,6 +82,24 @@
 
 namespace
 {
+class PullPreviewDialog final : public QDialog
+{
+public:
+	explicit PullPreviewDialog(QWidget* parent = nullptr) : QDialog(parent) {}
+	std::function<bool()> beforeClose;
+
+protected:
+	void closeEvent(QCloseEvent* event) override
+	{
+		if (beforeClose && !beforeClose())
+		{
+			event->ignore();
+			return;
+		}
+		QDialog::closeEvent(event);
+	}
+};
+
 int choosePullListenPort(const int preferredPort)
 {
 	auto canBindLocalPort = [](const int port) -> bool {
@@ -1434,9 +1454,8 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		setComposeMode(true);
 	});
 	connect(actionPushStream, &QAction::triggered, this, [this]() {
-		QDialog dlg(this);
+		PullPreviewDialog dlg(this);
 		dlg.setWindowTitle(tr("推流配置"));
-		dlg.setWindowFlag(Qt::WindowCloseButtonHint, false);
 		auto* layout = new QFormLayout(&dlg);
 		layout->setVerticalSpacing(10);
 		layout->setRowWrapPolicy(QFormLayout::WrapLongRows);
@@ -1746,11 +1765,9 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		auto* buttons = new QDialogButtonBox(&dlg);
 		auto* btnStart = new QPushButton(tr("开始推流"), &dlg);
 		auto* btnStop = new QPushButton(tr("停止推流"), &dlg);
-		auto* btnClose = new QPushButton(tr("关闭窗口"), &dlg);
 		btnStart->setProperty("role", QStringLiteral("primary"));
 		buttons->addButton(btnStart, QDialogButtonBox::AcceptRole);
 		buttons->addButton(btnStop, QDialogButtonBox::ActionRole);
-		buttons->addButton(btnClose, QDialogButtonBox::RejectRole);
 		layout->addRow(buttons);
 		auto applyPushUiRunningState = [btnStart, btnStop, cmbProtocol, cmbOutput, spFps, cmbSize, spBitrate, cmbEncoder, cmbAudioInput,
 		                                cmbAudioOutput, fileScene](const bool running) {
@@ -1766,7 +1783,7 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 			cmbAudioOutput->setEnabled(!running && !fileScene);
 		};
 		applyPushUiRunningState(this->m_service->streamIsRunning());
-		connect(btnClose, &QPushButton::clicked, &dlg, [this, &dlg]() {
+		dlg.beforeClose = [this, &dlg]() -> bool {
 			if (this->m_service->streamIsRunning())
 			{
 				const auto answer = QMessageBox::question(&dlg,
@@ -1776,12 +1793,12 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 				                                          QMessageBox::No);
 				if (answer != QMessageBox::Yes)
 				{
-					return;
+					return false;
 				}
 				this->m_service->streamStop();
 			}
-			dlg.accept();
-		});
+			return true;
+		};
 		connect(btnStop, &QPushButton::clicked, &dlg,
 		        [this, applyPushUiRunningState]() {
 			this->m_service->streamStop();
@@ -2012,28 +2029,6 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 			// FFmpeg 的 RTSP 监听常用 listen 参数方式，作为最小兼容方案。
 			return QStringLiteral("rtsp://0.0.0.0:%1/live/%2").arg(reservedPort).arg(key);
 		};
-		auto makePullPreviewUrl = [dlg, cmbProtocol, edtStreamKey, reservedPort]() {
-			const QString relayUrl = dlg->property("pullPreviewRelayUrl").toString().trimmed();
-			if (!relayUrl.isEmpty())
-			{
-				return relayUrl;
-			}
-			const QString protocol = cmbProtocol->currentData().toString().trimmed().toLower();
-			const QString key = edtStreamKey->text().trimmed().isEmpty() ? QStringLiteral("stream001") : edtStreamKey->text().trimmed();
-			if (protocol == QStringLiteral("srt"))
-			{
-				return QStringLiteral("srt://127.0.0.1:%1?mode=caller&streamid=%2").arg(reservedPort).arg(key);
-			}
-			if (protocol == QStringLiteral("rtmp"))
-			{
-				return QStringLiteral("rtmp://127.0.0.1:%1/live/%2").arg(reservedPort).arg(key);
-			}
-			if (protocol == QStringLiteral("udp"))
-			{
-				return QStringLiteral("udp://127.0.0.1:%1").arg(reservedPort);
-			}
-			return QStringLiteral("rtsp://127.0.0.1:%1/live/%2").arg(reservedPort).arg(key);
-		};
 		auto refreshPullUrl = [lblPullUrl, makePublishUrl]() {
 			const QString publishUrl = makePublishUrl();
 			lblPullUrl->setText(publishUrl);
@@ -2065,19 +2060,16 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		m_pullLogView = txtLog;
 		dlg->setProperty("pullPreviewAutoOpened", false);
 		dlg->setProperty("pullExtraLog", QString());
-		dlg->setProperty("pullPreviewRelayUrl", QString());
 		dlg->setProperty("pullStopping", false);
 		dlg->setProperty("pullCloseAfterStop", false);
 		auto* buttons = new QDialogButtonBox(dlg);
 		auto* btnStart = new QPushButton(tr("开始拉流"), dlg);
 		auto* btnStop = new QPushButton(tr("结束拉流"), dlg);
 		auto* btnDiag = new QPushButton(tr("网络自检"), dlg);
-		auto* btnClose = new QPushButton(tr("关闭窗口"), dlg);
 		btnStart->setProperty("role", QStringLiteral("primary"));
 		buttons->addButton(btnStart, QDialogButtonBox::AcceptRole);
 		buttons->addButton(btnStop, QDialogButtonBox::ActionRole);
 		buttons->addButton(btnDiag, QDialogButtonBox::ActionRole);
-		buttons->addButton(btnClose, QDialogButtonBox::RejectRole);
 		m_pullStartButton = btnStart;
 		m_pullStopButton = btnStop;
 		auto applyPullUiRunningState = [btnStart, btnStop, cmbPullMode, cmbProtocol, edtStreamKey, cmbOutput, btnBrowseOutput](bool running) {
@@ -2112,7 +2104,6 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 			}
 			dlg->setProperty("pullStopping", true);
 			applyPullUiRunningState(false);
-			this->m_service->playerStop();
 			QPointer<CaptureWindow> selfGuard(this);
 			QPointer<QDialog> dlgGuard(dlg);
 			std::thread([selfGuard, dlgGuard]() {
@@ -2142,7 +2133,7 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		applyPullUiRunningState(this->m_service->streamIsRunning());
 		auto* logTimer = new QTimer(dlg);
 		logTimer->setInterval(500);
-		connect(logTimer, &QTimer::timeout, dlg, [this, dlg, makePullListenUrl, makePullPreviewUrl, lblStatus, txtLog, applyPullUiRunningState]() {
+		connect(logTimer, &QTimer::timeout, dlg, [this, dlg, makePullListenUrl, lblStatus, txtLog, applyPullUiRunningState]() {
 			const bool running = this->m_service->streamIsRunning();
 			applyPullUiRunningState(running);
 			if (running)
@@ -2163,43 +2154,18 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 			if (running && m_pullPreviewDialog && !dlg->property("pullPreviewAutoOpened").toBool() &&
 				latestLog.contains(QStringLiteral("[拉流] 检测到上游推流连接")))
 			{
-				const QString source = makePullPreviewUrl();
-				if (!source.isEmpty())
-				{
-					if (this->m_service->openMediaFile(source))
-					{
-						lblStatus->setText(tr("状态：已检测到推流连接，已自动打开预览"));
-						const QString prev = dlg->property("pullExtraLog").toString();
-						dlg->setProperty("pullExtraLog", prev + tr("[预览] 自动打开成功：%1\n").arg(source));
-					}
-					else
-					{
-						lblStatus->setText(tr("状态：已检测到推流连接，但预览打开失败，请点击“刷新”重试"));
-						const QString prev = dlg->property("pullExtraLog").toString();
-						dlg->setProperty("pullExtraLog", prev + tr("[预览] 自动打开失败：%1\n").arg(source));
-					}
-					dlg->setProperty("pullPreviewAutoOpened", true);
-				}
+				lblStatus->setText(tr("状态：已检测到推流连接，预览总线已接入"));
+				const QString prev = dlg->property("pullExtraLog").toString();
+				dlg->setProperty("pullExtraLog", prev + tr("[预览] 已切换为进程内预览总线（pull_preview）\n"));
+				dlg->setProperty("pullPreviewAutoOpened", true);
 			}
 			syncStreamLogView(txtLog, mergedLog);
 		});
 		logTimer->start();
-		connect(btnStart, &QPushButton::clicked, dlg, [this, dlg, cmbPullMode, cmbOutput, makePullListenUrl, makePullPreviewUrl, addRecent, applyPullUiRunningState]() {
+		connect(btnStart, &QPushButton::clicked, dlg, [this, dlg, cmbPullMode, cmbOutput, makePullListenUrl, addRecent, applyPullUiRunningState, requestStopPullAsync]() {
 			const QString pullInput = makePullListenUrl();
 			const bool recordMode = cmbPullMode->currentData().toString() == QStringLiteral("record");
 			QString pullOutput = recordMode ? cmbOutput->currentText().trimmed() : QString();
-			if (!recordMode)
-			{
-				const int relayPort = choosePullListenPort(20000);
-				pullOutput = QStringLiteral("udp://127.0.0.1:%1").arg(relayPort);
-				dlg->setProperty("pullPreviewRelayUrl", pullOutput);
-				const QString prev = dlg->property("pullExtraLog").toString();
-				dlg->setProperty("pullExtraLog", prev + tr("[预览] 使用内部中继：%1\n").arg(pullOutput));
-			}
-			else
-			{
-				dlg->setProperty("pullPreviewRelayUrl", QString());
-			}
 			if (pullInput.isEmpty() || (recordMode && pullOutput.isEmpty()))
 			{
 				QMessageBox::warning(this, tr("拉流失败"), recordMode ? tr("输入地址和保存路径不能为空。") : tr("输入地址不能为空。"));
@@ -2210,6 +2176,7 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 				QMessageBox::warning(this, tr("拉流失败"), this->m_service->streamLastError());
 				return;
 			}
+			this->m_service->streamSetPreviewPaused(false);
 			addRecent(m_recentPullInputs, pullInput);
 			if (recordMode)
 			{
@@ -2219,7 +2186,7 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 			dlg->setProperty("pullPreviewAutoOpened", false);
 			if (!m_pullPreviewDialog)
 			{
-				auto* preview = new QDialog(this);
+				auto* preview = new PullPreviewDialog(this);
 				preview->setAttribute(Qt::WA_DeleteOnClose, true);
 				preview->setWindowTitle(tr("拉流预览"));
 				preview->resize(900, 560);
@@ -2233,49 +2200,105 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 				auto* btnPause = new QPushButton(tr("暂停"), ctrlRow);
 				auto* btnRefresh = new QPushButton(tr("刷新"), ctrlRow);
 				auto* sldVolume = new QSlider(Qt::Horizontal, ctrlRow);
-				sldVolume->setRange(0, 100);
-				sldVolume->setValue(qRound(this->m_service->playerVolume() * 100.0f));
+				auto* lblVolume = new QLabel(tr("音量"), ctrlRow);
+				auto* lblVolumeValue = new QLabel(ctrlRow);
+				sldVolume->setRange(0, 200);
+				sldVolume->setValue(qRound(this->m_service->streamPreviewVolume() * 100.0f));
+				sldVolume->setFixedWidth(180);
+				sldVolume->setTickPosition(QSlider::TicksBelow);
+				sldVolume->setTickInterval(20);
+				sldVolume->setToolTip(tr("音量：%1%").arg(sldVolume->value()));
+				btnPause->setMinimumWidth(74);
+				btnRefresh->setMinimumWidth(74);
+				lblVolume->setMinimumWidth(34);
+				lblVolumeValue->setMinimumWidth(46);
+				lblVolumeValue->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+				lblVolumeValue->setText(tr("%1%").arg(sldVolume->value()));
 				ctrlLayout->addWidget(btnPause, 0);
 				ctrlLayout->addWidget(btnRefresh, 0);
-				ctrlLayout->addWidget(new QLabel(tr("音量"), ctrlRow), 0);
-				ctrlLayout->addWidget(sldVolume, 1);
+				ctrlLayout->addStretch(1);
+				ctrlLayout->addSpacing(8);
+				ctrlLayout->addWidget(lblVolume, 0);
+				ctrlLayout->addWidget(sldVolume, 0);
+				ctrlLayout->addWidget(lblVolumeValue, 0);
 				vLayout->addWidget(ctrlRow, 0);
 				m_pullPreviewDialog = preview;
 				m_pullPreviewView = view;
 				m_pullVolumeSlider = sldVolume;
-				connect(preview, &QObject::destroyed, this, [this]() {
+				connect(preview, &QObject::destroyed, this, [this, requestStopPullAsync]() {
 					m_pullPreviewDialog = nullptr;
 					m_pullPreviewView = nullptr;
 					m_pullVolumeSlider = nullptr;
-					if (m_service) { m_service->playerStop(); }
+					if (m_service && m_service->streamIsRunning())
+					{
+						requestStopPullAsync();
+					}
 				});
+				preview->beforeClose = [this, preview, dlg, requestStopPullAsync]() -> bool {
+					if (dlg->property("pullStopping").toBool())
+					{
+						return false;
+					}
+					if (!m_service || !m_service->streamIsRunning())
+					{
+						return true;
+					}
+					const auto answer = QMessageBox::question(preview,
+					                                          tr("确认关闭"),
+					                                          tr("关闭拉流预览将同时停止拉流，是否继续？"),
+					                                          QMessageBox::Yes | QMessageBox::No,
+					                                          QMessageBox::No);
+					if (answer == QMessageBox::Yes)
+					{
+						requestStopPullAsync();
+					}
+					return false;
+				};
 				connect(btnPause, &QPushButton::clicked, preview, [this, btnPause]() {
-					if (m_service->playerIsPlaying())
-					{
-						m_service->playerPause();
-						btnPause->setText(tr("继续"));
-					}
-					else
-					{
-						m_service->playerResume();
-						btnPause->setText(tr("暂停"));
-					}
+					const bool paused = this->m_service->streamPreviewPaused();
+					this->m_service->streamSetPreviewPaused(!paused);
+					btnPause->setText(paused ? tr("暂停") : tr("继续"));
 				});
-				connect(btnRefresh, &QPushButton::clicked, preview, [this, dlg, makePullPreviewUrl]() {
-					const QString source = makePullPreviewUrl();
-					if (!source.isEmpty())
-					{
-						const bool ok = m_service->openMediaFile(source);
-						const QString prev = dlg->property("pullExtraLog").toString();
-						dlg->setProperty("pullExtraLog",
-						                 prev + (ok ? tr("[预览] 手动刷新成功：%1\n").arg(source)
-						                            : tr("[预览] 手动刷新失败：%1\n").arg(source)));
-					}
+				connect(btnRefresh, &QPushButton::clicked, preview, [this, dlg]() {
+					const QString prev = dlg->property("pullExtraLog").toString();
+					dlg->setProperty("pullExtraLog", prev + tr("[预览] 已刷新进程内预览总线（pull_preview）\n"));
 				});
 				connect(sldVolume, &QSlider::valueChanged, preview, [this](int value) {
-					this->m_service->playerSetVolume(static_cast<float>(value) / 100.0f);
+					this->m_service->streamSetPreviewVolume(static_cast<float>(value) / 100.0f);
 				});
-				this->m_service->bindPlayerPreview(view);
+				connect(sldVolume, &QSlider::valueChanged, preview, [sldVolume](int value) {
+					sldVolume->setToolTip(QObject::tr("音量：%1%").arg(value));
+				});
+				connect(sldVolume, &QSlider::valueChanged, preview, [lblVolumeValue](int value) {
+					lblVolumeValue->setText(QObject::tr("%1%").arg(value));
+				});
+				const auto previewTarget = view->previewTarget();
+				auto* gl = static_cast<fplayer::FGLWidget*>(previewTarget.backend_hint);
+				auto* frameTimer = new QTimer(preview);
+				frameTimer->setInterval(16);
+				const auto lastSerial = std::make_shared<quint64>(0);
+				connect(frameTimer, &QTimer::timeout, preview, [gl, lastSerial]() {
+					if (!gl)
+					{
+						return;
+					}
+					fplayer::ScreenFrame frame;
+					if (!fplayer::ScreenFrameBus::instance().snapshotIfNew(*lastSerial, frame, QStringLiteral("pull_preview")))
+					{
+						return;
+					}
+					*lastSerial = frame.serial;
+					QMetaObject::invokeMethod(gl, "updateYUVFrame", Qt::QueuedConnection,
+					                          Q_ARG(QByteArray, frame.y),
+					                          Q_ARG(QByteArray, frame.u),
+					                          Q_ARG(QByteArray, frame.v),
+					                          Q_ARG(int, frame.width),
+					                          Q_ARG(int, frame.height),
+					                          Q_ARG(int, frame.yStride),
+					                          Q_ARG(int, frame.uStride),
+					                          Q_ARG(int, frame.vStride));
+				});
+				frameTimer->start();
 				preview->show();
 			}
 		});
@@ -2301,24 +2324,6 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 			const QString message = lines.join(QLatin1Char('\n')) + QLatin1Char('\n');
 			const QString prev = dlg->property("pullExtraLog").toString();
 			dlg->setProperty("pullExtraLog", prev + message);
-		});
-		connect(btnClose, &QPushButton::clicked, dlg, [this, dlg, requestStopPullAsync]() {
-			if (this->m_service->streamIsRunning())
-			{
-				const auto answer = QMessageBox::question(dlg,
-				                                          tr("确认关闭"),
-				                                          tr("当前正在拉流，确定先停止拉流再关闭监视窗口吗？"),
-				                                          QMessageBox::Yes | QMessageBox::No,
-				                                          QMessageBox::No);
-				if (answer != QMessageBox::Yes)
-				{
-					return;
-				}
-				dlg->setProperty("pullCloseAfterStop", true);
-				requestStopPullAsync();
-				return;
-			}
-			dlg->close();
 		});
 		layout->addRow(tr("协议模板"), cmbProtocol);
 		layout->addRow(tr("模式"), cmbPullMode);

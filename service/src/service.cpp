@@ -599,6 +599,32 @@ bool fplayer::Service::streamHasCompletedSession() const
 	return m_stream && m_stream->hasCompletedStreamSession();
 }
 
+void fplayer::Service::streamSetPreviewPaused(const bool paused)
+{
+	if (m_stream)
+	{
+		m_stream->setPreviewPaused(paused);
+	}
+}
+
+bool fplayer::Service::streamPreviewPaused() const
+{
+	return m_stream && m_stream->previewPaused();
+}
+
+void fplayer::Service::streamSetPreviewVolume(const float volume)
+{
+	if (m_stream)
+	{
+		m_stream->setPreviewVolume(volume);
+	}
+}
+
+float fplayer::Service::streamPreviewVolume() const
+{
+	return m_stream ? m_stream->previewVolume() : 1.0f;
+}
+
 // void fplayer::Service::bindCameraPreviewQt6(QWidget* widget)
 // {
 // 	PreviewTarget target;

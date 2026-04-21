@@ -116,6 +116,10 @@ namespace fplayer
 		int streamLastExitCode() const;
 		QStringList streamAvailableVideoEncoders() const;
 		bool streamHasCompletedSession() const;
+		void streamSetPreviewPaused(bool paused);
+		bool streamPreviewPaused() const;
+		void streamSetPreviewVolume(float volume);
+		float streamPreviewVolume() const;
 
 	private:
 		// void bindCameraPreviewQt6(QWidget* widget);

@@ -21,6 +21,15 @@ extern "C"
 #include <QMutexLocker>
 #include <QThread>
 #include <QUrl>
+#if __has_include(<QAudioFormat>) && __has_include(<QAudioSink>) && __has_include(<QMediaDevices>) && __has_include(<QIODevice>)
+#include <QAudioFormat>
+#include <QAudioSink>
+#include <QMediaDevices>
+#include <QIODevice>
+#define FPLAYER_PREVIEW_AUDIO_WITH_QT 1
+#else
+#define FPLAYER_PREVIEW_AUDIO_WITH_QT 0
+#endif
 #include <fplayer/common/cameraframebus/cameraframebus.h>
 #include <fplayer/common/screenframebus/screenframebus.h>
 #include "audio_pipeline.h"
@@ -303,6 +312,26 @@ bool fplayer::StreamFFmpeg::hasCompletedStreamSession() const
 	return m_completedSession.load(std::memory_order_relaxed);
 }
 
+void fplayer::StreamFFmpeg::setPreviewPaused(const bool paused)
+{
+	m_previewPaused.store(paused, std::memory_order_relaxed);
+}
+
+bool fplayer::StreamFFmpeg::previewPaused() const
+{
+	return m_previewPaused.load(std::memory_order_relaxed);
+}
+
+void fplayer::StreamFFmpeg::setPreviewVolume(const float volume)
+{
+	m_previewVolume.store(std::clamp(volume, 0.0f, 2.0f), std::memory_order_relaxed);
+}
+
+float fplayer::StreamFFmpeg::previewVolume() const
+{
+	return m_previewVolume.load(std::memory_order_relaxed);
+}
+
 void fplayer::StreamFFmpeg::appendLogLine(const QString& line)
 {
 	QMutexLocker locker(&m_mutex);
@@ -320,6 +349,25 @@ void fplayer::StreamFFmpeg::remuxLoop(const QString& inputUrl, const QString& ou
 	AVFormatContext* ifmt = nullptr;
 	AVFormatContext* ofmt = nullptr;
 	AVPacket* pkt = nullptr;
+	AVCodecContext* previewDecCtx = nullptr;
+	SwsContext* previewSws = nullptr;
+	AVFrame* previewDecFrame = nullptr;
+	AVFrame* previewYuvFrame = nullptr;
+	int previewVideoStreamIndex = -1;
+	AVCodecContext* previewAudioDecCtx = nullptr;
+	SwrContext* previewAudioSwr = nullptr;
+	AVFrame* previewAudioDecFrame = nullptr;
+	AVFrame* previewAudioOutFrame = nullptr;
+	int previewAudioStreamIndex = -1;
+#if FPLAYER_PREVIEW_AUDIO_WITH_QT
+	QAudioSink* previewAudioSink = nullptr;
+	QIODevice* previewAudioIo = nullptr;
+#endif
+	bool previewAudioReady = false;
+	int previewAudioDecodedFrames = 0;
+	int previewAudioResampledSamples = 0;
+	int previewAudioWrittenBytes = 0;
+	auto previewAudioStatWindowStart = std::chrono::steady_clock::now();
 	int ret = 0;
 	int exitCode = 0;
 	bool wroteHeader = false;
@@ -524,6 +572,59 @@ void fplayer::StreamFFmpeg::remuxLoop(const QString& inputUrl, const QString& ou
 		}
 		outStr->codecpar->codec_tag = 0;
 	}
+	for (unsigned i = 0; i < ifmt->nb_streams; ++i)
+	{
+		if (ifmt->streams[i] && ifmt->streams[i]->codecpar &&
+			ifmt->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO)
+		{
+			previewVideoStreamIndex = static_cast<int>(i);
+			break;
+		}
+	}
+	for (unsigned i = 0; i < ifmt->nb_streams; ++i)
+	{
+		if (ifmt->streams[i] && ifmt->streams[i]->codecpar &&
+			ifmt->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO)
+		{
+			previewAudioStreamIndex = static_cast<int>(i);
+			break;
+		}
+	}
+	if (previewVideoStreamIndex >= 0)
+	{
+		const AVCodecParameters* vpar = ifmt->streams[previewVideoStreamIndex]->codecpar;
+		const AVCodec* dec = avcodec_find_decoder(vpar->codec_id);
+		if (dec)
+		{
+			previewDecCtx = avcodec_alloc_context3(dec);
+			if (previewDecCtx && avcodec_parameters_to_context(previewDecCtx, vpar) >= 0 &&
+				avcodec_open2(previewDecCtx, dec, nullptr) >= 0)
+			{
+				previewDecFrame = av_frame_alloc();
+				previewYuvFrame = av_frame_alloc();
+				if (previewDecFrame && previewYuvFrame)
+				{
+					appendLogLine(QStringLiteral("[拉流] 预览解码器已启用"));
+				}
+			}
+		}
+	}
+	if (previewOnlyMode && previewAudioStreamIndex >= 0)
+	{
+		const AVCodecParameters* apar = ifmt->streams[previewAudioStreamIndex]->codecpar;
+		const AVCodec* adec = avcodec_find_decoder(apar->codec_id);
+		if (adec)
+		{
+			previewAudioDecCtx = avcodec_alloc_context3(adec);
+			if (previewAudioDecCtx && avcodec_parameters_to_context(previewAudioDecCtx, apar) >= 0 &&
+				avcodec_open2(previewAudioDecCtx, adec, nullptr) >= 0)
+			{
+				previewAudioDecFrame = av_frame_alloc();
+				previewAudioOutFrame = av_frame_alloc();
+				appendLogLine(QStringLiteral("[拉流] 预览音频解码器已启用"));
+			}
+		}
+	}
 
 	if (!(ofmt->oformat->flags & AVFMT_NOFILE))
 	{
@@ -570,12 +671,201 @@ void fplayer::StreamFFmpeg::remuxLoop(const QString& inputUrl, const QString& ou
 			av_packet_unref(pkt);
 			continue;
 		}
+		if (previewDecCtx && previewDecFrame && previewYuvFrame && pkt->stream_index == previewVideoStreamIndex)
+		{
+			if (avcodec_send_packet(previewDecCtx, pkt) == 0)
+			{
+				while (avcodec_receive_frame(previewDecCtx, previewDecFrame) == 0)
+				{
+					if (!previewSws ||
+						previewYuvFrame->width != previewDecFrame->width ||
+						previewYuvFrame->height != previewDecFrame->height)
+					{
+						if (previewSws)
+						{
+							sws_freeContext(previewSws);
+							previewSws = nullptr;
+						}
+						av_frame_unref(previewYuvFrame);
+						previewYuvFrame->format = AV_PIX_FMT_YUV420P;
+						previewYuvFrame->width = previewDecFrame->width;
+						previewYuvFrame->height = previewDecFrame->height;
+						if (av_frame_get_buffer(previewYuvFrame, 32) < 0)
+						{
+							break;
+						}
+						previewSws = sws_getContext(previewDecFrame->width, previewDecFrame->height,
+						                            static_cast<AVPixelFormat>(previewDecFrame->format),
+						                            previewDecFrame->width, previewDecFrame->height, AV_PIX_FMT_YUV420P,
+						                            SWS_BILINEAR, nullptr, nullptr, nullptr);
+					}
+					if (previewSws && av_frame_make_writable(previewYuvFrame) >= 0)
+					{
+						sws_scale(previewSws,
+						          previewDecFrame->data,
+						          previewDecFrame->linesize,
+						          0,
+						          previewDecFrame->height,
+						          previewYuvFrame->data,
+						          previewYuvFrame->linesize);
+						const int h = previewYuvFrame->height;
+						const int uvH = (h + 1) / 2;
+						const int ySize = previewYuvFrame->linesize[0] * h;
+						const int uSize = previewYuvFrame->linesize[1] * uvH;
+						const int vSize = previewYuvFrame->linesize[2] * uvH;
+						QByteArray y(reinterpret_cast<const char*>(previewYuvFrame->data[0]), ySize);
+						QByteArray u(reinterpret_cast<const char*>(previewYuvFrame->data[1]), uSize);
+						QByteArray v(reinterpret_cast<const char*>(previewYuvFrame->data[2]), vSize);
+						if (!m_previewPaused.load(std::memory_order_relaxed))
+						{
+							fplayer::ScreenFrameBus::instance().publish(y, u, v,
+							                                            previewYuvFrame->width, previewYuvFrame->height,
+							                                            previewYuvFrame->linesize[0],
+							                                            previewYuvFrame->linesize[1],
+							                                            previewYuvFrame->linesize[2],
+							                                            QStringLiteral("pull_preview"));
+						}
+					}
+				}
+			}
+		}
 		if (!firstPacketArrived)
 		{
 			firstPacketArrived = true;
 			firstPacketMs = QDateTime::currentMSecsSinceEpoch();
 			appendLogLine(QStringLiteral("[拉流] 检测到上游推流连接"));
 			appendLogLine(QStringLiteral("[拉流] 首包到达耗时=%1ms").arg(firstPacketMs - startMs));
+		}
+		if (previewOnlyMode && previewAudioDecCtx && previewAudioDecFrame && previewAudioOutFrame &&
+			pkt->stream_index == previewAudioStreamIndex)
+		{
+			if (avcodec_send_packet(previewAudioDecCtx, pkt) == 0)
+			{
+				while (avcodec_receive_frame(previewAudioDecCtx, previewAudioDecFrame) == 0)
+				{
+#if FPLAYER_PREVIEW_AUDIO_WITH_QT
+					if (!previewAudioReady)
+					{
+						QAudioFormat format = QMediaDevices::defaultAudioOutput().preferredFormat();
+						if (format.sampleRate() <= 0)
+						{
+							format.setSampleRate(48000);
+						}
+						format.setChannelCount(2);
+						format.setSampleFormat(QAudioFormat::Int16);
+						previewAudioSink = new QAudioSink(format);
+						previewAudioSink->setBufferSize(256 * 1024);
+						previewAudioIo = previewAudioSink->start();
+						if (!previewAudioIo)
+						{
+							appendLogLine(QStringLiteral("[拉流][音频] QAudioSink start 失败"));
+							delete previewAudioSink;
+							previewAudioSink = nullptr;
+						}
+						else
+						{
+							AVChannelLayout outLayout;
+							av_channel_layout_default(&outLayout, format.channelCount());
+							av_sample_fmt_is_planar(AV_SAMPLE_FMT_S16);
+							swr_alloc_set_opts2(&previewAudioSwr,
+							                    &outLayout,
+							                    AV_SAMPLE_FMT_S16,
+							                    format.sampleRate(),
+							                    &previewAudioDecCtx->ch_layout,
+							                    previewAudioDecCtx->sample_fmt,
+							                    previewAudioDecCtx->sample_rate,
+							                    0,
+							                    nullptr);
+							av_channel_layout_uninit(&outLayout);
+							if (!previewAudioSwr || swr_init(previewAudioSwr) < 0)
+							{
+								appendLogLine(QStringLiteral("[拉流][音频] 重采样器初始化失败"));
+								if (previewAudioSwr)
+								{
+									swr_free(&previewAudioSwr);
+								}
+							}
+							else
+							{
+								previewAudioReady = true;
+								appendLogLine(QStringLiteral("[拉流] 预览音频输出已启用 rate=48000 ch=2 fmt=s16"));
+							}
+						}
+					}
+					if (previewAudioReady && previewAudioSwr && previewAudioIo)
+					{
+						++previewAudioDecodedFrames;
+						const int outSamples = av_rescale_rnd(
+							swr_get_delay(previewAudioSwr, previewAudioDecCtx->sample_rate) + previewAudioDecFrame->nb_samples,
+							48000,
+							previewAudioDecCtx->sample_rate,
+							AV_ROUND_UP);
+						av_frame_unref(previewAudioOutFrame);
+						previewAudioOutFrame->format = AV_SAMPLE_FMT_S16;
+						previewAudioOutFrame->sample_rate = 48000;
+						av_channel_layout_default(&previewAudioOutFrame->ch_layout, 2);
+						previewAudioOutFrame->nb_samples = outSamples;
+						if (av_frame_get_buffer(previewAudioOutFrame, 0) == 0)
+						{
+							const int conv = swr_convert(previewAudioSwr,
+							                             previewAudioOutFrame->data,
+							                             outSamples,
+							                             const_cast<const uint8_t**>(previewAudioDecFrame->data),
+							                             previewAudioDecFrame->nb_samples);
+							if (conv > 0)
+							{
+								previewAudioResampledSamples += conv;
+								const int outBytes = av_samples_get_buffer_size(nullptr, 2, conv, AV_SAMPLE_FMT_S16, 1);
+								if (outBytes > 0)
+								{
+										float vol = m_previewVolume.load(std::memory_order_relaxed);
+										if (m_previewPaused.load(std::memory_order_relaxed))
+										{
+											vol = 0.0f;
+										}
+										if (std::abs(vol - 1.0f) > 0.001f)
+										{
+											auto* pcm = reinterpret_cast<int16_t*>(previewAudioOutFrame->data[0]);
+											const int samples = outBytes / static_cast<int>(sizeof(int16_t));
+											for (int i = 0; i < samples; ++i)
+											{
+												const float normalized = static_cast<float>(pcm[i]) / 32768.0f;
+												const float scaled = normalized * vol;
+												const float limited = scaled / (1.0f + std::abs(scaled)); // soft limiter
+												const int outSample = static_cast<int>(std::lrint(limited * 32767.0f));
+												pcm[i] = static_cast<int16_t>(std::clamp(outSample, -32768, 32767));
+											}
+										}
+										const qint64 written = previewAudioIo->write(reinterpret_cast<const char*>(previewAudioOutFrame->data[0]), outBytes);
+									if (written > 0)
+									{
+										previewAudioWrittenBytes += static_cast<int>(written);
+									}
+								}
+							}
+						}
+					}
+#else
+					if (!previewAudioReady)
+					{
+						appendLogLine(QStringLiteral("[拉流] 预览音频输出未启用：当前构建未包含 QtMultimedia，暂仅视频预览"));
+						previewAudioReady = true;
+					}
+#endif
+					const auto audioStatNow = std::chrono::steady_clock::now();
+					if (std::chrono::duration_cast<std::chrono::milliseconds>(audioStatNow - previewAudioStatWindowStart).count() >= 1000)
+					{
+						appendLogLine(QStringLiteral("[拉流][音频] 1s: decFrames=%1 resampledSamples=%2 writtenBytes=%3")
+						              .arg(previewAudioDecodedFrames)
+						              .arg(previewAudioResampledSamples)
+						              .arg(previewAudioWrittenBytes));
+						previewAudioDecodedFrames = 0;
+						previewAudioResampledSamples = 0;
+						previewAudioWrittenBytes = 0;
+						previewAudioStatWindowStart = audioStatNow;
+					}
+				}
+			}
 		}
 		AVStream* inStr = ifmt->streams[pkt->stream_index];
 		AVStream* outStr = ofmt->streams[pkt->stream_index];
@@ -632,6 +922,47 @@ cleanup:
 	{
 		av_packet_free(&pkt);
 	}
+	if (previewSws)
+	{
+		sws_freeContext(previewSws);
+	}
+	if (previewDecFrame)
+	{
+		av_frame_free(&previewDecFrame);
+	}
+	if (previewYuvFrame)
+	{
+		av_frame_free(&previewYuvFrame);
+	}
+	if (previewDecCtx)
+	{
+		avcodec_free_context(&previewDecCtx);
+	}
+	if (previewAudioOutFrame)
+	{
+		av_frame_free(&previewAudioOutFrame);
+	}
+	if (previewAudioDecFrame)
+	{
+		av_frame_free(&previewAudioDecFrame);
+	}
+	if (previewAudioSwr)
+	{
+		swr_free(&previewAudioSwr);
+	}
+	if (previewAudioDecCtx)
+	{
+		avcodec_free_context(&previewAudioDecCtx);
+	}
+	#if FPLAYER_PREVIEW_AUDIO_WITH_QT
+	if (previewAudioSink)
+	{
+		previewAudioSink->stop();
+		delete previewAudioSink;
+		previewAudioSink = nullptr;
+		previewAudioIo = nullptr;
+	}
+	#endif
 
 	{
 		QMutexLocker locker(&m_mutex);

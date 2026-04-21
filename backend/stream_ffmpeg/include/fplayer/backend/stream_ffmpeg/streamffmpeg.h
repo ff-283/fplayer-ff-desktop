@@ -31,6 +31,10 @@ namespace fplayer
 		int lastExitCode() const override;
 		QStringList availableVideoEncoders() const override;
 		bool hasCompletedStreamSession() const override;
+		void setPreviewPaused(bool paused) override;
+		bool previewPaused() const override;
+		void setPreviewVolume(float volume) override;
+		float previewVolume() const override;
 
 	private:
 		/// 使用 libav* 转封装（流拷贝），\p outputShortName 非空时传给 avformat_alloc_output_context2。
@@ -63,6 +67,8 @@ namespace fplayer
 		QString m_recentLog;
 		int m_lastExitCode = 0;
 		std::atomic<bool> m_completedSession{false};
+		std::atomic<bool> m_previewPaused{false};
+		std::atomic<float> m_previewVolume{1.0f};
 	};
 }
 
