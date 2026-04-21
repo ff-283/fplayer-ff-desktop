@@ -1,5 +1,8 @@
 #include <QApplication>
 #include <QCommandLineParser>
+#include <QCoreApplication>
+#include <QDir>
+#include <QLibraryInfo>
 #include <QSurfaceFormat>
 
 #ifdef Q_OS_WIN
@@ -35,9 +38,40 @@ int main(int argc, char* argv[])
 
 	// QApplication::setStyle("Fusion");
 	QApplication app(argc, argv);
+	auto logEnv = [](const char* key) {
+		const QByteArray val = qgetenv(key);
+		LOG_INFO("[startup-env]", key, "=", val.isEmpty() ? "<empty>" : val.constData());
+	};
+	const QStringList libraryPaths = QCoreApplication::libraryPaths();
+	LOG_INFO("[startup-env]", "appDir=", QCoreApplication::applicationDirPath().toUtf8().constData());
+	LOG_INFO("[startup-env]", "cwd=", QDir::currentPath().toUtf8().constData());
+	LOG_INFO("[startup-env]", "platform=", QGuiApplication::platformName().toUtf8().constData());
+	LOG_INFO("[startup-env]", "qtPluginsPath=", QLibraryInfo::path(QLibraryInfo::PluginsPath).toUtf8().constData());
+	LOG_INFO("[startup-env]", "libraryPaths=", libraryPaths.join(';').toUtf8().constData());
+	const QSurfaceFormat defaultFmt = QSurfaceFormat::defaultFormat();
+	LOG_INFO("[startup-env]",
+	         "defaultSurfaceFormat",
+	         " renderableType=",
+	         static_cast<int>(defaultFmt.renderableType()),
+	         " profile=",
+	         static_cast<int>(defaultFmt.profile()),
+	         " version=",
+	         defaultFmt.majorVersion(),
+	         ".",
+	         defaultFmt.minorVersion(),
+	         " swapBehavior=",
+	         static_cast<int>(defaultFmt.swapBehavior()),
+	         " swapInterval=",
+	         defaultFmt.swapInterval());
+	logEnv("PATH");
+	logEnv("QT_PLUGIN_PATH");
+	logEnv("QT_QPA_PLATFORM");
+	logEnv("QT_OPENGL");
+	logEnv("QSG_RHI_BACKEND");
+	logEnv("QT_ANGLE_PLATFORM");
 	// 解析命令行参数
 	QCommandLineParser parser;
-	parser.addOption({{"b", "backend"}, "Backend type (0=Qt6, 1=FFmpeg)", "backend", "0"});
+	parser.addOption({{"b", "backend"}, "Backend type (0=FFmpeg, 1=Qt6)", "backend", "0"});
 	parser.process(app);
 
 	// 应用级图标（任务栏/Alt-Tab/托盘等更统一）
@@ -50,12 +84,12 @@ int main(int argc, char* argv[])
 	switch (backendInt)
 	{
 	case 0:
-		backendType = fplayer::MediaBackendType::Qt6;
-		LOG_DEBUG("Using Qt6 backend");
-		break;
-	case 1:
 		backendType = fplayer::MediaBackendType::FFmpeg;
 		LOG_DEBUG("Using FFmpeg backend");
+		break;
+	case 1:
+		backendType = fplayer::MediaBackendType::Qt6;
+		LOG_DEBUG("Using Qt6 backend");
 		break;
 	default:
 		qCritical() << "Invalid backend type:" << backendInt;
