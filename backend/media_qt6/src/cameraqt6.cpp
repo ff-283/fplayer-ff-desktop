@@ -40,6 +40,10 @@ namespace fplayer
 
 		m_session.setCamera(m_camera);
 		m_camera->start();
+		// 与 FFmpeg 摄像头后端保持一致：选中设备即进入播放态。
+		// 否则后续 selectCameraFormat() 会先 stop，再因 m_isPlaying=false 不恢复 start，
+		// 在部分构建/时序下表现为默认暂停（Debug/Release 现象不一致）。
+		m_isPlaying = true;
 
 		qDebug() << "Selected camera:" << index << m_devices[index].description();
 		m_cameraIndex = index;
@@ -146,12 +150,20 @@ namespace fplayer
 
 	void CameraQt6::pause()
 	{
+		if (!m_camera)
+		{
+			return;
+		}
 		m_camera->stop();
 		m_isPlaying = false;
 	}
 
 	void CameraQt6::resume()
 	{
+		if (!m_camera)
+		{
+			return;
+		}
 		m_camera->start();
 		m_isPlaying = true;
 	}

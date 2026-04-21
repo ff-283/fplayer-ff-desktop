@@ -823,10 +823,25 @@ void fplayer::StreamFFmpeg::pushComposeSceneLoop(const QString& outputUrl, const
 			{
 				encCtx->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
 			}
-			if (c.codec->id == AV_CODEC_ID_H264 && encCtx->priv_data)
+			if (encCtx->priv_data)
 			{
-				av_opt_set(encCtx->priv_data, "preset", "superfast", 0);
-				av_opt_set(encCtx->priv_data, "tune", "zerolatency", 0);
+				const QString codecName = QString::fromLatin1(c.codec->name ? c.codec->name : "").toLower();
+				if (codecName == QStringLiteral("h264_nvenc"))
+				{
+					av_opt_set(encCtx->priv_data, "preset", "p1", 0);
+					av_opt_set(encCtx->priv_data, "tune", "ll", 0);
+					av_opt_set(encCtx->priv_data, "rc", "cbr", 0);
+					av_opt_set(encCtx->priv_data, "zerolatency", "1", 0);
+				}
+				else if (codecName == QStringLiteral("h264_amf"))
+				{
+					// AMF 不接受 x264 preset/tune 文本，保持默认参数避免选项解析失败。
+				}
+				else if (c.codec->id == AV_CODEC_ID_H264)
+				{
+					av_opt_set(encCtx->priv_data, "preset", "superfast", 0);
+					av_opt_set(encCtx->priv_data, "tune", "zerolatency", 0);
+				}
 			}
 			ret = avcodec_open2(encCtx, c.codec, nullptr);
 			if (ret >= 0)
@@ -2525,17 +2540,25 @@ audio_init_done:
 			{
 				encCtx->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
 			}
-			if (cand.isHardware && encCtx->priv_data)
+			if (encCtx->priv_data)
 			{
-				av_opt_set(encCtx->priv_data, "preset", "p1", 0);
-				av_opt_set(encCtx->priv_data, "tune", "ll", 0);
-				av_opt_set(encCtx->priv_data, "rc", "cbr", 0);
-				av_opt_set(encCtx->priv_data, "zerolatency", "1", 0);
-			}
-			else if (enc->id == AV_CODEC_ID_H264 && encCtx->priv_data)
-			{
-				av_opt_set(encCtx->priv_data, "preset", "ultrafast", 0);
-				av_opt_set(encCtx->priv_data, "tune", "zerolatency", 0);
+				const QString codecName = QString::fromLatin1(enc->name ? enc->name : "").toLower();
+				if (codecName == QStringLiteral("h264_nvenc"))
+				{
+					av_opt_set(encCtx->priv_data, "preset", "p1", 0);
+					av_opt_set(encCtx->priv_data, "tune", "ll", 0);
+					av_opt_set(encCtx->priv_data, "rc", "cbr", 0);
+					av_opt_set(encCtx->priv_data, "zerolatency", "1", 0);
+				}
+				else if (codecName == QStringLiteral("h264_amf"))
+				{
+					// AMF 不接受 x264 preset/tune 文本，保持默认参数避免选项解析失败。
+				}
+				else if (enc->id == AV_CODEC_ID_H264)
+				{
+					av_opt_set(encCtx->priv_data, "preset", "ultrafast", 0);
+					av_opt_set(encCtx->priv_data, "tune", "zerolatency", 0);
+				}
 			}
 			ret = avcodec_open2(encCtx, enc, nullptr);
 			if (ret < 0)
@@ -3580,17 +3603,25 @@ audio_preview_init_done:
 			{
 				encCtx->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
 			}
-			if (cand.isHardware && encCtx->priv_data)
+			if (encCtx->priv_data)
 			{
-				av_opt_set(encCtx->priv_data, "preset", "p1", 0);
-				av_opt_set(encCtx->priv_data, "tune", "ll", 0);
-				av_opt_set(encCtx->priv_data, "rc", "cbr", 0);
-				av_opt_set(encCtx->priv_data, "zerolatency", "1", 0);
-			}
-			else if (enc->id == AV_CODEC_ID_H264 && encCtx->priv_data)
-			{
-				av_opt_set(encCtx->priv_data, "preset", "ultrafast", 0);
-				av_opt_set(encCtx->priv_data, "tune", "zerolatency", 0);
+				const QString codecName = QString::fromLatin1(enc->name ? enc->name : "").toLower();
+				if (codecName == QStringLiteral("h264_nvenc"))
+				{
+					av_opt_set(encCtx->priv_data, "preset", "p1", 0);
+					av_opt_set(encCtx->priv_data, "tune", "ll", 0);
+					av_opt_set(encCtx->priv_data, "rc", "cbr", 0);
+					av_opt_set(encCtx->priv_data, "zerolatency", "1", 0);
+				}
+				else if (codecName == QStringLiteral("h264_amf"))
+				{
+					// AMF 不接受 x264 preset/tune 文本，保持默认参数避免选项解析失败。
+				}
+				else if (enc->id == AV_CODEC_ID_H264)
+				{
+					av_opt_set(encCtx->priv_data, "preset", "ultrafast", 0);
+					av_opt_set(encCtx->priv_data, "tune", "zerolatency", 0);
+				}
 			}
 			ret = avcodec_open2(encCtx, enc, nullptr);
 			if (ret < 0)

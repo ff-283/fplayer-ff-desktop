@@ -83,7 +83,7 @@ public:
 	explicit AspectRatioHostWidget(QWidget* parent = nullptr) : QWidget(parent)
 	{
 		setAttribute(Qt::WA_StyledBackground, true);
-		setStyleSheet(QStringLiteral("background:#262626;border:1px solid #3a3a3a;"));
+		setStyleSheet(QStringLiteral("background:#0b1018;border:1px solid #243145;border-radius:8px;"));
 	}
 
 	void setAspectRatio(const int w, const int h)
@@ -166,7 +166,7 @@ public:
 	{
 		setMouseTracking(true);
 		setAttribute(Qt::WA_StyledBackground, true);
-		setStyleSheet(QStringLiteral("background:#101010;border:1px solid #6f6f6f;"));
+		setStyleSheet(QStringLiteral("background:#0a0f16;border:1px solid #31435b;border-radius:6px;"));
 		auto* layout = new QHBoxLayout(this);
 		layout->setContentsMargins(2, 2, 2, 2);
 		layout->setSpacing(0);
@@ -270,10 +270,12 @@ protected:
 				if (!m_vGuideBand)
 				{
 					m_vGuideBand = new QRubberBand(QRubberBand::Rectangle, sub->parentWidget());
+					m_vGuideBand->setStyleSheet(QStringLiteral("background:rgba(171,120,255,0.40);border:none;"));
 				}
 				if (!m_hGuideBand)
 				{
 					m_hGuideBand = new QRubberBand(QRubberBand::Rectangle, sub->parentWidget());
+					m_hGuideBand->setStyleSheet(QStringLiteral("background:rgba(171,120,255,0.40);border:none;"));
 				}
 				m_vGuideBand->hide();
 				m_hGuideBand->hide();
@@ -704,16 +706,16 @@ private:
 
 	void applyVisualStyle()
 	{
-		QString border = QStringLiteral("#6f6f6f");
+		QString border = QStringLiteral("#3a506a");
 		if (m_cropMode)
 		{
-			border = QStringLiteral("#ffb000");
+			border = QStringLiteral("#ffd166");
 		}
 		else if (m_selected)
 		{
-			border = QStringLiteral("#00aaff");
+			border = QStringLiteral("#b388ff");
 		}
-		setStyleSheet(QStringLiteral("background:#101010;border:2px solid %1;").arg(border));
+		setStyleSheet(QStringLiteral("background:#0a0f16;border:2px solid %1;border-radius:6px;").arg(border));
 	}
 
 	fplayer::FVideoView* m_view = nullptr;
@@ -847,6 +849,39 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 	m_cameraBackendType(backendType)
 {
 	ui->setupUi(this);
+	setAttribute(Qt::WA_StyledBackground, true);
+	setStyleSheet(QStringLiteral(
+		"QWidget#CaptureWindow{background:#090d14;color:#d6e2f1;}"
+		"QMenuBar{background:#0d1320;color:#e7defc;border:none;padding:4px 6px;}"
+		"QMenuBar::item{background:transparent;padding:6px 10px;border-radius:5px;}"
+		"QMenuBar::item:selected{background:#241c3c;}"
+		"QMenu{background:#121127;color:#e8e1ff;border:none;}"
+		"QMenu::item:selected{background:#2d1f4d;}"
+		"QPushButton{background:#201938;border:1px solid #6e4ea5;color:#f3ebff;border-radius:6px;padding:4px 8px;}"
+		"QPushButton:hover{background:#2a2148;border-color:#8c69c8;}"
+		"QPushButton:pressed{background:#18142c;border-color:#5d448d;padding-top:5px;padding-bottom:3px;}"
+		"QPushButton[role=\"primary\"]{background:#6f49b5;border:1px solid #a786e4;color:#fff7ff;font-weight:600;}"
+		"QPushButton[role=\"primary\"]:hover{background:#7f56cc;border-color:#c1a5f1;}"
+		"QPushButton[role=\"primary\"]:pressed{background:#603fa0;border-color:#9f84d6;}"
+		"QPushButton[role=\"primary\"]:disabled{background:#31274c;border-color:#4a3a70;color:#bbaed7;}"
+		"QToolButton{color:#eadfff;border-radius:5px;padding:2px 6px;}"
+		"QToolButton:hover{background:#241c3d;}"
+		"QComboBox,QLineEdit,QSpinBox,QAbstractSpinBox,QListWidget,QTextEdit{"
+		"background:#0d0b1d;border:1px solid #4f3b79;border-radius:6px;color:#e2d9f7;padding:3px 4px;}"
+		"QComboBox:focus,QLineEdit:focus,QSpinBox:focus,QAbstractSpinBox:focus,QTextEdit:focus{background:#15122a;border-color:#8b67c7;}"
+		"QComboBox::drop-down{border-left:1px solid #5f478f;width:22px;}"
+		"QComboBox::down-arrow{image:none;width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:6px solid #ccb8f2;}"
+		"QComboBox QAbstractItemView{background:#131128;border:none;selection-background-color:#3b2964;}"
+		"QCheckBox{spacing:6px;}"
+		"QSlider::groove:horizontal{background:#2a2340;height:6px;border-radius:3px;}"
+		"QSlider::handle:horizontal{background:#bc8cff;border:1px solid #dfc4ff;width:14px;margin:-5px 0;border-radius:7px;}"
+		"QListWidget::item{padding:6px;border-radius:5px;}"
+		"QListWidget::item:hover{background:#201938;}"
+		"QListWidget::item:selected{background:#322453;color:#f4eeff;}"
+		"#wgtDown{background:#111025;border:none;}"
+		"#wgtOperate{background:transparent;}"
+		"#wgtDevices{background:transparent;}"
+	));
 	m_service = new fplayer::Service();
 	m_pullReservedPortServer = new QTcpServer(this);
 	if (m_pullReservedPortServer->listen(QHostAddress::LocalHost, 0))
@@ -884,6 +919,10 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 	m_fileTitleButton->setFixedHeight(24);
 	m_fileTitleButton->show();
 	m_fileTitleButton->raise();
+	m_fileTitleButton->setStyleSheet(QStringLiteral(
+		"QToolButton{font-weight:600;color:#efe3ff;background:transparent;border:none;border-radius:6px;}"
+		"QToolButton:hover{background:#241c3d;}"
+	));
 
 	m_titleMarqueeTimer = new QTimer(this);
 	m_titleMarqueeTimer->setInterval(180);
@@ -1613,6 +1652,7 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		auto* btnStart = new QPushButton(tr("开始推流"), &dlg);
 		auto* btnStop = new QPushButton(tr("停止推流"), &dlg);
 		auto* btnClose = new QPushButton(tr("关闭窗口"), &dlg);
+		btnStart->setProperty("role", QStringLiteral("primary"));
 		buttons->addButton(btnStart, QDialogButtonBox::AcceptRole);
 		buttons->addButton(btnStop, QDialogButtonBox::ActionRole);
 		buttons->addButton(btnClose, QDialogButtonBox::RejectRole);
@@ -1880,6 +1920,7 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		auto* btnStart = new QPushButton(tr("开始拉流"), dlg);
 		auto* btnStop = new QPushButton(tr("结束拉流"), dlg);
 		auto* btnClose = new QPushButton(tr("关闭窗口"), dlg);
+		btnStart->setProperty("role", QStringLiteral("primary"));
 		buttons->addButton(btnStart, QDialogButtonBox::AcceptRole);
 		buttons->addButton(btnStop, QDialogButtonBox::ActionRole);
 		buttons->addButton(btnClose, QDialogButtonBox::RejectRole);
@@ -2265,6 +2306,7 @@ void CaptureWindow::ensureComposeWorkspace()
 	}
 	m_composeSplitter = new QSplitter(Qt::Horizontal, this);
 	auto* leftPanel = new QWidget(m_composeSplitter);
+	leftPanel->setObjectName(QStringLiteral("composeLeftPanel"));
 	leftPanel->setMinimumWidth(220);
 	auto* leftLayout = new QVBoxLayout(leftPanel);
 	leftLayout->setContentsMargins(8, 8, 8, 8);
@@ -2291,11 +2333,15 @@ void CaptureWindow::ensureComposeWorkspace()
 	leftLayout->addWidget(m_btnComposeAddCamera);
 	leftLayout->addWidget(m_btnComposeAddScreen);
 	leftLayout->addWidget(m_composeSourceList, 1);
+	leftPanel->setStyleSheet(QStringLiteral(
+		"#composeLeftPanel{background:#100f23;border:none;border-radius:8px;}"
+		"QLabel{color:#ebdeff;}"
+	));
 
 	m_composePreviewHost = new AspectRatioHostWidget(m_composeSplitter);
 	m_composeMdiArea = new QMdiArea(m_composePreviewHost);
 	m_composeMdiArea->setBackground(QBrush(QColor(0, 0, 0)));
-	m_composeMdiArea->setStyleSheet(QStringLiteral("QMdiArea{border:2px solid #4b4b4b;background:#000000;}"));
+	m_composeMdiArea->setStyleSheet(QStringLiteral("QMdiArea{border:none;background:#04030a;}"));
 	m_composeMdiArea->setViewMode(QMdiArea::SubWindowView);
 	m_composeMdiArea->setOption(QMdiArea::DontMaximizeSubWindowOnActivation, true);
 	m_composeMdiArea->setOption(QMdiArea::DontMaximizeSubWindowOnActivation, true);
@@ -2435,8 +2481,21 @@ void CaptureWindow::setComposeMode(const bool enabled)
 		stopScreenCapture();
 		m_service->playerPause();
 		m_service->cameraPause();
-		ui->wgtView->hide();
+		// 原生/GL 预览控件与透明度特效叠加时在窗口拉伸阶段容易残影，这里禁用透明叠加切换。
+		if (ui && ui->wgtView)
+		{
+			ui->wgtView->setGraphicsEffect(nullptr);
+			ui->wgtView->hide();
+		}
+		if (m_composeSplitter)
+		{
+			m_composeSplitter->setGraphicsEffect(nullptr);
+		}
 		m_composeSplitter->show();
+		if (m_composeMdiArea)
+		{
+			m_composeMdiArea->setUpdatesEnabled(false);
+		}
 		for (auto& src : m_composeSources)
 		{
 			if (src.subWindow)
@@ -2465,6 +2524,15 @@ void CaptureWindow::setComposeMode(const bool enabled)
 			m_composeZOrderGuardTimer->start();
 		}
 		syncComposeControlPanel();
+		// 在几何动画/布局稳定后重新启用更新并做分帧刷新，清理残留纹路与白线。
+		QTimer::singleShot(180, this, [this]() {
+			if (m_composeMdiArea)
+			{
+				m_composeMdiArea->setUpdatesEnabled(true);
+			}
+			forceRefreshComposePreview();
+			QTimer::singleShot(16, this, [this]() { forceRefreshComposePreview(); });
+		});
 		return;
 	}
 	if (!m_isComposeMode)
@@ -2487,8 +2555,13 @@ void CaptureWindow::setComposeMode(const bool enabled)
 	if (m_composeSplitter)
 	{
 		m_composeSplitter->hide();
+		ui->wgtView->setGraphicsEffect(nullptr);
+		ui->wgtView->show();
 	}
-	ui->wgtView->show();
+	else
+	{
+		ui->wgtView->show();
+	}
 }
 
 void CaptureWindow::clearComposeSources()
@@ -2719,6 +2792,35 @@ void CaptureWindow::addComposeCameraSource()
 void CaptureWindow::addComposeScreenSource()
 {
 	ensureComposeWorkspace();
+#if defined(_WIN32)
+	if (m_screenBackendType == fplayer::MediaBackendType::Dxgi && !m_hdrPromptedScreenIndexes.contains(0))
+	{
+		if (isHdrEnabledForScreenIndex(0))
+		{
+			m_hdrPromptedScreenIndexes.insert(0);
+			const auto choice = QMessageBox::question(
+				this,
+				tr("屏幕捕获后端切换"),
+				tr("已检测到系统HDR打开，为确保稳定，将屏幕获取后端改为ffmepg。\n是否切换？"),
+				QMessageBox::Yes | QMessageBox::No,
+				QMessageBox::Yes);
+			if (choice == QMessageBox::Yes)
+			{
+				m_screenBackendType = fplayer::MediaBackendType::FFmpeg;
+				if (m_service)
+				{
+					m_service->initScreenCapture(m_screenBackendType);
+					if (m_captureMode == CaptureMode::Screen)
+					{
+						ui->wgtView->setBackendType(m_screenBackendType);
+						m_service->bindScreenPreview(ui->wgtView);
+						refreshScreenDeviceUi();
+					}
+				}
+			}
+		}
+	}
+#endif
 	auto* svc = new fplayer::Service();
 	svc->initScreenCapture(m_screenBackendType);
 	const QString screenSourceId = QUuid::createUuid().toString(QUuid::WithoutBraces);
@@ -2729,7 +2831,7 @@ void CaptureWindow::addComposeScreenSource()
 	view->setAttribute(Qt::WA_TransparentForMouseEvents, true);
 	container->setInnerView(view);
 	svc->bindScreenPreview(view);
-	const auto screens = svc->getScreenList();
+	auto screens = svc->getScreenList();
 	if (screens.isEmpty())
 	{
 		delete svc;
@@ -2737,7 +2839,24 @@ void CaptureWindow::addComposeScreenSource()
 		QMessageBox::warning(this, tr("追加失败"), tr("未检测到可用屏幕。"));
 		return;
 	}
-	svc->selectScreen(0);
+	if (!svc->selectScreen(0))
+	{
+		if (m_screenBackendType == fplayer::MediaBackendType::Dxgi)
+		{
+			svc->initScreenCapture(fplayer::MediaBackendType::FFmpeg);
+			m_screenBackendType = fplayer::MediaBackendType::FFmpeg;
+			view->setBackendType(m_screenBackendType);
+			svc->bindScreenPreview(view);
+			screens = svc->getScreenList();
+		}
+		if (screens.isEmpty() || !svc->selectScreen(0))
+		{
+			delete svc;
+			delete container;
+			QMessageBox::warning(this, tr("追加失败"), tr("屏幕采集初始化失败。"));
+			return;
+		}
+	}
 	svc->screenSetActive(true);
 	auto* sub = m_composeMdiArea->addSubWindow(container, Qt::FramelessWindowHint);
 	sub->setFocusPolicy(Qt::NoFocus);
@@ -3299,6 +3418,10 @@ void CaptureWindow::resizeWindowForComposeAspect()
 	connect(anim, &QPropertyAnimation::finished, this, [this, anim]() {
 		anim->deleteLater();
 		m_adjustingComposeWindowSize = false;
+		// 窗体几何动画结束后，组合画布里的原生预览控件可能仍保留旧帧残影；
+		// 这里补一次“当前帧+下一帧”刷新，确保交换链与子窗口内容同步到最新几何。
+		forceRefreshComposePreview();
+		QTimer::singleShot(16, this, [this]() { forceRefreshComposePreview(); });
 	});
 	anim->start();
 	return;
