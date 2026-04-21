@@ -165,6 +165,9 @@ namespace fplayer::windows_api
 			{
 				av_dict_set(&inOpts, "loopback", "1", 0);
 			}
+			// 统一降低输入侧缓冲，避免直播场景音频累积延迟。
+			av_dict_set(&inOpts, "thread_queue_size", "64", 0);
+			av_dict_set(&inOpts, "audio_buffer_size", "20", 0);
 			const QByteArray devUtf8 = c.deviceSpec.toUtf8();
 			const int ret = avformat_open_input(&ifmt, devUtf8.constData(), audioFmt, &inOpts);
 			av_dict_free(&inOpts);

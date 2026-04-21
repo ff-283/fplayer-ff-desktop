@@ -33,6 +33,8 @@ namespace fplayer
 		bool seekMs(qint64 positionMs) override;
 		void setPlaybackRate(double rate) override;
 		double playbackRate() const override;
+		void setVolume(float volume) override;
+		float volume() const override;
 		QString debugStats() const override;
 		bool isPlaying() const override;
 		void setPreviewTarget(const PreviewTarget& target) override;

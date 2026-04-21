@@ -957,6 +957,20 @@ double PlayerFFmpeg::playbackRate() const
 	return m_impl->playbackRate.load();
 }
 
+void PlayerFFmpeg::setVolume(const float volume)
+{
+	if (!m_impl->audioSink)
+	{
+		return;
+	}
+	m_impl->audioSink->setVolume(qBound(0.0f, volume, 1.0f));
+}
+
+float PlayerFFmpeg::volume() const
+{
+	return m_impl->audioSink ? m_impl->audioSink->volume() : 1.0f;
+}
+
 QString PlayerFFmpeg::debugStats() const
 {
 	size_t videoQ = 0;

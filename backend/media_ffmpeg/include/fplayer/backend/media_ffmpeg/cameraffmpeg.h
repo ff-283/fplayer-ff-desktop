@@ -48,6 +48,8 @@ namespace fplayer
 
 		bool isPlaying() const override;
 		void setPreviewTarget(const PreviewTarget& target) override;
+		void setFrameBusSourceId(const QString& sourceId) override;
+		QString frameBusSourceId() const override;
 
 	signals:
 		void yuvFrameReady(const QByteArray& yData, const QByteArray& uData, const QByteArray& vData,

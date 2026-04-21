@@ -61,6 +61,10 @@
 #include <QPropertyAnimation>
 #include <QEasingCurve>
 #include <QUuid>
+#include <QClipboard>
+#include <QTcpServer>
+#include <QHostAddress>
+#include <QCloseEvent>
 #include <QApplication>
 #include <functional>
 #include <algorithm>
@@ -844,6 +848,11 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 {
 	ui->setupUi(this);
 	m_service = new fplayer::Service();
+	m_pullReservedPortServer = new QTcpServer(this);
+	if (m_pullReservedPortServer->listen(QHostAddress::LocalHost, 0))
+	{
+		m_pullReservedPort = static_cast<int>(m_pullReservedPortServer->serverPort());
+	}
 	m_modeMenuBar = new QMenuBar(this);
 	ui->verticalLayout->setMenuBar(m_modeMenuBar);
 	auto* modeMenu = m_modeMenuBar->addMenu(tr("模式"));
@@ -856,7 +865,7 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 	actionFileMode->setCheckable(true);
 	auto* actionScreenMode = modeMenu->addAction(tr("屏幕捕获模式"));
 	actionScreenMode->setCheckable(true);
-	auto* actionComposeMode = modeMenu->addAction(tr("组合式推流"));
+	auto* actionComposeMode = modeMenu->addAction(tr("组合模式"));
 	actionComposeMode->setCheckable(true);
 	actionGroup->addAction(actionCameraMode);
 	actionGroup->addAction(actionFileMode);
@@ -999,6 +1008,13 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 				}
 				src.service->screenSetCursorCaptureEnabled(src.screenCaptureCursor);
 				refreshComposeScreenCaptureState(m_composeSelectedIndex);
+				const QString name = this->ui->cmbDevices->currentText().trimmed();
+				if (src.subWindow)
+				{
+					src.subWindow->setWindowTitle(tr("屏幕：%1").arg(name.isEmpty() ? tr("未知") : name));
+				}
+				src.title = src.subWindow ? src.subWindow->windowTitle() : src.title;
+				refreshComposeSourceListItems();
 				ui->cmbScreenFps->setToolTip(tr("当前帧率：%1 FPS").arg(src.service->screenFrameRate()));
 				return;
 			}
@@ -1011,6 +1027,13 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 				this->ui->cmbFormats->addItems(formats);
 				src.formatIndex = formats.isEmpty() ? -1 : qBound(0, src.formatIndex, formats.size() - 1);
 				this->ui->cmbFormats->setCurrentIndex(src.formatIndex);
+				const QString name = this->ui->cmbDevices->currentText().trimmed();
+				if (src.subWindow)
+				{
+					src.subWindow->setWindowTitle(tr("摄像头：%1").arg(name.isEmpty() ? tr("未知") : name));
+				}
+				src.title = src.subWindow ? src.subWindow->windowTitle() : src.title;
+				refreshComposeSourceListItems();
 			}
 			return;
 		}
@@ -1261,6 +1284,7 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 	connect(actionPushStream, &QAction::triggered, this, [this]() {
 		QDialog dlg(this);
 		dlg.setWindowTitle(tr("推流配置"));
+		dlg.setWindowFlag(Qt::WindowCloseButtonHint, false);
 		auto* layout = new QFormLayout(&dlg);
 		layout->setVerticalSpacing(10);
 		layout->setRowWrapPolicy(QFormLayout::WrapLongRows);
@@ -1494,7 +1518,7 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 			}
 			if (composeScene)
 			{
-				lblPushParams->setText(tr("模式：组合式推流\n来源：中间预览窗口内容\n布局：可在窗口中自由拖动缩放素材\n编码：H264（不可用时 MPEG4）"));
+				lblPushParams->setText(tr("模式：组合模式\n来源：中间预览窗口内容\n布局：可在窗口中自由拖动缩放素材\n编码：H264（不可用时 MPEG4）"));
 				return;
 			}
 			if (screenScene)
@@ -1585,30 +1609,52 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		layout->addRow(tr("输出"), cmbOutput);
 		layout->addRow(lblStatus);
 		layout->addRow(txtLog);
-		auto* buttons = new QDialogButtonBox(QDialogButtonBox::Close, &dlg);
+		auto* buttons = new QDialogButtonBox(&dlg);
 		auto* btnStart = new QPushButton(tr("开始推流"), &dlg);
 		auto* btnStop = new QPushButton(tr("停止推流"), &dlg);
+		auto* btnClose = new QPushButton(tr("关闭窗口"), &dlg);
 		buttons->addButton(btnStart, QDialogButtonBox::AcceptRole);
 		buttons->addButton(btnStop, QDialogButtonBox::ActionRole);
+		buttons->addButton(btnClose, QDialogButtonBox::RejectRole);
 		layout->addRow(buttons);
-		connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+		auto applyPushUiRunningState = [btnStart, btnStop, cmbProtocol, cmbOutput, spFps, cmbSize, spBitrate, cmbEncoder, cmbAudioInput,
+		                                cmbAudioOutput, fileScene](const bool running) {
+			btnStart->setEnabled(!running);
+			btnStop->setEnabled(running);
+			cmbProtocol->setEnabled(!running);
+			cmbOutput->setEnabled(!running);
+			spFps->setEnabled(!running && !fileScene);
+			cmbSize->setEnabled(!running && !fileScene);
+			spBitrate->setEnabled(!running);
+			cmbEncoder->setEnabled(!running);
+			cmbAudioInput->setEnabled(!running && !fileScene);
+			cmbAudioOutput->setEnabled(!running && !fileScene);
+		};
+		applyPushUiRunningState(this->m_service->streamIsRunning());
+		connect(btnClose, &QPushButton::clicked, &dlg, [this, &dlg]() {
+			if (this->m_service->streamIsRunning())
+			{
+				const auto answer = QMessageBox::question(&dlg,
+				                                          tr("确认关闭"),
+				                                          tr("当前正在推流，是否先停止推流再关闭窗口？"),
+				                                          QMessageBox::Yes | QMessageBox::No,
+				                                          QMessageBox::No);
+				if (answer != QMessageBox::Yes)
+				{
+					return;
+				}
+				this->m_service->streamStop();
+			}
+			dlg.accept();
+		});
 		connect(btnStop, &QPushButton::clicked, &dlg,
-		        [this, btnStart, cmbProtocol, cmbOutput, spFps, cmbSize, spBitrate, cmbEncoder, cmbAudioInput, cmbAudioOutput,
-		         fileScene, screenScene]() {
+		        [this, applyPushUiRunningState]() {
 			this->m_service->streamStop();
-			btnStart->setEnabled(true);
-			cmbProtocol->setEnabled(true);
-			cmbOutput->setEnabled(true);
-			spFps->setEnabled(!fileScene);
-			cmbSize->setEnabled(!fileScene);
-			spBitrate->setEnabled(true);
-			cmbEncoder->setEnabled(true);
-			cmbAudioInput->setEnabled(!fileScene);
-			cmbAudioOutput->setEnabled(!fileScene);
+			applyPushUiRunningState(false);
 		});
 		connect(btnStart, &QPushButton::clicked, &dlg,
 		        [this, btnStart, cmbProtocol, cmbOutput, spFps, cmbSize, spBitrate, cmbEncoder, cmbAudioInput, cmbAudioOutput,
-		         chkKeepAspect, fileScene, screenScene, composeScene, addRecent]() {
+		         chkKeepAspect, fileScene, screenScene, composeScene, addRecent, applyPushUiRunningState]() {
 			const QString pushOutput = cmbOutput->currentText().trimmed();
 			if (pushOutput.isEmpty())
 			{
@@ -1646,7 +1692,7 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 				                                  cmbAudioInput->currentData().toString(),
 				                                  cmbAudioOutput->currentData().toString()))
 				{
-					QMessageBox::warning(this, tr("推流失败"), tr("组合预览窗口不可用，请先切换到组合式推流并添加至少一个素材源。"));
+					QMessageBox::warning(this, tr("推流失败"), tr("组合预览窗口不可用，请先切换到组合模式并添加至少一个素材源。"));
 					return;
 				}
 				if (!this->m_service->streamStartPush(inputSpec, pushOutput))
@@ -1655,15 +1701,7 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 					return;
 				}
 				addRecent(m_recentPushOutputs, pushOutput);
-				btnStart->setEnabled(false);
-				cmbProtocol->setEnabled(false);
-				cmbOutput->setEnabled(false);
-				spFps->setEnabled(false);
-				cmbSize->setEnabled(false);
-				spBitrate->setEnabled(false);
-				cmbEncoder->setEnabled(false);
-				cmbAudioInput->setEnabled(false);
-				cmbAudioOutput->setEnabled(false);
+				applyPushUiRunningState(true);
 				return;
 			}
 			fplayer::Service::PushScene pushScene = fplayer::Service::PushScene::Camera;
@@ -1719,40 +1757,24 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 				return;
 			}
 			addRecent(m_recentPushOutputs, pushOutput);
-			btnStart->setEnabled(false);
-			cmbProtocol->setEnabled(false);
-			cmbOutput->setEnabled(false);
-			spFps->setEnabled(false);
-			cmbSize->setEnabled(false);
-			spBitrate->setEnabled(false);
-			cmbEncoder->setEnabled(false);
-			cmbAudioInput->setEnabled(false);
-			cmbAudioOutput->setEnabled(false);
+			applyPushUiRunningState(true);
 		});
 		connect(logTimer, &QTimer::timeout, &dlg,
-		        [this, btnStart, cmbProtocol, cmbOutput, spFps, cmbSize, spBitrate, cmbEncoder, cmbAudioInput, cmbAudioOutput,
-		         fileScene, screenScene]() {
+		        [this, applyPushUiRunningState]() {
 			const bool running = this->m_service->streamIsRunning();
-			if (!running)
-			{
-				btnStart->setEnabled(true);
-				cmbProtocol->setEnabled(true);
-				cmbOutput->setEnabled(true);
-				spFps->setEnabled(!fileScene);
-				cmbSize->setEnabled(!fileScene);
-				spBitrate->setEnabled(true);
-				cmbEncoder->setEnabled(true);
-				cmbAudioInput->setEnabled(!fileScene);
-				cmbAudioOutput->setEnabled(!fileScene);
-			}
+			applyPushUiRunningState(running);
 		});
 		refreshPushParams();
 		dlg.exec();
 	});
 	connect(actionPullStream, &QAction::triggered, this, [this]() {
-		QDialog dlg(this);
-		dlg.setWindowTitle(tr("拉流配置"));
-		auto* layout = new QFormLayout(&dlg);
+		if (m_pullMonitorDialog)
+		{
+			m_pullMonitorDialog->show();
+			m_pullMonitorDialog->raise();
+			m_pullMonitorDialog->activateWindow();
+			return;
+		}
 		auto addRecent = [](QStringList& list, const QString& value) {
 			const QString v = value.trimmed();
 			if (v.isEmpty())
@@ -1766,23 +1788,44 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 				list.removeLast();
 			}
 		};
-		auto* cmbProtocol = new QComboBox(&dlg);
-		cmbProtocol->addItem(tr("RTMP"), QStringLiteral("rtmp://127.0.0.1:1935/live/stream"));
-		cmbProtocol->addItem(tr("RTSP"), QStringLiteral("rtsp://127.0.0.1:8554/live/stream"));
-		cmbProtocol->addItem(tr("SRT"), QStringLiteral("srt://127.0.0.1:8890?mode=listener"));
-		auto* cmbInput = new QComboBox(&dlg);
+		auto* dlg = new QDialog(this);
+		dlg->setAttribute(Qt::WA_DeleteOnClose, true);
+		dlg->setModal(false);
+		dlg->setWindowTitle(tr("拉流监视窗口"));
+		m_pullMonitorDialog = dlg;
+		connect(dlg, &QObject::destroyed, this, [this]() {
+			m_pullMonitorDialog = nullptr;
+			m_pullStartButton = nullptr;
+			m_pullStopButton = nullptr;
+			m_pullLogView = nullptr;
+		});
+		auto* layout = new QFormLayout(dlg);
+		auto* cmbProtocol = new QComboBox(dlg);
+		const int reservedPort = m_pullReservedPort > 0 ? m_pullReservedPort : 1935;
+		cmbProtocol->addItem(tr("RTMP"), QStringLiteral("rtmp://127.0.0.1:%1/live").arg(reservedPort));
+		cmbProtocol->addItem(tr("RTSP"), QStringLiteral("rtsp://127.0.0.1:%1/live").arg(reservedPort));
+		cmbProtocol->addItem(tr("SRT"), QStringLiteral("srt://127.0.0.1:%1?mode=listener").arg(reservedPort));
+		auto* edtStreamKey = new QLineEdit(QStringLiteral("stream001"), dlg);
+		auto* urlRow = new QWidget(dlg);
+		auto* urlLayout = new QHBoxLayout(urlRow);
+		urlLayout->setContentsMargins(0, 0, 0, 0);
+		auto* lblPullUrl = new QLabel(urlRow);
+		lblPullUrl->setTextInteractionFlags(Qt::TextSelectableByMouse);
+		lblPullUrl->setMinimumWidth(320);
+		auto* btnCopyUrl = new QPushButton(tr("复制"), urlRow);
+		urlLayout->addWidget(lblPullUrl, 1);
+		urlLayout->addWidget(btnCopyUrl, 0);
+		auto* cmbInput = new QComboBox(dlg);
 		cmbInput->setEditable(true);
 		{
 			QStringList inputItems = m_recentPullInputs;
 			if (inputItems.isEmpty())
 			{
-				inputItems << QStringLiteral("rtmp://127.0.0.1:1935/live/stream");
-				inputItems << QStringLiteral("rtsp://127.0.0.1:8554/live/stream");
-				inputItems << QStringLiteral("srt://127.0.0.1:8890?mode=listener");
+				inputItems << QStringLiteral("rtmp://127.0.0.1:%1/live/stream001").arg(reservedPort);
 			}
 			cmbInput->addItems(inputItems);
 		}
-		auto* cmbOutput = new QComboBox(&dlg);
+		auto* cmbOutput = new QComboBox(dlg);
 		cmbOutput->setEditable(true);
 		{
 			QStringList outputItems = m_recentPullOutputs;
@@ -1793,11 +1836,8 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 			}
 			cmbOutput->addItems(outputItems);
 		}
-		auto* chkPreview = new QCheckBox(tr("直接预览到播放窗口"), &dlg);
-		cmbInput->lineEdit()->setPlaceholderText(tr("输入流地址，例如 rtmp://127.0.0.1:1935/live/stream"));
-		cmbOutput->lineEdit()->setPlaceholderText(tr("输出文件，例如 D:/temp/pull.mp4"));
-		auto* btnBrowseOutput = new QPushButton(tr("选择输出文件"), &dlg);
-		connect(btnBrowseOutput, &QPushButton::clicked, &dlg, [cmbOutput, this]() {
+		auto* btnBrowseOutput = new QPushButton(tr("选择输出文件"), dlg);
+		connect(btnBrowseOutput, &QPushButton::clicked, dlg, [cmbOutput, this]() {
 			const QString outPath = QFileDialog::getSaveFileName(this, tr("选择拉流输出文件"), QString(),
 			                                                     tr("Media Files (*.mp4 *.mkv *.flv);;All Files (*.*)"));
 			if (!outPath.isEmpty())
@@ -1805,14 +1845,62 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 				cmbOutput->setCurrentText(outPath);
 			}
 		});
-		auto* lblStatus = new QLabel(tr("状态：未启动"), &dlg);
-		auto* txtLog = new QTextEdit(&dlg);
+		auto makePullUrl = [cmbProtocol, edtStreamKey]() {
+			const QString base = cmbProtocol->currentData().toString().trimmed();
+			const QString key = edtStreamKey->text().trimmed().isEmpty() ? QStringLiteral("stream001") : edtStreamKey->text().trimmed();
+			if (base.startsWith(QStringLiteral("srt://"), Qt::CaseInsensitive))
+			{
+				return base + QStringLiteral("&streamid=") + key;
+			}
+			return base + QStringLiteral("/") + key;
+		};
+		auto refreshPullUrl = [cmbInput, lblPullUrl, makePullUrl]() {
+			const QString url = makePullUrl();
+			lblPullUrl->setText(url);
+			if (cmbInput->currentText().trimmed().isEmpty())
+			{
+				cmbInput->setCurrentText(url);
+			}
+		};
+		connect(cmbProtocol, &QComboBox::currentTextChanged, dlg, [refreshPullUrl]() {
+			refreshPullUrl();
+		});
+		connect(edtStreamKey, &QLineEdit::textChanged, dlg, [refreshPullUrl]() {
+			refreshPullUrl();
+		});
+		connect(btnCopyUrl, &QPushButton::clicked, dlg, [lblPullUrl]() {
+			QApplication::clipboard()->setText(lblPullUrl->text().trimmed());
+		});
+		auto* lblStatus = new QLabel(tr("状态：未启动"), dlg);
+		auto* txtLog = new QTextEdit(dlg);
 		txtLog->setReadOnly(true);
-		txtLog->setMinimumHeight(120);
-		auto* logTimer = new QTimer(&dlg);
+		txtLog->setMinimumHeight(140);
+		m_pullLogView = txtLog;
+		auto* buttons = new QDialogButtonBox(dlg);
+		auto* btnStart = new QPushButton(tr("开始拉流"), dlg);
+		auto* btnStop = new QPushButton(tr("结束拉流"), dlg);
+		auto* btnClose = new QPushButton(tr("关闭窗口"), dlg);
+		buttons->addButton(btnStart, QDialogButtonBox::AcceptRole);
+		buttons->addButton(btnStop, QDialogButtonBox::ActionRole);
+		buttons->addButton(btnClose, QDialogButtonBox::RejectRole);
+		m_pullStartButton = btnStart;
+		m_pullStopButton = btnStop;
+		auto applyPullUiRunningState = [btnStart, btnStop, cmbProtocol, edtStreamKey, cmbInput, cmbOutput, btnBrowseOutput](bool running) {
+			btnStart->setEnabled(!running);
+			btnStop->setEnabled(running);
+			cmbProtocol->setEnabled(!running);
+			edtStreamKey->setEnabled(!running);
+			cmbInput->setEnabled(!running);
+			cmbOutput->setEnabled(!running);
+			btnBrowseOutput->setEnabled(!running);
+		};
+		applyPullUiRunningState(this->m_service->streamIsRunning());
+		auto* logTimer = new QTimer(dlg);
 		logTimer->setInterval(500);
-		connect(logTimer, &QTimer::timeout, &dlg, [this, lblStatus, txtLog]() {
-			if (this->m_service->streamIsRunning())
+		connect(logTimer, &QTimer::timeout, dlg, [this, lblStatus, txtLog, applyPullUiRunningState]() {
+			const bool running = this->m_service->streamIsRunning();
+			applyPullUiRunningState(running);
+			if (running)
 			{
 				lblStatus->setText(tr("状态：运行中"));
 			}
@@ -1825,7 +1913,6 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 				lblStatus->setText(tr("状态：当前无拉流任务"));
 			}
 			const QString latestLog = this->m_service->streamRecentLog();
-			// 用户正在选择文本时不重刷，避免复制被打断。
 			if (!txtLog->textCursor().hasSelection())
 			{
 				const QString currentLog = txtLog->toPlainText();
@@ -1840,70 +1927,142 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 				}
 				else if (currentLog != latestLog)
 				{
-					// 日志被清空或滚动裁剪时，回退到整段同步一次。
 					txtLog->setPlainText(latestLog);
 					txtLog->moveCursor(QTextCursor::End);
 				}
 			}
 		});
 		logTimer->start();
-		connect(cmbProtocol, &QComboBox::currentTextChanged, &dlg, [cmbProtocol, cmbInput]() {
-			if (cmbInput->currentText().trimmed().isEmpty())
+		connect(btnStart, &QPushButton::clicked, dlg, [this, cmbInput, cmbOutput, makePullUrl, addRecent, applyPullUiRunningState]() {
+			QString pullInput = cmbInput->currentText().trimmed();
+			if (pullInput.isEmpty())
 			{
-				cmbInput->setCurrentText(cmbProtocol->currentData().toString());
+				pullInput = makePullUrl();
+				cmbInput->setCurrentText(pullInput);
 			}
-		});
-		layout->addRow(tr("输入"), cmbInput);
-		layout->addRow(tr("协议模板"), cmbProtocol);
-		layout->addRow(tr("输出"), cmbOutput);
-		layout->addRow(QString(), btnBrowseOutput);
-		layout->addRow(chkPreview);
-		layout->addRow(lblStatus);
-		layout->addRow(txtLog);
-		auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
-		auto* btnStop = new QPushButton(tr("停止拉流"), &dlg);
-		buttons->addButton(btnStop, QDialogButtonBox::ActionRole);
-		layout->addRow(buttons);
-		connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
-		connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
-		connect(btnStop, &QPushButton::clicked, &dlg, [this]() {
-			this->m_service->streamStop();
-		});
-		if (dlg.exec() != QDialog::Accepted)
-		{
-			return;
-		}
-		const QString pullInput = cmbInput->currentText().trimmed();
-		const QString pullOutput = cmbOutput->currentText().trimmed();
-		if (chkPreview->isChecked())
-		{
-			this->ui->wgtView->setBackendType(fplayer::MediaBackendType::FFmpeg);
-			this->m_service->bindPlayerPreview(this->ui->wgtView);
-			if (!this->m_service->openMediaFile(pullInput))
+			const QString pullOutput = cmbOutput->currentText().trimmed();
+			if (pullInput.isEmpty() || pullOutput.isEmpty())
 			{
-				QMessageBox::warning(this, tr("拉流预览失败"), tr("无法打开输入流地址"));
+				QMessageBox::warning(this, tr("拉流失败"), tr("输入地址和输出文件不能为空。"));
 				return;
 			}
-			m_captureMode = CaptureMode::File;
-			m_isFileMode = true;
-			this->ui->wgtDevices->setVisible(false);
-			this->m_fileProgress->setVisible(true);
-			this->m_fileProgressLabel->setVisible(true);
-			this->m_speedCombo->setVisible(true);
-			this->m_debugStatsLabel->setVisible(true);
-			this->m_fileProgressTimer->start();
-			this->m_debugStatsTimer->start();
-			this->ui->btnPlay->setIcon(QIcon::fromTheme(QIcon::ThemeIcon::MediaPlaybackPause));
+			if (!this->m_service->streamStartPull(pullInput, pullOutput))
+			{
+				QMessageBox::warning(this, tr("拉流失败"), this->m_service->streamLastError());
+				return;
+			}
 			addRecent(m_recentPullInputs, pullInput);
-			return;
-		}
-		if (!this->m_service->streamStartPull(pullInput, pullOutput))
-		{
-			QMessageBox::warning(this, tr("拉流失败"), this->m_service->streamLastError());
-			return;
-		}
-		addRecent(m_recentPullInputs, pullInput);
-		addRecent(m_recentPullOutputs, pullOutput);
+			addRecent(m_recentPullOutputs, pullOutput);
+			applyPullUiRunningState(true);
+			if (!m_pullPreviewDialog)
+			{
+				auto* preview = new QDialog(this);
+				preview->setAttribute(Qt::WA_DeleteOnClose, true);
+				preview->setWindowTitle(tr("拉流预览"));
+				preview->resize(900, 560);
+				auto* vLayout = new QVBoxLayout(preview);
+				auto* view = new fplayer::FVideoView(preview);
+				view->setBackendType(fplayer::MediaBackendType::FFmpeg);
+				vLayout->addWidget(view, 1);
+				auto* ctrlRow = new QWidget(preview);
+				auto* ctrlLayout = new QHBoxLayout(ctrlRow);
+				ctrlLayout->setContentsMargins(0, 0, 0, 0);
+				auto* btnPause = new QPushButton(tr("暂停"), ctrlRow);
+				auto* btnRefresh = new QPushButton(tr("刷新"), ctrlRow);
+				auto* sldVolume = new QSlider(Qt::Horizontal, ctrlRow);
+				sldVolume->setRange(0, 100);
+				sldVolume->setValue(qRound(this->m_service->playerVolume() * 100.0f));
+				ctrlLayout->addWidget(btnPause, 0);
+				ctrlLayout->addWidget(btnRefresh, 0);
+				ctrlLayout->addWidget(new QLabel(tr("音量"), ctrlRow), 0);
+				ctrlLayout->addWidget(sldVolume, 1);
+				vLayout->addWidget(ctrlRow, 0);
+				m_pullPreviewDialog = preview;
+				m_pullPreviewView = view;
+				m_pullVolumeSlider = sldVolume;
+				connect(preview, &QObject::destroyed, this, [this]() {
+					m_pullPreviewDialog = nullptr;
+					m_pullPreviewView = nullptr;
+					m_pullVolumeSlider = nullptr;
+					if (m_service && m_service->streamIsRunning())
+					{
+						m_service->streamStop();
+					}
+					if (m_pullStartButton && m_pullStopButton)
+					{
+						m_pullStartButton->setEnabled(true);
+						m_pullStopButton->setEnabled(false);
+					}
+				});
+				connect(btnPause, &QPushButton::clicked, preview, [this, btnPause]() {
+					if (m_service->playerIsPlaying())
+					{
+						m_service->playerPause();
+						btnPause->setText(tr("继续"));
+					}
+					else
+					{
+						m_service->playerResume();
+						btnPause->setText(tr("暂停"));
+					}
+				});
+				connect(btnRefresh, &QPushButton::clicked, preview, [this, cmbInput]() {
+					const QString source = cmbInput->currentText().trimmed();
+					if (!source.isEmpty())
+					{
+						m_service->openMediaFile(source);
+					}
+				});
+				connect(sldVolume, &QSlider::valueChanged, preview, [this](int value) {
+					this->m_service->playerSetVolume(static_cast<float>(value) / 100.0f);
+				});
+				this->m_service->bindPlayerPreview(view);
+				if (!this->m_service->openMediaFile(pullInput))
+				{
+					QMessageBox::warning(this, tr("拉流预览失败"), tr("无法打开输入流地址"));
+				}
+				preview->show();
+			}
+		});
+		connect(btnStop, &QPushButton::clicked, dlg, [this, applyPullUiRunningState]() {
+			this->m_service->streamStop();
+			if (m_pullPreviewDialog)
+			{
+				m_pullPreviewDialog->close();
+			}
+			applyPullUiRunningState(false);
+		});
+		connect(btnClose, &QPushButton::clicked, dlg, [this, dlg]() {
+			if (this->m_service->streamIsRunning())
+			{
+				const auto answer = QMessageBox::question(dlg,
+				                                          tr("确认关闭"),
+				                                          tr("当前正在拉流，确定先停止拉流再关闭监视窗口吗？"),
+				                                          QMessageBox::Yes | QMessageBox::No,
+				                                          QMessageBox::No);
+				if (answer != QMessageBox::Yes)
+				{
+					return;
+				}
+				this->m_service->streamStop();
+				if (m_pullPreviewDialog)
+				{
+					m_pullPreviewDialog->close();
+				}
+			}
+			dlg->close();
+		});
+		layout->addRow(tr("协议模板"), cmbProtocol);
+		layout->addRow(tr("推流码"), edtStreamKey);
+		layout->addRow(tr("拉流地址"), urlRow);
+		layout->addRow(tr("输入"), cmbInput);
+		layout->addRow(tr("输出"), cmbOutput);
+		layout->addRow(QString(), btnBrowseOutput);
+		layout->addRow(lblStatus);
+		layout->addRow(txtLog);
+		layout->addRow(buttons);
+		refreshPullUrl();
+		dlg->show();
 	});
 	connect(m_fileTitleButton, &QToolButton::clicked, this, [this, actionFileMode]() {
 		if (!m_isFileMode)
@@ -2369,6 +2528,7 @@ void CaptureWindow::addComposeFileSource()
 	sub->setWindowTitle(QFileInfo(filePath).fileName());
 	sub->resize(480, 270);
 	sub->show();
+	sub->move(0, 0);
 	QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
 	svc->bindPlayerPreview(view);
 	svc->setPlayerComposeStreamBusId(fileStreamBusId);
@@ -2493,8 +2653,10 @@ void CaptureWindow::addComposeCameraSource()
 	sub->setWindowTitle(tr("摄像头：%1").arg(cameras.first()));
 	sub->resize(480, 270);
 	sub->show();
+	sub->move(0, 0);
 	ComposeSourceItem item;
 	item.kind = ComposeSourceItem::SourceKind::Camera;
+	item.sourceId = QUuid::createUuid().toString(QUuid::WithoutBraces);
 	item.service = svc;
 	item.container = container;
 	item.view = view;
@@ -2502,6 +2664,7 @@ void CaptureWindow::addComposeCameraSource()
 	item.title = sub->windowTitle();
 	item.deviceIndex = 0;
 	item.formatIndex = 0;
+	svc->cameraSetFrameBusSourceId(item.sourceId);
 	container->onSelected = [this, sub]() {
 		const int idx = std::distance(m_composeSources.begin(), std::find_if(m_composeSources.begin(), m_composeSources.end(),
 		                                                                      [sub](const ComposeSourceItem& i) {
@@ -2582,6 +2745,7 @@ void CaptureWindow::addComposeScreenSource()
 	sub->setWindowTitle(tr("屏幕：%1").arg(screens.first()));
 	sub->resize(640, 360);
 	sub->show();
+	sub->move(0, 0);
 	ComposeSourceItem item;
 	item.kind = ComposeSourceItem::SourceKind::Screen;
 	item.service = svc;
@@ -2720,7 +2884,13 @@ void CaptureWindow::refreshComposeSourceListItems()
 	m_composeSourceList->clear();
 	for (const auto& src : m_composeSources)
 	{
-		m_composeSourceList->addItem(src.title);
+		QString displayTitle = src.title;
+		const QString sid = src.sourceId.trimmed();
+		if (!sid.isEmpty())
+		{
+			displayTitle += QStringLiteral(" [%1]").arg(sid.left(8));
+		}
+		m_composeSourceList->addItem(displayTitle);
 	}
 	m_composeSourceList->setCurrentRow(m_composeSelectedIndex);
 	m_composeSourceList->blockSignals(false);
@@ -2992,49 +3162,10 @@ void CaptureWindow::applyComposeAspectRatio()
 void CaptureWindow::refreshComposeScreenCaptureState(const int selectedComposeIndex, const int preferScreenRow,
                                                       const int excludeScreenRow)
 {
+	Q_UNUSED(selectedComposeIndex);
 	if (!m_isComposeMode)
 	{
 		return;
-	}
-	if (m_service)
-	{
-		m_service->screenSetActive(false);
-	}
-	// selectedComposeIndex 是列表中的任意一行（文件/摄像头/屏幕）。只有当前选中的那一行是「屏幕」时才作为激活目标；
-	// 若选中的是文件等，仍须保持列表中某一路屏幕采集为激活，否则预览与合成会停住。
-	// preferScreenRow：恢复某一指定屏幕素材时强制该路为 DXGI 激活目标。
-	// excludeScreenRow：用户刚暂停该路屏幕时不得再被选为 active，否则 refresh 会再次 screenSetActive(true)，导致「暂停」无效。
-	int activeScreenRow = -1;
-	if (preferScreenRow >= 0 && preferScreenRow < m_composeSources.size() &&
-	    m_composeSources[preferScreenRow].kind == ComposeSourceItem::SourceKind::Screen)
-	{
-		activeScreenRow = preferScreenRow;
-	}
-	if (activeScreenRow < 0 && selectedComposeIndex >= 0 && selectedComposeIndex < m_composeSources.size())
-	{
-		if (m_composeSources[selectedComposeIndex].kind == ComposeSourceItem::SourceKind::Screen)
-		{
-			if (excludeScreenRow < 0 || selectedComposeIndex != excludeScreenRow)
-			{
-				activeScreenRow = selectedComposeIndex;
-			}
-		}
-	}
-	if (activeScreenRow < 0)
-	{
-		for (int i = 0; i < m_composeSources.size(); ++i)
-		{
-			if (m_composeSources[i].kind != ComposeSourceItem::SourceKind::Screen)
-			{
-				continue;
-			}
-			if (excludeScreenRow >= 0 && i == excludeScreenRow)
-			{
-				continue;
-			}
-			activeScreenRow = i;
-			break;
-		}
 	}
 	for (int i = 0; i < m_composeSources.size(); ++i)
 	{
@@ -3043,18 +3174,16 @@ void CaptureWindow::refreshComposeScreenCaptureState(const int selectedComposeIn
 		{
 			continue;
 		}
-		if (i == activeScreenRow)
+		const bool forcedPlay = (preferScreenRow >= 0 && i == preferScreenRow);
+		const bool forcedPause = (excludeScreenRow >= 0 && i == excludeScreenRow);
+		const bool shouldPlay = forcedPlay ? true : (forcedPause ? false : src.service->screenIsActive());
+		src.service->screenSetActive(false);
+		src.service->selectScreen(qMax(0, src.deviceIndex));
+		src.service->screenSetFrameRate(qMax(1, src.screenFps));
+		src.service->screenSetCursorCaptureEnabled(src.screenCaptureCursor);
+		if (shouldPlay)
 		{
-			src.service->screenSetActive(false);
-			src.service->selectScreen(qMax(0, src.deviceIndex));
-			src.service->screenSetFrameRate(qMax(1, src.screenFps));
-			src.service->screenSetCursorCaptureEnabled(src.screenCaptureCursor);
 			src.service->screenSetActive(true);
-		}
-		else
-		{
-			// 防止多采集实例并发引发底层争用/崩溃，非当前屏幕源保持非激活。
-			src.service->screenSetActive(false);
 		}
 	}
 }
@@ -3461,6 +3590,37 @@ void CaptureWindow::resizeEvent(QResizeEvent* event)
 		static_cast<AspectRatioHostWidget*>(m_composePreviewHost)->setAspectRatio(m_composeAspectW, m_composeAspectH);
 		applyComposeZOrder();
 	}
+}
+
+void CaptureWindow::closeEvent(QCloseEvent* event)
+{
+	if (!event)
+	{
+		return;
+	}
+	if (m_service && m_service->streamIsRunning())
+	{
+		const auto ret = QMessageBox::question(this,
+		                                       tr("确认退出"),
+		                                       tr("当前正在执行推拉流任务，是否确定停止并退出"),
+		                                       QMessageBox::Yes | QMessageBox::No,
+		                                       QMessageBox::No);
+		if (ret != QMessageBox::Yes)
+		{
+			event->ignore();
+			return;
+		}
+		m_service->streamStop();
+		if (m_pullPreviewDialog)
+		{
+			m_pullPreviewDialog->close();
+		}
+		if (m_pullMonitorDialog)
+		{
+			m_pullMonitorDialog->close();
+		}
+	}
+	QWidget::closeEvent(event);
 }
 
 void CaptureWindow::refreshCameraDeviceUi()

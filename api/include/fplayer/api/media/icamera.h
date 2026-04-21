@@ -47,6 +47,8 @@ namespace fplayer
 		virtual bool isPlaying() const;
 
 		virtual void setPreviewTarget(const PreviewTarget&) = 0;
+		virtual void setFrameBusSourceId(const QString& sourceId) { (void)sourceId; }
+		virtual QString frameBusSourceId() const { return QStringLiteral("default"); }
 
 		MediaBackendType getBackendType() const;
 

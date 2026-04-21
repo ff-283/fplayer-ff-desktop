@@ -121,6 +121,7 @@ namespace fplayer
 		std::atomic<bool> isCapturing{false};
 		PreviewTarget previewTarget;
 		FGLWidget* fGLWieget = nullptr;
+		QString frameBusSourceId = QStringLiteral("default");
 
 		~Impl()
 		{
@@ -432,6 +433,17 @@ namespace fplayer
 		return m_isPlaying;
 	}
 
+	void CameraFFmpeg::setFrameBusSourceId(const QString& sourceId)
+	{
+		const QString sid = sourceId.trimmed();
+		m_impl->frameBusSourceId = sid.isEmpty() ? QStringLiteral("default") : sid;
+	}
+
+	QString CameraFFmpeg::frameBusSourceId() const
+	{
+		return m_impl->frameBusSourceId;
+	}
+
 	void CameraFFmpeg::setPreviewTarget(const PreviewTarget& target)
 	{
 		m_impl->previewTarget = target;
@@ -604,7 +616,8 @@ namespace fplayer
 							uStride,
 							vStride
 							);
-					CameraFrameBus::instance().publish(yBuffer, uBuffer, vBuffer, width, height, yStride, uStride, vStride);
+					CameraFrameBus::instance().publish(yBuffer, uBuffer, vBuffer, width, height, yStride, uStride, vStride,
+					                                  m_impl->frameBusSourceId);
 
 					av_frame_unref(frame);
 				}

@@ -31,6 +31,8 @@ namespace fplayer
             virtual bool seekMs(qint64 positionMs) = 0;
             virtual void setPlaybackRate(double rate) = 0;
             virtual double playbackRate() const = 0;
+            virtual void setVolume(float volume) = 0;
+            virtual float volume() const = 0;
             virtual QString debugStats() const = 0;
             virtual bool isPlaying() const;
             virtual void setPreviewTarget(const PreviewTarget& target) = 0;

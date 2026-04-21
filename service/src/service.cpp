@@ -190,6 +190,19 @@ bool fplayer::Service::cameraIsPlaying()
 	return this->m_camera && this->m_camera->isPlaying();
 }
 
+void fplayer::Service::cameraSetFrameBusSourceId(const QString& sourceId)
+{
+	if (m_camera)
+	{
+		m_camera->setFrameBusSourceId(sourceId);
+	}
+}
+
+QString fplayer::Service::cameraFrameBusSourceId() const
+{
+	return m_camera ? m_camera->frameBusSourceId() : QStringLiteral("default");
+}
+
 void fplayer::Service::playerPause()
 {
 	if (m_player)
@@ -245,6 +258,19 @@ void fplayer::Service::playerSetPlaybackRate(double rate)
 double fplayer::Service::playerPlaybackRate() const
 {
 	return m_player ? m_player->playbackRate() : 1.0;
+}
+
+void fplayer::Service::playerSetVolume(const float volume)
+{
+	if (m_player)
+	{
+		m_player->setVolume(volume);
+	}
+}
+
+float fplayer::Service::playerVolume() const
+{
+	return m_player ? m_player->volume() : 1.0f;
 }
 
 QString fplayer::Service::playerDebugStats() const

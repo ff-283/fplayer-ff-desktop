@@ -2,6 +2,7 @@
 #define FPLAYER_DESKTOP_CAMERAFRAMEBUS_H
 
 #include <QByteArray>
+#include <QHash>
 #include <QMutex>
 #include <fplayer/common/export.h>
 
@@ -27,17 +28,21 @@ namespace fplayer
 		static CameraFrameBus& instance();
 
 		void publish(const QByteArray& y, const QByteArray& u, const QByteArray& v, int width, int height,
-		             int yStride, int uStride, int vStride);
+		             int yStride, int uStride, int vStride, const QString& sourceId = QStringLiteral("default"));
 
-		CameraFrame snapshot() const;
+		CameraFrame snapshot(const QString& sourceId = QStringLiteral("default")) const;
 
 	private:
 		CameraFrameBus() = default;
 
 	private:
 		mutable QMutex m_mutex;
-		CameraFrame m_frame;
-		quint64 m_serial = 0;
+		struct Channel
+		{
+			CameraFrame frame;
+			quint64 serial = 0;
+		};
+		mutable QHash<QString, Channel> m_channels;
 	};
 }
 

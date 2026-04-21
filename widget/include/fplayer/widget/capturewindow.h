@@ -33,11 +33,16 @@ class QComboBox;
 class QMenuBar;
 class QToolButton;
 class QResizeEvent;
+class QCloseEvent;
 class QSplitter;
 class QMdiArea;
 class QWidget;
 class QListWidget;
 class QPushButton;
+class QDialog;
+class QTextEdit;
+class QSlider;
+class QTcpServer;
 class QMdiSubWindow;
 class QPoint;
 class QRect;
@@ -74,6 +79,7 @@ private:
 		File,
 		Screen,
 	};
+	void closeEvent(QCloseEvent* event) override;
 	void resizeEvent(QResizeEvent* event) override;
 	Ui::CaptureWindow* ui;
 	// QVideoWidget* m_view = nullptr;
@@ -151,6 +157,15 @@ private:
 	QStringList m_recentPushOutputs;
 	QStringList m_recentPullInputs;
 	QStringList m_recentPullOutputs;
+	QTcpServer* m_pullReservedPortServer = nullptr;
+	int m_pullReservedPort = 0;
+	QDialog* m_pullMonitorDialog = nullptr;
+	QDialog* m_pullPreviewDialog = nullptr;
+	fplayer::FVideoView* m_pullPreviewView = nullptr;
+	QPushButton* m_pullStartButton = nullptr;
+	QPushButton* m_pullStopButton = nullptr;
+	QTextEdit* m_pullLogView = nullptr;
+	QSlider* m_pullVolumeSlider = nullptr;
 	fplayer::MediaBackendType m_screenBackendType = fplayer::MediaBackendType::Qt6;
 	QSplitter* m_composeSplitter = nullptr;
 	QMdiArea* m_composeMdiArea = nullptr;

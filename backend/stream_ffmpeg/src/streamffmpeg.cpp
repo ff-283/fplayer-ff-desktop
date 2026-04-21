@@ -637,11 +637,32 @@ void fplayer::StreamFFmpeg::pushComposeSceneLoop(const QString& outputUrl, const
 
 	AVFormatContext* ofmt = nullptr;
 	AVCodecContext* encCtx = nullptr;
+	AVFormatContext* audioIfmt = nullptr;
+	AVFormatContext* audioIfmt2 = nullptr;
+	AVCodecContext* audioDecCtx = nullptr;
+	AVCodecContext* audioDecCtx2 = nullptr;
+	AVCodecContext* audioEncCtx = nullptr;
+	SwrContext* audioSwr = nullptr;
+	SwrContext* audioSwr2 = nullptr;
+	AVAudioFifo* audioFifo = nullptr;
+	AVAudioFifo* audioFifo2 = nullptr;
 	AVPacket* outPkt = av_packet_alloc();
+	AVPacket* audioPkt = nullptr;
+	AVPacket* audioPkt2 = nullptr;
+	AVPacket* audioOutPkt = nullptr;
 	AVFrame* encFrame = av_frame_alloc();
+	AVFrame* audioDecFrame = nullptr;
+	AVFrame* audioDecFrame2 = nullptr;
+	AVFrame* audioEncFrame = nullptr;
+	AVStream* outAudioStream = nullptr;
 	int exitCode = 0;
 	int ret = 0;
 	bool wroteHeader = false;
+	int audioIndex = -1;
+	int audioIndex2 = -1;
+	int64_t audioPts = 0;
+	int audioInputSampleRate = 48000;
+	bool audioEnabled = false;
 	int64_t pts = 0;
 	int64_t frameIntervalUs = qMax<int64_t>(1000, 1000000LL / targetFps);
 	int64_t startUs = 0;
@@ -653,6 +674,15 @@ void fplayer::StreamFFmpeg::pushComposeSceneLoop(const QString& outputUrl, const
 	QVector<QString> sourceLastDiag;
 	QByteArray outUtf8;
 	const char* outPath = nullptr;
+	fplayer::windows_api::WasapiLoopbackCapture wasapiAudio;
+	fplayer::windows_api::WasapiLoopbackCapture wasapiAudio2;
+	bool useWasapiAudio = false;
+	bool useWasapiAudio2 = false;
+	std::mutex muxWriteMutex;
+	std::atomic<bool> audioThreadStop{false};
+	std::atomic<int> audioThreadErr{0};
+	std::thread audioWorker;
+	bool audioThreadStarted = false;
 	auto drawPlaneNearest = [](uint8_t* dst, const int dstStride, const int dstW, const int dstH,
 	                           const QByteArray& srcPlane, const int srcStride, const int srcW, const int srcH) {
 		if (!dst || srcPlane.isEmpty() || dstW <= 0 || dstH <= 0 || srcW <= 0 || srcH <= 0 || srcStride <= 0)
@@ -837,6 +867,308 @@ void fplayer::StreamFFmpeg::pushComposeSceneLoop(const QString& outputUrl, const
 		avcodec_parameters_from_context(outStream->codecpar, encCtx);
 		outStream->codecpar->sample_aspect_ratio.num = 1;
 		outStream->codecpar->sample_aspect_ratio.den = 1;
+		const QString requestedAudioOut = params.audioOutputSource.trimmed();
+		const QString requestedAudioIn = params.audioInputSource.trimmed();
+		const bool hasIn = !requestedAudioIn.isEmpty() && requestedAudioIn != QStringLiteral("off");
+		const bool hasOut = !requestedAudioOut.isEmpty() && requestedAudioOut != QStringLiteral("off");
+		const bool dualAudioRequested = hasIn && hasOut && requestedAudioIn != requestedAudioOut;
+		const QString audioSourcePrimary = dualAudioRequested ? requestedAudioIn : QString();
+		const QString audioSourceSecondary = dualAudioRequested ? requestedAudioOut : QString();
+		const QString resolvedAudioSource = hasOut ? requestedAudioOut : (hasIn ? requestedAudioIn : QString());
+		const bool enableAudio = !resolvedAudioSource.isEmpty() && resolvedAudioSource != QStringLiteral("off");
+		bool audioActive = enableAudio;
+		if (audioActive)
+		{
+			QString openedAudioDevice;
+			QString openDetail;
+			const QString selectedPrimary = dualAudioRequested ? audioSourcePrimary : resolvedAudioSource;
+			const bool primaryFromOutputSelection = !dualAudioRequested && hasOut;
+			if (!fplayer::windows_api::openDshowAudioInputWithFallback(selectedPrimary, m_stopRequest, audioIfmt, openedAudioDevice, openDetail))
+			{
+				QString wasapiErr;
+				if ((primaryFromOutputSelection || selectedPrimary == QStringLiteral("system")) && wasapiAudio.init(wasapiErr))
+				{
+					useWasapiAudio = true;
+					openedAudioDevice = QStringLiteral("native-wasapi-loopback(default)");
+					appendLogLine(QStringLiteral("[组合推流] dshow音频不可用，已切换系统API回采: %1").arg(openDetail));
+				}
+				else
+				{
+					appendLogLine(QStringLiteral("[组合推流] 音频采集初始化失败，已自动降级为无声推流: %1; wasapi-native=%2")
+						              .arg(openDetail)
+						              .arg(wasapiErr));
+					audioActive = false;
+				}
+			}
+			if (audioIfmt)
+			{
+				audioIfmt->interrupt_callback.callback = &StreamFFmpeg::interruptCallback;
+				audioIfmt->interrupt_callback.opaque = &m_stopRequest;
+			}
+			if (audioActive && ((audioIfmt && avformat_find_stream_info(audioIfmt, nullptr) >= 0) || useWasapiAudio))
+			{
+				if (audioIfmt)
+				{
+					for (unsigned i = 0; i < audioIfmt->nb_streams; ++i)
+					{
+						if (audioIfmt->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO)
+						{
+							audioIndex = static_cast<int>(i);
+							break;
+						}
+					}
+					if (audioIndex < 0)
+					{
+						audioActive = false;
+					}
+					else
+					{
+						const AVCodecParameters* inAudioPar = audioIfmt->streams[audioIndex]->codecpar;
+						const AVCodec* audioDec = avcodec_find_decoder(inAudioPar->codec_id);
+						if (!audioDec)
+						{
+							audioActive = false;
+						}
+						else
+						{
+							audioDecCtx = avcodec_alloc_context3(audioDec);
+							if (!(audioDecCtx && avcodec_parameters_to_context(audioDecCtx, inAudioPar) >= 0 &&
+							      avcodec_open2(audioDecCtx, audioDec, nullptr) >= 0))
+							{
+								if (audioDecCtx)
+								{
+									avcodec_free_context(&audioDecCtx);
+								}
+								audioActive = false;
+							}
+						}
+					}
+				}
+			}
+			else if (audioActive)
+			{
+				audioActive = false;
+			}
+			if (audioActive)
+			{
+				audioPkt = av_packet_alloc();
+				audioPkt2 = av_packet_alloc();
+				audioOutPkt = av_packet_alloc();
+				audioDecFrame = av_frame_alloc();
+				audioDecFrame2 = av_frame_alloc();
+				audioEncFrame = av_frame_alloc();
+				if (!audioPkt || !audioOutPkt || !audioDecFrame || !audioEncFrame || !audioPkt2 || !audioDecFrame2)
+				{
+					audioActive = false;
+				}
+			}
+			if (audioActive && dualAudioRequested)
+			{
+				QString openedAudioDevice2;
+				QString openDetail2;
+				if (!fplayer::windows_api::openDshowAudioInputWithFallback(audioSourceSecondary, m_stopRequest, audioIfmt2, openedAudioDevice2, openDetail2))
+				{
+					QString wasapiErr2;
+					if (wasapiAudio2.init(wasapiErr2))
+					{
+						useWasapiAudio2 = true;
+					}
+				}
+				if (audioIfmt2)
+				{
+					audioIfmt2->interrupt_callback.callback = &StreamFFmpeg::interruptCallback;
+					audioIfmt2->interrupt_callback.opaque = &m_stopRequest;
+					if (avformat_find_stream_info(audioIfmt2, nullptr) >= 0)
+					{
+						for (unsigned i = 0; i < audioIfmt2->nb_streams; ++i)
+						{
+							if (audioIfmt2->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO)
+							{
+								audioIndex2 = static_cast<int>(i);
+								break;
+							}
+						}
+						if (audioIndex2 >= 0)
+						{
+							const AVCodecParameters* inAudioPar2 = audioIfmt2->streams[audioIndex2]->codecpar;
+							const AVCodec* audioDec2 = avcodec_find_decoder(inAudioPar2->codec_id);
+							if (audioDec2)
+							{
+								audioDecCtx2 = avcodec_alloc_context3(audioDec2);
+								if (!(audioDecCtx2 && avcodec_parameters_to_context(audioDecCtx2, inAudioPar2) >= 0 &&
+								      avcodec_open2(audioDecCtx2, audioDec2, nullptr) >= 0))
+								{
+									if (audioDecCtx2)
+									{
+										avcodec_free_context(&audioDecCtx2);
+									}
+									audioIndex2 = -1;
+								}
+							}
+						}
+					}
+				}
+			}
+			if (audioActive)
+			{
+				const AVCodec* audioEnc = avcodec_find_encoder(AV_CODEC_ID_AAC);
+				if (!audioEnc)
+				{
+					audioActive = false;
+				}
+				else
+				{
+					audioEncCtx = avcodec_alloc_context3(audioEnc);
+					if (!audioEncCtx)
+					{
+						audioActive = false;
+					}
+					else
+					{
+						audioInputSampleRate = useWasapiAudio
+							                         ? (wasapiAudio.sampleRate() > 0 ? wasapiAudio.sampleRate() : 48000)
+							                         : (audioDecCtx && audioDecCtx->sample_rate > 0 ? audioDecCtx->sample_rate : 48000);
+						audioEncCtx->sample_rate = audioInputSampleRate;
+						if (audioEnc->supported_samplerates)
+						{
+							int bestRate = audioEnc->supported_samplerates[0];
+							int bestDiff = qAbs(bestRate - audioEncCtx->sample_rate);
+							for (const int* p = audioEnc->supported_samplerates; *p != 0; ++p)
+							{
+								const int diff = qAbs(*p - audioEncCtx->sample_rate);
+								if (diff < bestDiff)
+								{
+									bestRate = *p;
+									bestDiff = diff;
+								}
+							}
+							audioEncCtx->sample_rate = bestRate;
+						}
+						const int srcChannels = useWasapiAudio
+							                        ? wasapiAudio.channelLayout().nb_channels
+							                        : (audioDecCtx ? audioDecCtx->ch_layout.nb_channels : 0);
+						const int targetChannels = (srcChannels == 1) ? 1 : 2;
+						av_channel_layout_uninit(&audioEncCtx->ch_layout);
+						av_channel_layout_default(&audioEncCtx->ch_layout, targetChannels);
+						audioEncCtx->sample_fmt = AV_SAMPLE_FMT_FLTP;
+						if (audioEnc->sample_fmts)
+						{
+							bool fltpSupported = false;
+							for (const AVSampleFormat* p = audioEnc->sample_fmts; *p != AV_SAMPLE_FMT_NONE; ++p)
+							{
+								if (*p == AV_SAMPLE_FMT_FLTP)
+								{
+									fltpSupported = true;
+									break;
+								}
+							}
+							if (!fltpSupported)
+							{
+								audioEncCtx->sample_fmt = audioEnc->sample_fmts[0];
+							}
+						}
+						audioEncCtx->bit_rate = 128000;
+						audioEncCtx->time_base = AVRational{1, audioEncCtx->sample_rate};
+						audioEncCtx->strict_std_compliance = FF_COMPLIANCE_EXPERIMENTAL;
+						if (ofmt->oformat->flags & AVFMT_GLOBALHEADER)
+						{
+							audioEncCtx->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
+						}
+						if (avcodec_open2(audioEncCtx, audioEnc, nullptr) < 0)
+						{
+							audioActive = false;
+						}
+					}
+				}
+			}
+			if (audioActive)
+			{
+				outAudioStream = avformat_new_stream(ofmt, nullptr);
+				if (!outAudioStream || avcodec_parameters_from_context(outAudioStream->codecpar, audioEncCtx) < 0)
+				{
+					audioActive = false;
+				}
+			}
+			if (audioActive)
+			{
+				outAudioStream->codecpar->codec_tag = 0;
+				outAudioStream->time_base = audioEncCtx->time_base;
+				const AVChannelLayout* inLayout = nullptr;
+				if (useWasapiAudio)
+				{
+					inLayout = wasapiAudio.channelLayout().nb_channels > 0 ? &wasapiAudio.channelLayout() : nullptr;
+				}
+				else
+				{
+					inLayout = audioDecCtx && audioDecCtx->ch_layout.nb_channels > 0 ? &audioDecCtx->ch_layout : nullptr;
+				}
+				AVChannelLayout defaultInLayout;
+				if (!inLayout)
+				{
+					av_channel_layout_default(&defaultInLayout, 2);
+					inLayout = &defaultInLayout;
+				}
+				const AVSampleFormat inSampleFmt = useWasapiAudio ? wasapiAudio.sampleFmt() : audioDecCtx->sample_fmt;
+				const int inSampleRate2 = useWasapiAudio ? audioInputSampleRate : audioDecCtx->sample_rate;
+				ret = swr_alloc_set_opts2(&audioSwr, &audioEncCtx->ch_layout, audioEncCtx->sample_fmt, audioEncCtx->sample_rate,
+				                          inLayout, inSampleFmt, inSampleRate2, 0, nullptr);
+				if (!inLayout || inLayout == &defaultInLayout)
+				{
+					av_channel_layout_uninit(&defaultInLayout);
+				}
+				if (ret < 0 || !audioSwr || swr_init(audioSwr) < 0)
+				{
+					audioActive = false;
+				}
+			}
+			if (audioActive)
+			{
+				const int fifoInitSamples = qMax(audioEncCtx->frame_size > 0 ? audioEncCtx->frame_size : 1024, 1024) * 8;
+				audioFifo = av_audio_fifo_alloc(audioEncCtx->sample_fmt, audioEncCtx->ch_layout.nb_channels, fifoInitSamples);
+				if (!audioFifo)
+				{
+					audioActive = false;
+				}
+				if ((audioDecCtx2 && audioIndex2 >= 0) || useWasapiAudio2)
+				{
+					const AVChannelLayout* inLayout2 = nullptr;
+					if (useWasapiAudio2)
+					{
+						inLayout2 = wasapiAudio2.channelLayout().nb_channels > 0 ? &wasapiAudio2.channelLayout() : nullptr;
+					}
+					else
+					{
+						inLayout2 = audioDecCtx2->ch_layout.nb_channels > 0 ? &audioDecCtx2->ch_layout : nullptr;
+					}
+					AVChannelLayout defaultInLayout2;
+					if (!inLayout2)
+					{
+						av_channel_layout_default(&defaultInLayout2, 2);
+						inLayout2 = &defaultInLayout2;
+					}
+					const AVSampleFormat inSampleFmt2 = useWasapiAudio2 ? wasapiAudio2.sampleFmt() : audioDecCtx2->sample_fmt;
+					const int inSampleRate3 = useWasapiAudio2 ? qMax(1, wasapiAudio2.sampleRate()) : audioDecCtx2->sample_rate;
+					const int ret2 = swr_alloc_set_opts2(&audioSwr2, &audioEncCtx->ch_layout, audioEncCtx->sample_fmt, audioEncCtx->sample_rate,
+					                                     inLayout2, inSampleFmt2, inSampleRate3, 0, nullptr);
+					if (!inLayout2 || inLayout2 == &defaultInLayout2)
+					{
+						av_channel_layout_uninit(&defaultInLayout2);
+					}
+					if (ret2 >= 0 && audioSwr2 && swr_init(audioSwr2) >= 0)
+					{
+						audioFifo2 = av_audio_fifo_alloc(audioEncCtx->sample_fmt, audioEncCtx->ch_layout.nb_channels, fifoInitSamples);
+					}
+					if (!audioFifo2)
+					{
+						if (audioSwr2)
+						{
+							swr_free(&audioSwr2);
+						}
+					}
+				}
+			}
+			audioEnabled = audioActive;
+		}
 		// appendLogLine(QStringLiteral("[组合推流] 使用编码器=%1 输出=%2x%3 fps=%4")
 		// 	              .arg(QString::fromLatin1(enc->name ? enc->name : "unknown"))
 		// 	              .arg(encCtx->width)
@@ -862,6 +1194,217 @@ void fplayer::StreamFFmpeg::pushComposeSceneLoop(const QString& outputUrl, const
 		goto cleanup;
 	}
 	wroteHeader = true;
+	if (audioEnabled && outAudioStream && audioSwr && audioEncCtx && audioOutPkt && audioEncFrame && audioFifo)
+	{
+		audioThreadStarted = true;
+		audioWorker = std::thread([&]() {
+			const int encSamples = audioEncCtx->frame_size > 0 ? audioEncCtx->frame_size : 1024;
+			const int64_t audioFrameIntervalUs = qMax<int64_t>(
+				1000,
+				(static_cast<int64_t>(encSamples) * 1000000LL) / qMax(1, audioEncCtx->sample_rate));
+			int64_t nextAudioEncodeUs = av_gettime_relative();
+			const bool dualMixEnabled = audioFifo2 && audioSwr2 &&
+				(useWasapiAudio2 || (audioIfmt2 && audioPkt2 && audioDecCtx2 && audioDecFrame2 && audioIndex2 >= 0));
+			const auto writeEncodedPackets = [&]() -> bool {
+				while (avcodec_receive_packet(audioEncCtx, audioOutPkt) == 0)
+				{
+					av_packet_rescale_ts(audioOutPkt, audioEncCtx->time_base, outAudioStream->time_base);
+					audioOutPkt->stream_index = outAudioStream->index;
+					int aw = 0;
+					{
+						std::lock_guard<std::mutex> lk(muxWriteMutex);
+						aw = av_interleaved_write_frame(ofmt, audioOutPkt);
+					}
+					if (aw < 0)
+					{
+						audioThreadErr.store(aw, std::memory_order_relaxed);
+						audioThreadStop.store(true, std::memory_order_relaxed);
+						av_packet_unref(audioOutPkt);
+						return false;
+					}
+					av_packet_unref(audioOutPkt);
+				}
+				return true;
+			};
+			const auto enqueueFromDshow = [&](AVFormatContext* ifmt, AVPacket* pkt, AVCodecContext* decCtx, AVFrame* decFrame, int index,
+			                                  SwrContext* swr, AVAudioFifo* fifo) -> bool {
+				const int audioRet = av_read_frame(ifmt, pkt);
+				if (audioRet < 0)
+				{
+					return false;
+				}
+				bool wrote = false;
+				if (pkt->stream_index == index)
+				{
+					const int decSendRet = avcodec_send_packet(decCtx, pkt);
+					if (decSendRet >= 0)
+					{
+						while (avcodec_receive_frame(decCtx, decFrame) == 0)
+						{
+							const int dstSamples = av_rescale_rnd(
+								swr_get_delay(swr, decCtx->sample_rate) + decFrame->nb_samples,
+								audioEncCtx->sample_rate,
+								decCtx->sample_rate,
+								AV_ROUND_UP);
+							if (dstSamples > 0)
+							{
+								uint8_t** dstData = nullptr;
+								int dstLinesize = 0;
+								if (av_samples_alloc_array_and_samples(&dstData, &dstLinesize, audioEncCtx->ch_layout.nb_channels, dstSamples,
+								                                       audioEncCtx->sample_fmt, 0) >= 0)
+								{
+									const int converted = swr_convert(swr, dstData, dstSamples,
+									                                  (const uint8_t* const*)decFrame->data, decFrame->nb_samples);
+									if (converted > 0)
+									{
+										const int need = av_audio_fifo_size(fifo) + converted;
+										if (av_audio_fifo_realloc(fifo, need) >= 0 &&
+										    av_audio_fifo_write(fifo, reinterpret_cast<void**>(dstData), converted) >= converted)
+										{
+											wrote = true;
+										}
+									}
+									av_freep(&dstData[0]);
+									av_freep(&dstData);
+								}
+							}
+							av_frame_unref(decFrame);
+						}
+					}
+				}
+				av_packet_unref(pkt);
+				return wrote;
+			};
+			const auto enqueueFromWasapi = [&](fplayer::windows_api::WasapiLoopbackCapture& capture, SwrContext* swr, AVAudioFifo* fifo) -> bool {
+				std::vector<uint8_t> captured;
+				int capturedSamples = 0;
+				if (!capture.readInterleaved(captured, capturedSamples) || capturedSamples <= 0)
+				{
+					return false;
+				}
+				const uint8_t* inData[1] = {captured.data()};
+				const int dstSamples = av_rescale_rnd(
+					swr_get_delay(swr, capture.sampleRate()) + capturedSamples,
+					audioEncCtx->sample_rate,
+					capture.sampleRate(),
+					AV_ROUND_UP);
+				if (dstSamples <= 0)
+				{
+					return false;
+				}
+				uint8_t** dstData = nullptr;
+				int dstLinesize = 0;
+				if (av_samples_alloc_array_and_samples(&dstData, &dstLinesize, audioEncCtx->ch_layout.nb_channels, dstSamples,
+				                                       audioEncCtx->sample_fmt, 0) < 0)
+				{
+					return false;
+				}
+				bool wrote = false;
+				const int converted = swr_convert(swr, dstData, dstSamples, inData, capturedSamples);
+				if (converted > 0)
+				{
+					const int need = av_audio_fifo_size(fifo) + converted;
+					if (av_audio_fifo_realloc(fifo, need) >= 0 &&
+					    av_audio_fifo_write(fifo, reinterpret_cast<void**>(dstData), converted) >= converted)
+					{
+						wrote = true;
+					}
+				}
+				av_freep(&dstData[0]);
+				av_freep(&dstData);
+				return wrote;
+			};
+			while (!m_stopRequest.load(std::memory_order_relaxed) && !audioThreadStop.load(std::memory_order_relaxed))
+			{
+				bool gotMain = false;
+				bool gotSecond = false;
+				if (useWasapiAudio)
+				{
+					gotMain = enqueueFromWasapi(wasapiAudio, audioSwr, audioFifo);
+				}
+				else if (audioIfmt && audioPkt && audioDecCtx && audioDecFrame && audioIndex >= 0)
+				{
+					gotMain = enqueueFromDshow(audioIfmt, audioPkt, audioDecCtx, audioDecFrame, audioIndex, audioSwr, audioFifo);
+				}
+				if (dualMixEnabled)
+				{
+					if (useWasapiAudio2)
+					{
+						gotSecond = enqueueFromWasapi(wasapiAudio2, audioSwr2, audioFifo2);
+					}
+					else if (audioIfmt2 && audioPkt2 && audioDecCtx2 && audioDecFrame2 && audioIndex2 >= 0)
+					{
+						gotSecond = enqueueFromDshow(audioIfmt2, audioPkt2, audioDecCtx2, audioDecFrame2, audioIndex2, audioSwr2, audioFifo2);
+					}
+				}
+				int64_t nowUs = av_gettime_relative();
+				if (nowUs > nextAudioEncodeUs + audioFrameIntervalUs * 3)
+				{
+					nextAudioEncodeUs = nowUs;
+				}
+				while (nowUs >= nextAudioEncodeUs)
+				{
+					const int mainSamples = av_audio_fifo_size(audioFifo);
+					const int secondSamples = dualMixEnabled ? av_audio_fifo_size(audioFifo2) : 0;
+					const bool canMixFullFrame = !dualMixEnabled || secondSamples >= encSamples;
+					bool frameReady = false;
+					if (mainSamples >= encSamples && canMixFullFrame)
+					{
+						frameReady = fillAudioEncFrameFromFifos(audioEncFrame, audioEncCtx, audioFifo, audioFifo2, encSamples, dualMixEnabled);
+					}
+					else if (mainSamples > 0)
+					{
+						const int readSamples = qMin(mainSamples, encSamples);
+						// 次路不足时不阻塞主路，直接按主路补静音保证实时连续性。
+						frameReady = fillAudioEncFrameFromFifosWithPadding(
+							audioEncFrame,
+							audioEncCtx,
+							audioFifo,
+							canMixFullFrame ? audioFifo2 : nullptr,
+							readSamples,
+							encSamples,
+							canMixFullFrame);
+					}
+					else
+					{
+						av_frame_unref(audioEncFrame);
+						audioEncFrame->nb_samples = encSamples;
+						audioEncFrame->format = audioEncCtx->sample_fmt;
+						audioEncFrame->sample_rate = audioEncCtx->sample_rate;
+						av_channel_layout_copy(&audioEncFrame->ch_layout, &audioEncCtx->ch_layout);
+						if (av_frame_get_buffer(audioEncFrame, 0) >= 0)
+						{
+							av_samples_set_silence(audioEncFrame->data, 0, encSamples, audioEncCtx->ch_layout.nb_channels,
+							                       audioEncCtx->sample_fmt);
+							frameReady = true;
+						}
+					}
+					if (!frameReady)
+					{
+						break;
+					}
+					audioEncFrame->pts = audioPts;
+					audioPts += encSamples;
+					if (avcodec_send_frame(audioEncCtx, audioEncFrame) < 0)
+					{
+						break;
+					}
+					if (!writeEncodedPackets())
+					{
+						return;
+					}
+					nextAudioEncodeUs += audioFrameIntervalUs;
+					nowUs = av_gettime_relative();
+				}
+				if (!gotMain && !gotSecond)
+				{
+					QThread::msleep(2);
+				}
+			}
+			avcodec_send_frame(audioEncCtx, nullptr);
+			(void)writeEncodedPackets();
+		});
+	}
 
 	encFrame->format = encCtx->pix_fmt;
 	encFrame->width = encCtx->width;
@@ -882,7 +1425,7 @@ void fplayer::StreamFFmpeg::pushComposeSceneLoop(const QString& outputUrl, const
 	// appendLogLine(QStringLiteral("[组合推流] 场景=%1x%2 输出=%3x%4 源数量=%5").arg(sceneW).arg(sceneH).arg(outW).arg(outH).arg(items.size()));
 	if (!params.audioOutputSource.trimmed().isEmpty() && params.audioOutputSource.trimmed() != QStringLiteral("off"))
 	{
-		// appendLogLine(QStringLiteral("[组合推流] 当前版本暂未启用组合音频混音，输出将为无声视频。"));
+		// appendLogLine(QStringLiteral("[组合推流] 音频链路已启用，按 audio_in/audio_out 配置采集。"));
 	}
 	// appendLogLine(QStringLiteral("[组合推流] 诊断: frameIntervalUs=%1").arg(frameIntervalUs));
 
@@ -894,6 +1437,13 @@ void fplayer::StreamFFmpeg::pushComposeSceneLoop(const QString& outputUrl, const
 	sourceLastDiag = QVector<QString>(items.size(), QStringLiteral("n/a"));
 	while (!m_stopRequest.load(std::memory_order_relaxed))
 	{
+		const int threadAudioErr = audioThreadErr.load(std::memory_order_relaxed);
+		if (threadAudioErr < 0)
+		{
+			exitCode = threadAudioErr;
+			setLastError(QStringLiteral("组合推流写入音频包失败"));
+			break;
+		}
 		const int64_t nowUs = av_gettime_relative();
 		if (nowUs < nextFrameUs)
 		{
@@ -940,7 +1490,7 @@ void fplayer::StreamFFmpeg::pushComposeSceneLoop(const QString& outputUrl, const
 			}
 			if (it.kind == ComposeItem::Kind::Camera)
 			{
-				const auto cam = fplayer::CameraFrameBus::instance().snapshot();
+				const auto cam = fplayer::CameraFrameBus::instance().snapshot(it.sourceId);
 				if (!cam.valid || cam.width <= 0 || cam.height <= 0)
 				{
 					++noFrameCount;
@@ -1076,7 +1626,11 @@ void fplayer::StreamFFmpeg::pushComposeSceneLoop(const QString& outputUrl, const
 			{
 				av_packet_rescale_ts(outPkt, encCtx->time_base, ofmt->streams[0]->time_base);
 				outPkt->stream_index = 0;
-				const int wret = av_interleaved_write_frame(ofmt, outPkt);
+				int wret = 0;
+				{
+					std::lock_guard<std::mutex> lk(muxWriteMutex);
+					wret = av_interleaved_write_frame(ofmt, outPkt);
+				}
 				if (wret < 0)
 				{
 					char errbuf[AV_ERROR_MAX_STRING_SIZE];
@@ -1136,8 +1690,16 @@ void fplayer::StreamFFmpeg::pushComposeSceneLoop(const QString& outputUrl, const
 	{
 		av_packet_rescale_ts(outPkt, encCtx->time_base, ofmt->streams[0]->time_base);
 		outPkt->stream_index = 0;
-		av_interleaved_write_frame(ofmt, outPkt);
+		{
+			std::lock_guard<std::mutex> lk(muxWriteMutex);
+			av_interleaved_write_frame(ofmt, outPkt);
+		}
 		av_packet_unref(outPkt);
+	}
+	audioThreadStop.store(true, std::memory_order_relaxed);
+	if (audioThreadStarted && audioWorker.joinable())
+	{
+		audioWorker.join();
 	}
 	if (wroteHeader)
 	{
@@ -1145,6 +1707,71 @@ void fplayer::StreamFFmpeg::pushComposeSceneLoop(const QString& outputUrl, const
 	}
 
 cleanup:
+	audioThreadStop.store(true, std::memory_order_relaxed);
+	if (audioThreadStarted && audioWorker.joinable())
+	{
+		audioWorker.join();
+	}
+	if (audioEncFrame)
+	{
+		av_frame_free(&audioEncFrame);
+	}
+	if (audioDecFrame2)
+	{
+		av_frame_free(&audioDecFrame2);
+	}
+	if (audioDecFrame)
+	{
+		av_frame_free(&audioDecFrame);
+	}
+	if (audioOutPkt)
+	{
+		av_packet_free(&audioOutPkt);
+	}
+	if (audioPkt2)
+	{
+		av_packet_free(&audioPkt2);
+	}
+	if (audioPkt)
+	{
+		av_packet_free(&audioPkt);
+	}
+	if (audioFifo2)
+	{
+		av_audio_fifo_free(audioFifo2);
+	}
+	if (audioFifo)
+	{
+		av_audio_fifo_free(audioFifo);
+	}
+	if (audioSwr2)
+	{
+		swr_free(&audioSwr2);
+	}
+	if (audioSwr)
+	{
+		swr_free(&audioSwr);
+	}
+	if (audioEncCtx)
+	{
+		avcodec_free_context(&audioEncCtx);
+	}
+	if (audioDecCtx2)
+	{
+		avcodec_free_context(&audioDecCtx2);
+	}
+	if (audioDecCtx)
+	{
+		avcodec_free_context(&audioDecCtx);
+	}
+	if (audioIfmt2)
+	{
+		avformat_close_input(&audioIfmt2);
+	}
+	if (audioIfmt)
+	{
+		avformat_close_input(&audioIfmt);
+	}
 	if (encFrame)
 	{
 		av_frame_free(&encFrame);
@@ -2214,6 +2841,10 @@ audio_init_done:
 		audioThreadStarted = true;
 		audioWorker = std::thread([&]() {
 			const int encSamples = audioEncCtx->frame_size > 0 ? audioEncCtx->frame_size : 1024;
+			const int64_t audioFrameIntervalUs = qMax<int64_t>(
+				1000,
+				(static_cast<int64_t>(encSamples) * 1000000LL) / qMax(1, audioEncCtx->sample_rate));
+			int64_t nextAudioEncodeUs = av_gettime_relative();
 			const bool dualMixEnabled = audioFifo2 && audioSwr2 &&
 				(useWasapiAudio2 || (audioIfmt2 && audioPkt2 && audioDecCtx2 && audioDecFrame2 && audioIndex2 >= 0));
 			const auto writeEncodedPackets = [&]() -> bool {
@@ -2351,13 +2982,48 @@ audio_init_done:
 						gotSecond = enqueueFromDshow(audioIfmt2, audioPkt2, audioDecCtx2, audioDecFrame2, audioIndex2, audioSwr2, audioFifo2);
 					}
 				}
-				while (av_audio_fifo_size(audioFifo) >= encSamples)
+				int64_t nowUs = av_gettime_relative();
+				if (nowUs > nextAudioEncodeUs + audioFrameIntervalUs * 3)
 				{
-					if (dualMixEnabled && av_audio_fifo_size(audioFifo2) < encSamples)
+					nextAudioEncodeUs = nowUs;
+				}
+				while (nowUs >= nextAudioEncodeUs)
+				{
+					const int mainSamples = av_audio_fifo_size(audioFifo);
+					const int secondSamples = dualMixEnabled ? av_audio_fifo_size(audioFifo2) : 0;
+					const bool canMixFullFrame = !dualMixEnabled || secondSamples >= encSamples;
+					bool frameReady = false;
+					if (mainSamples >= encSamples && canMixFullFrame)
 					{
-						break;
+						frameReady = fillAudioEncFrameFromFifos(audioEncFrame, audioEncCtx, audioFifo, audioFifo2, encSamples, dualMixEnabled);
 					}
-					if (!fillAudioEncFrameFromFifos(audioEncFrame, audioEncCtx, audioFifo, audioFifo2, encSamples, dualMixEnabled))
+					else if (mainSamples > 0)
+					{
+						const int readSamples = qMin(mainSamples, encSamples);
+						frameReady = fillAudioEncFrameFromFifosWithPadding(
+							audioEncFrame,
+							audioEncCtx,
+							audioFifo,
+							canMixFullFrame ? audioFifo2 : nullptr,
+							readSamples,
+							encSamples,
+							canMixFullFrame);
+					}
+					else
+					{
+						av_frame_unref(audioEncFrame);
+						audioEncFrame->nb_samples = encSamples;
+						audioEncFrame->format = audioEncCtx->sample_fmt;
+						audioEncFrame->sample_rate = audioEncCtx->sample_rate;
+						av_channel_layout_copy(&audioEncFrame->ch_layout, &audioEncCtx->ch_layout);
+						if (av_frame_get_buffer(audioEncFrame, 0) >= 0)
+						{
+							av_samples_set_silence(audioEncFrame->data, 0, encSamples, audioEncCtx->ch_layout.nb_channels,
+							                       audioEncCtx->sample_fmt);
+							frameReady = true;
+						}
+					}
+					if (!frameReady)
 					{
 						break;
 					}
@@ -2371,6 +3037,8 @@ audio_init_done:
 					{
 						return;
 					}
+					nextAudioEncodeUs += audioFrameIntervalUs;
+					nowUs = av_gettime_relative();
 				}
 				if (!gotMain && !gotSecond)
 				{
@@ -3250,6 +3918,11 @@ audio_preview_init_done:
 			int64_t lastAudioWriteTs = AV_NOPTS_VALUE;
 			const bool dualMixEnabled = audioFifo2 && audioSwr2 &&
 				(useWasapiAudio2 || (audioIfmt2 && audioPkt2 && audioDecCtx2 && audioDecFrame2 && audioIndex2 >= 0));
+			const int encSamples = audioEncCtx->frame_size > 0 ? audioEncCtx->frame_size : 1024;
+			const int64_t audioFrameIntervalUs = qMax<int64_t>(
+				1000,
+				(static_cast<int64_t>(encSamples) * 1000000LL) / qMax(1, audioEncCtx->sample_rate));
+			int64_t nextAudioEncodeUs = av_gettime_relative();
 			while (!m_stopRequest.load(std::memory_order_relaxed) && !audioThreadStop.load(std::memory_order_relaxed))
 			{
 				if (dualMixEnabled)
@@ -3388,11 +4061,47 @@ audio_preview_init_done:
 					}
 					av_freep(&dstData[0]);
 					av_freep(&dstData);
-					const int encSamples = audioEncCtx->frame_size > 0 ? audioEncCtx->frame_size : 1024;
-					while (av_audio_fifo_size(audioFifo) >= encSamples)
+					int64_t nowUs = av_gettime_relative();
+					if (nowUs > nextAudioEncodeUs + audioFrameIntervalUs * 3)
+					{
+						nextAudioEncodeUs = nowUs;
+					}
+					while (nowUs >= nextAudioEncodeUs)
 					{
 						const bool enableMix = dualMixEnabled && av_audio_fifo_size(audioFifo2) >= encSamples;
-						if (!fillAudioEncFrameFromFifos(audioEncFrame, audioEncCtx, audioFifo, audioFifo2, encSamples, enableMix))
+						const int mainSamples = av_audio_fifo_size(audioFifo);
+						bool frameReady = false;
+						if (mainSamples >= encSamples && (!dualMixEnabled || enableMix))
+						{
+							frameReady = fillAudioEncFrameFromFifos(audioEncFrame, audioEncCtx, audioFifo, audioFifo2, encSamples, enableMix);
+						}
+						else if (mainSamples > 0)
+						{
+							const int readSamples = qMin(mainSamples, encSamples);
+							frameReady = fillAudioEncFrameFromFifosWithPadding(
+								audioEncFrame,
+								audioEncCtx,
+								audioFifo,
+								enableMix ? audioFifo2 : nullptr,
+								readSamples,
+								encSamples,
+								enableMix);
+						}
+						else
+						{
+							av_frame_unref(audioEncFrame);
+							audioEncFrame->nb_samples = encSamples;
+							audioEncFrame->format = audioEncCtx->sample_fmt;
+							audioEncFrame->sample_rate = audioEncCtx->sample_rate;
+							av_channel_layout_copy(&audioEncFrame->ch_layout, &audioEncCtx->ch_layout);
+							if (av_frame_get_buffer(audioEncFrame, 0) >= 0)
+							{
+								av_samples_set_silence(audioEncFrame->data, 0, encSamples, audioEncCtx->ch_layout.nb_channels,
+								                       audioEncCtx->sample_fmt);
+								frameReady = true;
+							}
+						}
+						if (!frameReady)
 						{
 							break;
 						}
@@ -3454,6 +4163,8 @@ audio_preview_init_done:
 							avStatAudioPkts.fetch_add(1, std::memory_order_relaxed);
 							av_packet_unref(audioOutPkt);
 						}
+						nextAudioEncodeUs += audioFrameIntervalUs;
+						nowUs = av_gettime_relative();
 					}
 				}
 				else if (audioIfmt && audioPkt && audioDecCtx)
@@ -3509,11 +4220,48 @@ audio_preview_init_done:
 										av_freep(&dstData[0]);
 										av_freep(&dstData);
 									}
-									const int encSamples = audioEncCtx->frame_size > 0 ? audioEncCtx->frame_size : 1024;
-									while (av_audio_fifo_size(audioFifo) >= encSamples)
+									int64_t nowUs = av_gettime_relative();
+									if (nowUs > nextAudioEncodeUs + audioFrameIntervalUs * 3)
+									{
+										nextAudioEncodeUs = nowUs;
+									}
+									while (nowUs >= nextAudioEncodeUs)
 									{
 										const bool enableMix = dualMixEnabled && av_audio_fifo_size(audioFifo2) >= encSamples;
-										if (!fillAudioEncFrameFromFifos(audioEncFrame, audioEncCtx, audioFifo, audioFifo2, encSamples, enableMix))
+										const int mainSamples = av_audio_fifo_size(audioFifo);
+										bool frameReady = false;
+										if (mainSamples >= encSamples && (!dualMixEnabled || enableMix))
+										{
+											frameReady = fillAudioEncFrameFromFifos(audioEncFrame, audioEncCtx, audioFifo, audioFifo2, encSamples,
+											                                        enableMix);
+										}
+										else if (mainSamples > 0)
+										{
+											const int readSamples = qMin(mainSamples, encSamples);
+											frameReady = fillAudioEncFrameFromFifosWithPadding(
+												audioEncFrame,
+												audioEncCtx,
+												audioFifo,
+												enableMix ? audioFifo2 : nullptr,
+												readSamples,
+												encSamples,
+												enableMix);
+										}
+										else
+										{
+											av_frame_unref(audioEncFrame);
+											audioEncFrame->nb_samples = encSamples;
+											audioEncFrame->format = audioEncCtx->sample_fmt;
+											audioEncFrame->sample_rate = audioEncCtx->sample_rate;
+											av_channel_layout_copy(&audioEncFrame->ch_layout, &audioEncCtx->ch_layout);
+											if (av_frame_get_buffer(audioEncFrame, 0) >= 0)
+											{
+												av_samples_set_silence(audioEncFrame->data, 0, encSamples, audioEncCtx->ch_layout.nb_channels,
+												                       audioEncCtx->sample_fmt);
+												frameReady = true;
+											}
+										}
+										if (!frameReady)
 										{
 											break;
 										}
@@ -3568,6 +4316,8 @@ audio_preview_init_done:
 											avStatAudioPkts.fetch_add(1, std::memory_order_relaxed);
 											av_packet_unref(audioOutPkt);
 										}
+										nextAudioEncodeUs += audioFrameIntervalUs;
+										nowUs = av_gettime_relative();
 									}
 									av_frame_unref(audioDecFrame);
 								}
@@ -4505,6 +5255,10 @@ void fplayer::StreamFFmpeg::pushCameraPreviewLoop(const QString& outputUrl, cons
 		audioThreadStarted = true;
 		audioWorker = std::thread([&]() {
 			const int encSamples = audioEncCtx->frame_size > 0 ? audioEncCtx->frame_size : 1024;
+			const int64_t audioFrameIntervalUs = qMax<int64_t>(
+				1000,
+				(static_cast<int64_t>(encSamples) * 1000000LL) / qMax(1, audioEncCtx->sample_rate));
+			int64_t nextAudioEncodeUs = av_gettime_relative();
 			const bool dualMixEnabled = audioFifo2 && audioSwr2 &&
 				(useWasapiAudio2 || (audioIfmt2 && audioPkt2 && audioDecCtx2 && audioDecFrame2 && audioIndex2 >= 0));
 			const auto writeEncodedPackets = [&]() -> bool {
@@ -4654,13 +5408,48 @@ void fplayer::StreamFFmpeg::pushCameraPreviewLoop(const QString& outputUrl, cons
 						gotSecond = enqueueFromDshow(audioIfmt2, audioPkt2, audioDecCtx2, audioDecFrame2, audioIndex2, audioSwr2, audioFifo2);
 					}
 				}
-				while (av_audio_fifo_size(audioFifo) >= encSamples)
+				int64_t nowUs = av_gettime_relative();
+				if (nowUs > nextAudioEncodeUs + audioFrameIntervalUs * 3)
 				{
-					if (dualMixEnabled && av_audio_fifo_size(audioFifo2) < encSamples)
+					nextAudioEncodeUs = nowUs;
+				}
+				while (nowUs >= nextAudioEncodeUs)
+				{
+					const int mainSamples = av_audio_fifo_size(audioFifo);
+					const int secondSamples = dualMixEnabled ? av_audio_fifo_size(audioFifo2) : 0;
+					const bool canMixFullFrame = !dualMixEnabled || secondSamples >= encSamples;
+					bool frameReady = false;
+					if (mainSamples >= encSamples && canMixFullFrame)
 					{
-						break;
+						frameReady = fillAudioEncFrameFromFifos(audioEncFrame, audioEncCtx, audioFifo, audioFifo2, encSamples, dualMixEnabled);
 					}
-					if (!fillAudioEncFrameFromFifos(audioEncFrame, audioEncCtx, audioFifo, audioFifo2, encSamples, dualMixEnabled))
+					else if (mainSamples > 0)
+					{
+						const int readSamples = qMin(mainSamples, encSamples);
+						frameReady = fillAudioEncFrameFromFifosWithPadding(
+							audioEncFrame,
+							audioEncCtx,
+							audioFifo,
+							canMixFullFrame ? audioFifo2 : nullptr,
+							readSamples,
+							encSamples,
+							canMixFullFrame);
+					}
+					else
+					{
+						av_frame_unref(audioEncFrame);
+						audioEncFrame->nb_samples = encSamples;
+						audioEncFrame->format = audioEncCtx->sample_fmt;
+						audioEncFrame->sample_rate = audioEncCtx->sample_rate;
+						av_channel_layout_copy(&audioEncFrame->ch_layout, &audioEncCtx->ch_layout);
+						if (av_frame_get_buffer(audioEncFrame, 0) >= 0)
+						{
+							av_samples_set_silence(audioEncFrame->data, 0, encSamples, audioEncCtx->ch_layout.nb_channels,
+							                       audioEncCtx->sample_fmt);
+							frameReady = true;
+						}
+					}
+					if (!frameReady)
 					{
 						break;
 					}
@@ -4678,6 +5467,8 @@ void fplayer::StreamFFmpeg::pushCameraPreviewLoop(const QString& outputUrl, cons
 					{
 						return;
 					}
+					nextAudioEncodeUs += audioFrameIntervalUs;
+					nowUs = av_gettime_relative();
 				}
 				if (!gotMain && !gotSecond)
 				{
@@ -5516,6 +6307,10 @@ void fplayer::StreamFFmpeg::pushCameraLoop(const QString& outputUrl, const QStri
 		audioThreadStarted = true;
 		audioWorker = std::thread([&]() {
 			const int encSamples = audioEncCtx->frame_size > 0 ? audioEncCtx->frame_size : 1024;
+			const int64_t audioFrameIntervalUs = qMax<int64_t>(
+				1000,
+				(static_cast<int64_t>(encSamples) * 1000000LL) / qMax(1, audioEncCtx->sample_rate));
+			int64_t nextAudioEncodeUs = av_gettime_relative();
 			const bool dualMixEnabled = audioFifo2 && audioSwr2 &&
 				(useWasapiAudio2 || (audioIfmt2 && audioPkt2 && audioDecCtx2 && audioDecFrame2 && audioIndex2 >= 0));
 			const auto writeEncodedPackets = [&]() -> bool {
@@ -5652,13 +6447,48 @@ void fplayer::StreamFFmpeg::pushCameraLoop(const QString& outputUrl, const QStri
 						gotSecond = enqueueFromDshow(audioIfmt2, audioPkt2, audioDecCtx2, audioDecFrame2, audioIndex2, audioSwr2, audioFifo2);
 					}
 				}
-				while (av_audio_fifo_size(audioFifo) >= encSamples)
+				int64_t nowUs = av_gettime_relative();
+				if (nowUs > nextAudioEncodeUs + audioFrameIntervalUs * 3)
 				{
-					if (dualMixEnabled && av_audio_fifo_size(audioFifo2) < encSamples)
+					nextAudioEncodeUs = nowUs;
+				}
+				while (nowUs >= nextAudioEncodeUs)
+				{
+					const int mainSamples = av_audio_fifo_size(audioFifo);
+					const int secondSamples = dualMixEnabled ? av_audio_fifo_size(audioFifo2) : 0;
+					const bool canMixFullFrame = !dualMixEnabled || secondSamples >= encSamples;
+					bool frameReady = false;
+					if (mainSamples >= encSamples && canMixFullFrame)
 					{
-						break;
+						frameReady = fillAudioEncFrameFromFifos(audioEncFrame, audioEncCtx, audioFifo, audioFifo2, encSamples, dualMixEnabled);
 					}
-					if (!fillAudioEncFrameFromFifos(audioEncFrame, audioEncCtx, audioFifo, audioFifo2, encSamples, dualMixEnabled))
+					else if (mainSamples > 0)
+					{
+						const int readSamples = qMin(mainSamples, encSamples);
+						frameReady = fillAudioEncFrameFromFifosWithPadding(
+							audioEncFrame,
+							audioEncCtx,
+							audioFifo,
+							canMixFullFrame ? audioFifo2 : nullptr,
+							readSamples,
+							encSamples,
+							canMixFullFrame);
+					}
+					else
+					{
+						av_frame_unref(audioEncFrame);
+						audioEncFrame->nb_samples = encSamples;
+						audioEncFrame->format = audioEncCtx->sample_fmt;
+						audioEncFrame->sample_rate = audioEncCtx->sample_rate;
+						av_channel_layout_copy(&audioEncFrame->ch_layout, &audioEncCtx->ch_layout);
+						if (av_frame_get_buffer(audioEncFrame, 0) >= 0)
+						{
+							av_samples_set_silence(audioEncFrame->data, 0, encSamples, audioEncCtx->ch_layout.nb_channels,
+							                       audioEncCtx->sample_fmt);
+							frameReady = true;
+						}
+					}
+					if (!frameReady)
 					{
 						break;
 					}
@@ -5672,6 +6502,8 @@ void fplayer::StreamFFmpeg::pushCameraLoop(const QString& outputUrl, const QStri
 					{
 						return;
 					}
+					nextAudioEncodeUs += audioFrameIntervalUs;
+					nowUs = av_gettime_relative();
 				}
 				if (!gotMain && !gotSecond)
 				{
