@@ -187,6 +187,8 @@ static bool seekToMs(AVFormatContext* fmt, int streamIndex, qint64 positionMs)
 
 	PlayerFFmpeg::PlayerFFmpeg() : m_impl(new Impl)
 	{
+		static std::once_flag netInit;
+		std::call_once(netInit, []() { avformat_network_init(); });
 		m_backend = MediaBackendType::FFmpeg;
 		QAudioFormat format = QMediaDevices::defaultAudioOutput().preferredFormat();
 		if (format.channelCount() <= 0)
@@ -233,14 +235,20 @@ static bool seekToMs(AVFormatContext* fmt, int streamIndex, qint64 positionMs)
 		stop();
 		m_impl->cleanup();
 
-		if (avformat_open_input(&m_impl->formatContext, filePath.toUtf8().constData(), nullptr, nullptr) < 0)
+		const int openRet = avformat_open_input(&m_impl->formatContext, filePath.toUtf8().constData(), nullptr, nullptr);
+		if (openRet < 0)
 		{
-			LOG_ERROR("PlayerFFmpeg::openFile failed: open input");
+			char errbuf[AV_ERROR_MAX_STRING_SIZE];
+			av_strerror(openRet, errbuf, sizeof(errbuf));
+			LOG_ERROR("PlayerFFmpeg::openFile failed: open input, ret=", openRet, " msg=", errbuf, " url=", filePath.toStdString());
 			return false;
 		}
-		if (avformat_find_stream_info(m_impl->formatContext, nullptr) < 0)
+		const int infoRet = avformat_find_stream_info(m_impl->formatContext, nullptr);
+		if (infoRet < 0)
 		{
-			LOG_ERROR("PlayerFFmpeg::openFile failed: stream info");
+			char errbuf[AV_ERROR_MAX_STRING_SIZE];
+			av_strerror(infoRet, errbuf, sizeof(errbuf));
+			LOG_ERROR("PlayerFFmpeg::openFile failed: stream info, ret=", infoRet, " msg=", errbuf, " url=", filePath.toStdString());
 			m_impl->cleanup();
 			return false;
 		}

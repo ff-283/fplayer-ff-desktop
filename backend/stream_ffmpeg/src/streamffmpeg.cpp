@@ -15,8 +15,12 @@ extern "C"
 }
 
 #include <QList>
+#include <QDateTime>
+#include <QDir>
+#include <QFileInfo>
 #include <QMutexLocker>
 #include <QThread>
+#include <QUrl>
 #include <fplayer/common/cameraframebus/cameraframebus.h>
 #include <fplayer/common/screenframebus/screenframebus.h>
 #include "audio_pipeline.h"
@@ -196,9 +200,9 @@ bool fplayer::StreamFFmpeg::startPushWorkerByRoute(const PushInputRoute& route, 
 
 bool fplayer::StreamFFmpeg::startPull(const QString& inputUrl, const QString& outputUrl)
 {
-	if (inputUrl.trimmed().isEmpty() || outputUrl.trimmed().isEmpty())
+	if (inputUrl.trimmed().isEmpty())
 	{
-		setLastError(QStringLiteral("拉流输入或输出地址为空"));
+		setLastError(QStringLiteral("拉流输入地址为空"));
 		return false;
 	}
 	stop();
@@ -211,7 +215,7 @@ bool fplayer::StreamFFmpeg::startPull(const QString& inputUrl, const QString& ou
 	m_stopRequest.store(false, std::memory_order_relaxed);
 	m_running.store(true, std::memory_order_relaxed);
 	m_completedSession.store(false, std::memory_order_relaxed);
-	if (!startPullWorker(inputUrl, outputUrl))
+	if (!startPullWorker(inputUrl, outputUrl.trimmed()))
 	{
 		return false;
 	}
@@ -223,8 +227,16 @@ bool fplayer::StreamFFmpeg::startPullWorker(const QString& inputUrl, const QStri
 {
 	try
 	{
-		m_worker = std::make_unique<std::thread>([this, inputUrl, outputUrl]() {
-			remuxLoop(inputUrl, outputUrl, nullptr);
+		const bool udpOutput = outputUrl.startsWith(QStringLiteral("udp://"), Qt::CaseInsensitive);
+		const bool rtmpOutput = outputUrl.startsWith(QStringLiteral("rtmp://"), Qt::CaseInsensitive);
+		QString normalizedOutput = outputUrl;
+		if (udpOutput && !normalizedOutput.contains(QStringLiteral("pkt_size="), Qt::CaseInsensitive))
+		{
+			normalizedOutput += normalizedOutput.contains(QLatin1Char('?')) ? QStringLiteral("&pkt_size=1316")
+			                                                               : QStringLiteral("?pkt_size=1316");
+		}
+		m_worker = std::make_unique<std::thread>([this, inputUrl, normalizedOutput, udpOutput, rtmpOutput]() {
+			remuxLoop(inputUrl, normalizedOutput, udpOutput ? "mpegts" : (rtmpOutput ? "flv" : nullptr));
 		});
 		return true;
 	}
@@ -311,11 +323,59 @@ void fplayer::StreamFFmpeg::remuxLoop(const QString& inputUrl, const QString& ou
 	int ret = 0;
 	int exitCode = 0;
 	bool wroteHeader = false;
+	bool firstPacketArrived = false;
+	const QUrl inputParsedUrl(inputUrl);
+	const QString inputHost = inputParsedUrl.host().trimmed().toLower();
+	const bool udpBindListener = inputUrl.startsWith(QStringLiteral("udp://0.0.0.0:"), Qt::CaseInsensitive);
+	const bool listenerMode = inputUrl.contains(QStringLiteral("listen=1"), Qt::CaseInsensitive) ||
+		inputUrl.contains(QStringLiteral("mode=listener"), Qt::CaseInsensitive) || udpBindListener ||
+		inputHost == QStringLiteral("0.0.0.0");
+	const bool isRtmpInput = inputUrl.startsWith(QStringLiteral("rtmp://"), Qt::CaseInsensitive);
+	const bool isRtspInput = inputUrl.startsWith(QStringLiteral("rtsp://"), Qt::CaseInsensitive);
+	bool waitingLogged = false;
+	int openRetryCount = 0;
+	int streamInfoRetryCount = 0;
+	const char* effectiveOutputShortName = outputShortName;
+	const qint64 startMs = QDateTime::currentMSecsSinceEpoch();
+	qint64 connectedMs = 0;
+	qint64 firstPacketMs = 0;
 
 	const QByteArray inUtf8 = inputUrl.toUtf8();
-	const QByteArray outUtf8 = outputUrl.toUtf8();
+	QString effectiveOutputUrl = outputUrl.trimmed();
+	const bool previewOnlyMode = effectiveOutputUrl.isEmpty();
+	if (previewOnlyMode)
+	{
+#if defined(_WIN32)
+		effectiveOutputUrl = QStringLiteral("NUL");
+#else
+		effectiveOutputUrl = QStringLiteral("/dev/null");
+#endif
+		effectiveOutputShortName = "null";
+	}
+	const QByteArray outUtf8 = effectiveOutputUrl.toUtf8();
 	const char* inPath = inUtf8.constData();
 	const char* outPath = outUtf8.constData();
+	appendLogLine(QStringLiteral("[拉流] remuxLoop start"));
+	appendLogLine(QStringLiteral("[拉流] 输入地址: %1").arg(inputUrl));
+	appendLogLine(QStringLiteral("[拉流] 输出地址: %1").arg(outputUrl.isEmpty() ? QStringLiteral("<预览模式，不保存文件>") : outputUrl));
+	appendLogLine(QStringLiteral("[拉流] 监听模式: %1").arg(listenerMode ? QStringLiteral("yes") : QStringLiteral("no")));
+	const bool outputIsFile = !previewOnlyMode && !outputUrl.contains(QStringLiteral("://"));
+	if (outputIsFile)
+	{
+		const QFileInfo outInfo(outputUrl);
+		const QDir outDir = outInfo.dir();
+		if (!outDir.exists())
+		{
+			if (QDir().mkpath(outDir.absolutePath()))
+			{
+				appendLogLine(QStringLiteral("[拉流] 已创建输出目录: %1").arg(outDir.absolutePath()));
+			}
+			else
+			{
+				appendLogLine(QStringLiteral("[拉流] 创建输出目录失败: %1").arg(outDir.absolutePath()));
+			}
+		}
+	}
 
 	pkt = av_packet_alloc();
 	if (!pkt)
@@ -325,43 +385,115 @@ void fplayer::StreamFFmpeg::remuxLoop(const QString& inputUrl, const QString& ou
 		goto cleanup;
 	}
 
-	ifmt = avformat_alloc_context();
+	while (!m_stopRequest.load(std::memory_order_relaxed))
+	{
+		ifmt = avformat_alloc_context();
+		if (!ifmt)
+		{
+			exitCode = AVERROR(ENOMEM);
+			setLastError(QStringLiteral("分配输入 AVFormatContext 失败"));
+			goto cleanup;
+		}
+		ifmt->interrupt_callback.callback = &StreamFFmpeg::interruptCallback;
+		ifmt->interrupt_callback.opaque = &m_stopRequest;
+
+		AVDictionary* inOpts = nullptr;
+		if (listenerMode && (isRtmpInput || isRtspInput))
+		{
+			// 对 RTMP/RTSP 更稳定的方式：通过 demuxer 选项启用 listen，而不是仅靠 URL query。
+			av_dict_set(&inOpts, "listen", "1", 0);
+		}
+		ret = avformat_open_input(&ifmt, inPath, nullptr, &inOpts);
+		if (inOpts)
+		{
+			av_dict_free(&inOpts);
+		}
+		if (ret < 0)
+		{
+			exitCode = ret;
+			++openRetryCount;
+			char errbuf[AV_ERROR_MAX_STRING_SIZE];
+			av_strerror(ret, errbuf, sizeof(errbuf));
+			appendLogLine(QStringLiteral("[拉流][open_input] ret=%1 msg=%2 retry=%3")
+			              .arg(ret)
+			              .arg(QString::fromUtf8(errbuf))
+			              .arg(openRetryCount));
+			if (listenerMode)
+			{
+				if (!waitingLogged)
+				{
+					appendLogLine(QStringLiteral("[拉流] 等待推流端连接..."));
+					waitingLogged = true;
+				}
+				if (ret != AVERROR_EXIT)
+				{
+					setLastError(QStringLiteral("等待推流连接中: %1").arg(QString::fromUtf8(errbuf)));
+				}
+				if (ifmt)
+				{
+					avformat_free_context(ifmt);
+					ifmt = nullptr;
+				}
+				// 监听模式下 -138(AVERROR_EXIT) 常见于可中断等待过程，不应视为终止失败。
+				if (ret == AVERROR_EXIT)
+				{
+					exitCode = 0;
+				}
+				std::this_thread::sleep_for(std::chrono::milliseconds(500));
+				continue;
+			}
+			setLastError(QStringLiteral("打开输入失败: %1").arg(QString::fromUtf8(errbuf)));
+			if (ifmt)
+			{
+				avformat_free_context(ifmt);
+				ifmt = nullptr;
+			}
+			goto cleanup;
+		}
+		connectedMs = QDateTime::currentMSecsSinceEpoch();
+		appendLogLine(QStringLiteral("[拉流] 输入连接建立，耗时=%1ms 重试=%2")
+		              .arg(connectedMs - startMs)
+		              .arg(openRetryCount));
+
+		ret = avformat_find_stream_info(ifmt, nullptr);
+		if (ret < 0)
+		{
+			exitCode = ret;
+			++streamInfoRetryCount;
+			char errbuf[AV_ERROR_MAX_STRING_SIZE];
+			av_strerror(ret, errbuf, sizeof(errbuf));
+			appendLogLine(QStringLiteral("[拉流][find_stream_info] ret=%1 msg=%2 retry=%3")
+			              .arg(ret)
+			              .arg(QString::fromUtf8(errbuf))
+			              .arg(streamInfoRetryCount));
+			if (listenerMode)
+			{
+				if (ret != AVERROR_EXIT)
+				{
+					setLastError(QStringLiteral("等待推流连接中: %1").arg(QString::fromUtf8(errbuf)));
+				}
+				avformat_close_input(&ifmt);
+				ifmt = nullptr;
+				if (ret == AVERROR_EXIT)
+				{
+					exitCode = 0;
+				}
+				std::this_thread::sleep_for(std::chrono::milliseconds(500));
+				continue;
+			}
+			setLastError(QStringLiteral("解析流信息失败: %1").arg(QString::fromUtf8(errbuf)));
+			goto cleanup;
+		}
+		appendLogLine(QStringLiteral("[拉流] 流信息解析成功，重试=%1").arg(streamInfoRetryCount));
+		appendLogLine(QStringLiteral("[拉流] 输入流数量=%1").arg(ifmt ? static_cast<int>(ifmt->nb_streams) : 0));
+		break;
+	}
 	if (!ifmt)
 	{
-		exitCode = AVERROR(ENOMEM);
-		setLastError(QStringLiteral("分配输入 AVFormatContext 失败"));
-		goto cleanup;
-	}
-	ifmt->interrupt_callback.callback = &StreamFFmpeg::interruptCallback;
-	ifmt->interrupt_callback.opaque = &m_stopRequest;
-
-	ret = avformat_open_input(&ifmt, inPath, nullptr, nullptr);
-	if (ret < 0)
-	{
-		exitCode = ret;
-		char errbuf[AV_ERROR_MAX_STRING_SIZE];
-		av_strerror(ret, errbuf, sizeof(errbuf));
-		setLastError(QStringLiteral("打开输入失败: %1").arg(QString::fromUtf8(errbuf)));
-		// 打开失败时不能用 avformat_close_input；若仍持有预分配的 context 需单独释放
-		if (ifmt)
-		{
-			avformat_free_context(ifmt);
-			ifmt = nullptr;
-		}
 		goto cleanup;
 	}
 
-	ret = avformat_find_stream_info(ifmt, nullptr);
-	if (ret < 0)
-	{
-		exitCode = ret;
-		char errbuf[AV_ERROR_MAX_STRING_SIZE];
-		av_strerror(ret, errbuf, sizeof(errbuf));
-		setLastError(QStringLiteral("解析流信息失败: %1").arg(QString::fromUtf8(errbuf)));
-		goto cleanup;
-	}
-
-	ret = avformat_alloc_output_context2(&ofmt, nullptr, outputShortName, outPath);
+	ret = avformat_alloc_output_context2(&ofmt, nullptr, effectiveOutputShortName, outPath);
 	if (ret < 0 || !ofmt)
 	{
 		exitCode = ret ? ret : AVERROR_UNKNOWN;
@@ -416,6 +548,7 @@ void fplayer::StreamFFmpeg::remuxLoop(const QString& inputUrl, const QString& ou
 		goto cleanup;
 	}
 	wroteHeader = true;
+	appendLogLine(QStringLiteral("[拉流] 输出头写入成功"));
 
 	while (!m_stopRequest.load(std::memory_order_relaxed))
 	{
@@ -436,6 +569,13 @@ void fplayer::StreamFFmpeg::remuxLoop(const QString& inputUrl, const QString& ou
 		{
 			av_packet_unref(pkt);
 			continue;
+		}
+		if (!firstPacketArrived)
+		{
+			firstPacketArrived = true;
+			firstPacketMs = QDateTime::currentMSecsSinceEpoch();
+			appendLogLine(QStringLiteral("[拉流] 检测到上游推流连接"));
+			appendLogLine(QStringLiteral("[拉流] 首包到达耗时=%1ms").arg(firstPacketMs - startMs));
 		}
 		AVStream* inStr = ifmt->streams[pkt->stream_index];
 		AVStream* outStr = ofmt->streams[pkt->stream_index];
@@ -470,6 +610,10 @@ void fplayer::StreamFFmpeg::remuxLoop(const QString& inputUrl, const QString& ou
 	}
 
 cleanup:
+	if (m_stopRequest.load(std::memory_order_relaxed) && exitCode == AVERROR_EXIT)
+	{
+		exitCode = 0;
+	}
 	if (ofmt && !(ofmt->oformat->flags & AVFMT_NOFILE) && ofmt->pb)
 	{
 		avio_closep(&ofmt->pb);
@@ -493,6 +637,10 @@ cleanup:
 		QMutexLocker locker(&m_mutex);
 		m_lastExitCode = exitCode;
 	}
+	appendLogLine(QStringLiteral("[拉流] remuxLoop 结束 exitCode=%1 openRetry=%2 infoRetry=%3")
+	              .arg(exitCode)
+	              .arg(openRetryCount)
+	              .arg(streamInfoRetryCount));
 	m_completedSession.store(true, std::memory_order_relaxed);
 	m_running.store(false, std::memory_order_relaxed);
 }

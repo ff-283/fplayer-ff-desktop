@@ -157,8 +157,7 @@ private:
 	QStringList m_recentPushOutputs;
 	QStringList m_recentPullInputs;
 	QStringList m_recentPullOutputs;
-	QTcpServer* m_pullReservedPortServer = nullptr;
-	int m_pullReservedPort = 0;
+	int m_pullReservedPort = 1935;
 	QDialog* m_pullMonitorDialog = nullptr;
 	QDialog* m_pullPreviewDialog = nullptr;
 	fplayer::FVideoView* m_pullPreviewView = nullptr;
