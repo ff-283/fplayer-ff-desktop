@@ -19,9 +19,10 @@ void fplayer::ScreenFrameBus::publish(const QByteArray& y, const QByteArray& u, 
 		it = m_channels.insert(sid, Channel{});
 	}
 	Channel& ch = it.value();
-	ch.frame.y = y;
-	ch.frame.u = u;
-	ch.frame.v = v;
+	// 发布方会复用同一块预览缓冲区；浅拷贝会导致与采集线程并发读写同一 QByteArray 数据区。
+	ch.frame.y = QByteArray(y.constData(), y.size());
+	ch.frame.u = QByteArray(u.constData(), u.size());
+	ch.frame.v = QByteArray(v.constData(), v.size());
 	ch.frame.width = width;
 	ch.frame.height = height;
 	ch.frame.yStride = yStride;

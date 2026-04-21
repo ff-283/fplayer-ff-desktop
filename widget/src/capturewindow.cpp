@@ -17,6 +17,7 @@
 #include <QPlainTextEdit>
 #include <QAbstractSpinBox>
 #include <QShortcut>
+#include <QEventLoop>
 #include <QFileDialog>
 #include <QMenuBar>
 #include <QMenu>
@@ -1995,6 +1996,15 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 
 void CaptureWindow::togglePlayPause()
 {
+	if (m_isComposeMode)
+	{
+		if (m_composeSelectedIndex < 0 || m_composeSelectedIndex >= m_composeSources.size())
+		{
+			return;
+		}
+		toggleComposeSourcePlayPauseAt(m_composeSelectedIndex);
+		return;
+	}
 	if (m_captureMode == CaptureMode::File)
 	{
 		if (this->m_service->playerIsPlaying())
@@ -2232,6 +2242,29 @@ void CaptureWindow::ensureComposeWorkspace()
 	});
 }
 
+void CaptureWindow::suspendComposeSourcesForBackground()
+{
+	for (auto& src : m_composeSources)
+	{
+		if (!src.service)
+		{
+			continue;
+		}
+		switch (src.kind)
+		{
+		case ComposeSourceItem::SourceKind::File:
+			src.service->playerPause();
+			break;
+		case ComposeSourceItem::SourceKind::Camera:
+			src.service->cameraPause();
+			break;
+		case ComposeSourceItem::SourceKind::Screen:
+			src.service->screenSetActive(false);
+			break;
+		}
+	}
+}
+
 void CaptureWindow::setComposeMode(const bool enabled)
 {
 	ensureComposeWorkspace();
@@ -2245,6 +2278,13 @@ void CaptureWindow::setComposeMode(const bool enabled)
 		m_service->cameraPause();
 		ui->wgtView->hide();
 		m_composeSplitter->show();
+		for (auto& src : m_composeSources)
+		{
+			if (src.subWindow)
+			{
+				src.subWindow->show();
+			}
+		}
 		applyComposeAspectRatio();
 		ui->wgtDevices->setVisible(false);
 		ui->cmbFormats->setVisible(false);
@@ -2272,18 +2312,18 @@ void CaptureWindow::setComposeMode(const bool enabled)
 	{
 		return;
 	}
+	suspendComposeSourcesForBackground();
+	for (auto& src : m_composeSources)
+	{
+		if (src.subWindow)
+		{
+			src.subWindow->hide();
+		}
+	}
 	m_isComposeMode = false;
 	if (m_composeZOrderGuardTimer && m_composeZOrderGuardTimer->isActive())
 	{
 		m_composeZOrderGuardTimer->stop();
-	}
-	// 退出组合模式时，必须停掉组合场景里的屏幕采集，避免与普通屏幕模式抢占采集资源。
-	for (auto& src : m_composeSources)
-	{
-		if (src.kind == ComposeSourceItem::SourceKind::Screen && src.service)
-		{
-			src.service->screenSetActive(false);
-		}
 	}
 	if (m_composeSplitter)
 	{
@@ -2321,22 +2361,28 @@ void CaptureWindow::addComposeFileSource()
 	view->setBackendType(fplayer::MediaBackendType::FFmpeg);
 	view->setAttribute(Qt::WA_TransparentForMouseEvents, true);
 	container->setInnerView(view);
-	svc->bindPlayerPreview(view);
-	if (!svc->openMediaFile(filePath))
-	{
-		delete svc;
-		delete container;
-		QMessageBox::warning(this, tr("追加失败"), tr("无法打开该媒体文件。"));
-		return;
-	}
+	const QString fileStreamBusId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+	// 须先放入 MDI 并 show，再绑定预览：否则 FVideoView/FGLWidget 尺寸为 0，OpenGL 无法正常绘制。
 	auto* sub = m_composeMdiArea->addSubWindow(container, Qt::FramelessWindowHint);
 	sub->setFocusPolicy(Qt::NoFocus);
 	sub->setAttribute(Qt::WA_ShowWithoutActivating, true);
 	sub->setWindowTitle(QFileInfo(filePath).fileName());
 	sub->resize(480, 270);
 	sub->show();
+	QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+	svc->bindPlayerPreview(view);
+	svc->setPlayerComposeStreamBusId(fileStreamBusId);
+	if (!svc->openMediaFile(filePath))
+	{
+		svc->setPlayerComposeStreamBusId(QString());
+		delete sub;
+		delete svc;
+		QMessageBox::warning(this, tr("追加失败"), tr("无法打开该媒体文件。"));
+		return;
+	}
 	ComposeSourceItem item;
 	item.kind = ComposeSourceItem::SourceKind::File;
+	item.sourceId = fileStreamBusId;
 	item.service = svc;
 	item.container = container;
 	item.view = view;
@@ -2393,11 +2439,15 @@ void CaptureWindow::addComposeFileSource()
 			auto& src = m_composeSources[idx];
 			if (src.kind == ComposeSourceItem::SourceKind::Screen && src.service && src.view)
 			{
-				src.service->bindScreenPreview(src.view);
-				src.service->selectScreen(qMax(0, src.deviceIndex));
-				src.service->screenSetFrameRate(qMax(1, src.screenFps));
-				src.service->screenSetCursorCaptureEnabled(src.screenCaptureCursor);
-				src.service->screenSetActive(true);
+				// 拖动/缩放后仅在该路原本处于播放态时才重绑并激活，避免暂停素材被误恢复。
+				if (composeSourceIsPlaying(idx))
+				{
+					src.service->bindScreenPreview(src.view);
+					src.service->selectScreen(qMax(0, src.deviceIndex));
+					src.service->screenSetFrameRate(qMax(1, src.screenFps));
+					src.service->screenSetCursorCaptureEnabled(src.screenCaptureCursor);
+					src.service->screenSetActive(true);
+				}
 			}
 		}
 		forceRefreshComposePreview();
@@ -2409,6 +2459,7 @@ void CaptureWindow::addComposeFileSource()
 	updateComposeSelectionHighlight();
 	syncComposeControlPanel();
 	refreshComposeScreenCaptureState(m_composeSelectedIndex);
+	updateComposePlaybackIcons();
 }
 
 void CaptureWindow::addComposeCameraSource()
@@ -2499,6 +2550,7 @@ void CaptureWindow::addComposeCameraSource()
 	updateComposeSelectionHighlight();
 	syncComposeControlPanel();
 	refreshComposeScreenCaptureState(m_composeSelectedIndex);
+	updateComposePlaybackIcons();
 }
 
 void CaptureWindow::addComposeScreenSource()
@@ -2588,11 +2640,15 @@ void CaptureWindow::addComposeScreenSource()
 			auto& src = m_composeSources[idx];
 			if (src.kind == ComposeSourceItem::SourceKind::Screen && src.service && src.view)
 			{
-				src.service->bindScreenPreview(src.view);
-				src.service->selectScreen(qMax(0, src.deviceIndex));
-				src.service->screenSetFrameRate(qMax(1, src.screenFps));
-				src.service->screenSetCursorCaptureEnabled(src.screenCaptureCursor);
-				src.service->screenSetActive(true);
+				// 拖动/缩放后仅在该路原本处于播放态时才重绑并激活，避免暂停素材被误恢复。
+				if (composeSourceIsPlaying(idx))
+				{
+					src.service->bindScreenPreview(src.view);
+					src.service->selectScreen(qMax(0, src.deviceIndex));
+					src.service->screenSetFrameRate(qMax(1, src.screenFps));
+					src.service->screenSetCursorCaptureEnabled(src.screenCaptureCursor);
+					src.service->screenSetActive(true);
+				}
 			}
 		}
 		forceRefreshComposePreview();
@@ -2604,6 +2660,7 @@ void CaptureWindow::addComposeScreenSource()
 	updateComposeSelectionHighlight();
 	syncComposeControlPanel();
 	refreshComposeScreenCaptureState(m_composeSelectedIndex);
+	updateComposePlaybackIcons();
 }
 
 void CaptureWindow::removeComposeSourceAt(const int index)
@@ -2615,6 +2672,7 @@ void CaptureWindow::removeComposeSourceAt(const int index)
 	ComposeSourceItem item = m_composeSources.takeAt(index);
 	if (item.service)
 	{
+		item.service->setPlayerComposeStreamBusId(QString());
 		item.service->cameraPause();
 		item.service->playerStop();
 		item.service->screenSetActive(false);
@@ -2681,6 +2739,10 @@ void CaptureWindow::updateComposeSelectionHighlight()
 		container->setCropMode(i == m_composeSelectedIndex && m_composeSources[i].cropMode);
 	}
 	applyComposeZOrder();
+	if (m_isComposeMode)
+	{
+		updateComposePlaybackIcons();
+	}
 }
 
 void CaptureWindow::applyComposeZOrder()
@@ -2789,11 +2851,13 @@ void CaptureWindow::syncComposeControlPanel()
 		ui->cmbFormats->setVisible(false);
 		ui->chkCaptureCursor->setVisible(false);
 		ui->cmbScreenFps->setVisible(false);
+		updateComposePlaybackIcons();
 		return;
 	}
 	auto& src = m_composeSources[m_composeSelectedIndex];
 	if (!src.service)
 	{
+		updateComposePlaybackIcons();
 		return;
 	}
 	if (src.kind == ComposeSourceItem::SourceKind::Camera)
@@ -2818,6 +2882,7 @@ void CaptureWindow::syncComposeControlPanel()
 		}
 		ui->cmbFormats->blockSignals(false);
 		ui->cmbDevices->blockSignals(false);
+		updateComposePlaybackIcons();
 		return;
 	}
 	if (src.kind == ComposeSourceItem::SourceKind::Screen)
@@ -2859,13 +2924,19 @@ void CaptureWindow::syncComposeControlPanel()
 		ui->chkCaptureCursor->setChecked(src.screenCaptureCursor);
 		ui->cmbScreenFps->setToolTip(tr("当前帧率：%1 FPS").arg(src.service->screenFrameRate()));
 		ui->cmbScreenFps->blockSignals(false);
-		refreshComposeScreenCaptureState(m_composeSelectedIndex);
+		// 仅在该屏幕素材当前为播放态时 refresh，暂停态保持不变，避免单击/拖拽/缩放等 UI 交互把它「拉起来播放」。
+		if (composeSourceIsPlaying(m_composeSelectedIndex))
+		{
+			refreshComposeScreenCaptureState(m_composeSelectedIndex);
+		}
+		updateComposePlaybackIcons();
 		return;
 	}
 	ui->wgtDevices->setVisible(false);
 	ui->cmbFormats->setVisible(false);
 	ui->chkCaptureCursor->setVisible(false);
 	ui->cmbScreenFps->setVisible(false);
+	updateComposePlaybackIcons();
 }
 
 void CaptureWindow::applyComposeAspectRatio()
@@ -2918,7 +2989,8 @@ void CaptureWindow::applyComposeAspectRatio()
 	forceRefreshComposePreview();
 }
 
-void CaptureWindow::refreshComposeScreenCaptureState(const int activeScreenSourceIndex)
+void CaptureWindow::refreshComposeScreenCaptureState(const int selectedComposeIndex, const int preferScreenRow,
+                                                      const int excludeScreenRow)
 {
 	if (!m_isComposeMode)
 	{
@@ -2928,6 +3000,42 @@ void CaptureWindow::refreshComposeScreenCaptureState(const int activeScreenSourc
 	{
 		m_service->screenSetActive(false);
 	}
+	// selectedComposeIndex 是列表中的任意一行（文件/摄像头/屏幕）。只有当前选中的那一行是「屏幕」时才作为激活目标；
+	// 若选中的是文件等，仍须保持列表中某一路屏幕采集为激活，否则预览与合成会停住。
+	// preferScreenRow：恢复某一指定屏幕素材时强制该路为 DXGI 激活目标。
+	// excludeScreenRow：用户刚暂停该路屏幕时不得再被选为 active，否则 refresh 会再次 screenSetActive(true)，导致「暂停」无效。
+	int activeScreenRow = -1;
+	if (preferScreenRow >= 0 && preferScreenRow < m_composeSources.size() &&
+	    m_composeSources[preferScreenRow].kind == ComposeSourceItem::SourceKind::Screen)
+	{
+		activeScreenRow = preferScreenRow;
+	}
+	if (activeScreenRow < 0 && selectedComposeIndex >= 0 && selectedComposeIndex < m_composeSources.size())
+	{
+		if (m_composeSources[selectedComposeIndex].kind == ComposeSourceItem::SourceKind::Screen)
+		{
+			if (excludeScreenRow < 0 || selectedComposeIndex != excludeScreenRow)
+			{
+				activeScreenRow = selectedComposeIndex;
+			}
+		}
+	}
+	if (activeScreenRow < 0)
+	{
+		for (int i = 0; i < m_composeSources.size(); ++i)
+		{
+			if (m_composeSources[i].kind != ComposeSourceItem::SourceKind::Screen)
+			{
+				continue;
+			}
+			if (excludeScreenRow >= 0 && i == excludeScreenRow)
+			{
+				continue;
+			}
+			activeScreenRow = i;
+			break;
+		}
+	}
 	for (int i = 0; i < m_composeSources.size(); ++i)
 	{
 		auto& src = m_composeSources[i];
@@ -2935,7 +3043,7 @@ void CaptureWindow::refreshComposeScreenCaptureState(const int activeScreenSourc
 		{
 			continue;
 		}
-		if (i == activeScreenSourceIndex)
+		if (i == activeScreenRow)
 		{
 			src.service->screenSetActive(false);
 			src.service->selectScreen(qMax(0, src.deviceIndex));
@@ -2949,6 +3057,93 @@ void CaptureWindow::refreshComposeScreenCaptureState(const int activeScreenSourc
 			src.service->screenSetActive(false);
 		}
 	}
+}
+
+bool CaptureWindow::composeSourceIsPlaying(const int index) const
+{
+	if (index < 0 || index >= m_composeSources.size())
+	{
+		return false;
+	}
+	const auto& src = m_composeSources.at(index);
+	if (!src.service)
+	{
+		return false;
+	}
+	switch (src.kind)
+	{
+	case ComposeSourceItem::SourceKind::File:
+		return src.service->playerIsPlaying();
+	case ComposeSourceItem::SourceKind::Screen:
+		return src.service->screenIsActive();
+	case ComposeSourceItem::SourceKind::Camera:
+		return src.service->cameraIsPlaying();
+	}
+	return false;
+}
+
+void CaptureWindow::updateComposePlaybackIcons()
+{
+	if (!m_isComposeMode || !ui || !ui->btnPlay)
+	{
+		return;
+	}
+	if (m_composeSelectedIndex < 0 || m_composeSelectedIndex >= m_composeSources.size())
+	{
+		return;
+	}
+	const bool playing = composeSourceIsPlaying(m_composeSelectedIndex);
+	ui->btnPlay->setIcon(QIcon::fromTheme(
+		playing ? QIcon::ThemeIcon::MediaPlaybackPause : QIcon::ThemeIcon::MediaPlaybackStart));
+}
+
+void CaptureWindow::toggleComposeSourcePlayPauseAt(const int index)
+{
+	if (index < 0 || index >= m_composeSources.size())
+	{
+		return;
+	}
+	auto& src = m_composeSources[index];
+	if (!src.service)
+	{
+		return;
+	}
+	switch (src.kind)
+	{
+	case ComposeSourceItem::SourceKind::File:
+		if (src.service->playerIsPlaying())
+		{
+			src.service->playerPause();
+		}
+		else
+		{
+			src.service->playerResume();
+		}
+		break;
+	case ComposeSourceItem::SourceKind::Camera:
+		if (src.service->cameraIsPlaying())
+		{
+			src.service->cameraPause();
+		}
+		else
+		{
+			src.service->cameraResume();
+		}
+		break;
+	case ComposeSourceItem::SourceKind::Screen:
+		if (src.service->screenIsActive())
+		{
+			src.service->screenSetActive(false);
+			// 必须排除本行，否则 refresh 仍会把「当前选中屏幕」重新激活。
+			refreshComposeScreenCaptureState(m_composeSelectedIndex, -1, index);
+		}
+		else
+		{
+			refreshComposeScreenCaptureState(m_composeSelectedIndex, index);
+		}
+		break;
+	}
+	updateComposePlaybackIcons();
 }
 
 void CaptureWindow::resizeWindowForComposeAspect()

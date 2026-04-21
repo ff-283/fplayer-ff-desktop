@@ -23,6 +23,7 @@ extern "C"
 #include "streamffmpeg_helpers.h"
 #include "platform/windows/audioinputprobe.h"
 #include "platform/windows/wasapiloopbackcapture.h"
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstring>
@@ -48,6 +49,27 @@ namespace
 	using fplayer::streamffmpeg_helpers::pushStartedLog;
 	using fplayer::streamffmpeg_audio_pipeline::fillAudioEncFrameFromFifos;
 	using fplayer::streamffmpeg_audio_pipeline::fillAudioEncFrameFromFifosWithPadding;
+
+	// 组合合成只向 CPU 侧 YUV420P 三平面缓冲写入；硬编若选 NV12 则 V 平面缺失(data[2]==nullptr)，memset/draw 会直接崩溃。
+	bool composeEncoderSupportsYuv420p(const AVCodec* codec)
+	{
+		if (!codec)
+		{
+			return false;
+		}
+		if (!codec->pix_fmts)
+		{
+			return true;
+		}
+		for (const AVPixelFormat* p = codec->pix_fmts; *p != AV_PIX_FMT_NONE; ++p)
+		{
+			if (*p == AV_PIX_FMT_YUV420P)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
 }
 
 int fplayer::StreamFFmpeg::interruptCallback(void* opaque)
@@ -571,11 +593,46 @@ void fplayer::StreamFFmpeg::pushComposeSceneLoop(const QString& outputUrl, const
 		sceneW = outW;
 		sceneH = outH;
 	}
+	// 预览画布 scene 与编码 out 若宽高比不一致，应对画布做等比缩放后居中（黑边），
+	// 不得对 X/Y 轴用不同比例映射，否则拉流端会出现非等比拉伸（常见为「比预览更高/更扁」）。
+	double composeScale = 1.0;
+	int composeOffX = 0;
+	int composeOffY = 0;
+	{
+		const int sw = qMax(1, sceneW);
+		const int sh = qMax(1, sceneH);
+		const double sx = static_cast<double>(outW) / static_cast<double>(sw);
+		const double sy = static_cast<double>(outH) / static_cast<double>(sh);
+		composeScale = qMin(sx, sy);
+		const int innerW = qMax(2, static_cast<int>(std::lround(static_cast<double>(sw) * composeScale)) & ~1);
+		const int innerH = qMax(2, static_cast<int>(std::lround(static_cast<double>(sh) * composeScale)) & ~1);
+		composeOffX = (outW - innerW) / 2;
+		composeOffY = (outH - innerH) / 2;
+	}
 	if (items.isEmpty())
 	{
 		setLastError(QStringLiteral("组合场景为空"));
 		m_running.store(false, std::memory_order_relaxed);
 		return;
+	}
+	{
+		QStringList layoutItems;
+		for (int i = 0; i < items.size(); ++i)
+		{
+			const auto& it = items.at(i);
+			const QString kind = (it.kind == ComposeItem::Kind::Camera)
+				                     ? QStringLiteral("camera")
+				                     : (it.kind == ComposeItem::Kind::Screen ? QStringLiteral("screen") : QStringLiteral("file"));
+			layoutItems << QStringLiteral("#%1[%2:%3](%4,%5,%6x%7)")
+				               .arg(i)
+				               .arg(kind)
+				               .arg(it.sourceId)
+				               .arg(it.rect.x())
+				               .arg(it.rect.y())
+				               .arg(it.rect.width())
+				               .arg(it.rect.height());
+		}
+		// appendLogLine(QStringLiteral("[组合推流] 场景层级顺序=%1").arg(layoutItems.join(" -> ")));
 	}
 
 	AVFormatContext* ofmt = nullptr;
@@ -589,6 +646,11 @@ void fplayer::StreamFFmpeg::pushComposeSceneLoop(const QString& outputUrl, const
 	int64_t frameIntervalUs = qMax<int64_t>(1000, 1000000LL / targetFps);
 	int64_t startUs = 0;
 	int64_t nextFrameUs = 0;
+	int noFrameCount = 0;
+	QVector<int> sourceNoFrame;
+	QVector<quint64> sourceLastSerial;
+	QVector<QSize> sourceLastSize;
+	QVector<QString> sourceLastDiag;
 	QByteArray outUtf8;
 	const char* outPath = nullptr;
 	auto drawPlaneNearest = [](uint8_t* dst, const int dstStride, const int dstW, const int dstH,
@@ -610,6 +672,41 @@ void fplayer::StreamFFmpeg::pushComposeSceneLoop(const QString& outputUrl, const
 			}
 		}
 	};
+	auto planeBytesEnough = [](const QByteArray& buf, const int stride, const int w, const int h) -> bool {
+		if (stride <= 0 || w <= 0 || h <= 0 || buf.isEmpty())
+		{
+			return false;
+		}
+		const qint64 need = static_cast<qint64>(stride) * static_cast<qint64>(h - 1) + static_cast<qint64>(w);
+		return need > 0 && static_cast<qint64>(buf.size()) >= need;
+	};
+	// 须在任意 goto cleanup 之前定义（MinGW 禁止跨过带初始化的 lambda）。
+	auto drawYuv420pContainInSlot = [&](const int slotX, const int slotY, const int slotW, const int slotH,
+	                                    const QByteArray& yBuf, const QByteArray& uBuf, const QByteArray& vBuf,
+	                                    const int ys, const int us, const int vs, const int srcW, const int srcH) {
+		if (!encFrame || !encFrame->data[0] || slotW <= 0 || slotH <= 0 || srcW <= 0 || srcH <= 0)
+		{
+			return;
+		}
+		const double scale = (std::min)(static_cast<double>(slotW) / static_cast<double>(srcW),
+		                               static_cast<double>(slotH) / static_cast<double>(srcH));
+		int paintW = qMax(2, static_cast<int>(std::lround(static_cast<double>(srcW) * scale)) & ~1);
+		int paintH = qMax(2, static_cast<int>(std::lround(static_cast<double>(srcH) * scale)) & ~1);
+		paintW = qMin(paintW, slotW) & ~1;
+		paintH = qMin(paintH, slotH) & ~1;
+		const int ox = slotX + (slotW - paintW) / 2;
+		const int oy = slotY + (slotH - paintH) / 2;
+		const int srcUvW = (srcW + 1) / 2;
+		const int srcUvH = (srcH + 1) / 2;
+		const int paintUvW = paintW / 2;
+		const int paintUvH = paintH / 2;
+		drawPlaneNearest(encFrame->data[0] + oy * encFrame->linesize[0] + ox, encFrame->linesize[0], paintW, paintH,
+		                 yBuf, ys, srcW, srcH);
+		drawPlaneNearest(encFrame->data[1] + (oy / 2) * encFrame->linesize[1] + (ox / 2), encFrame->linesize[1], paintUvW, paintUvH,
+		                 uBuf, us, srcUvW, srcUvH);
+		drawPlaneNearest(encFrame->data[2] + (oy / 2) * encFrame->linesize[2] + (ox / 2), encFrame->linesize[2], paintUvW, paintUvH,
+		                 vBuf, vs, srcUvW, srcUvH);
+	};
 	if (!outPkt || !encFrame)
 	{
 		exitCode = AVERROR(ENOMEM);
@@ -630,16 +727,39 @@ void fplayer::StreamFFmpeg::pushComposeSceneLoop(const QString& outputUrl, const
 	ofmt->interrupt_callback.opaque = &m_stopRequest;
 
 	{
-		// 组合推流先稳定优先：固定 CPU 编码，避免部分驱动/硬编路径在场景合成下触发异常崩溃。
-		const QList<VideoEncoderChoice> candidates = pickVideoEncoderCandidates(QStringLiteral("cpu"));
+		QList<VideoEncoderChoice> candidates = pickVideoEncoderCandidates(params.videoEncoder);
+		const QString preferEncoder = params.videoEncoder.trimmed().toLower();
+		// 用户显式选择硬编时，失败后自动回退 CPU，保证组合推流不断流。
+		if (preferEncoder == QStringLiteral("nvenc") || preferEncoder == QStringLiteral("amf"))
+		{
+			const QList<VideoEncoderChoice> cpuFallback = pickVideoEncoderCandidates(QStringLiteral("cpu"));
+			for (const auto& c : cpuFallback)
+			{
+				bool exists = false;
+				for (const auto& it : candidates)
+				{
+					if (it.codec == c.codec)
+					{
+						exists = true;
+						break;
+					}
+				}
+				if (!exists)
+				{
+					candidates.push_back(c);
+				}
+			}
+		}
 		const AVCodec* enc = nullptr;
 		QString lastOpenError;
+		QString firstTriedEncoder;
 		for (const auto& c : candidates)
 		{
 			if (!c.codec)
 			{
 				continue;
 			}
+			// appendLogLine(QStringLiteral("[组合推流] 尝试编码器=%1").arg(QString::fromLatin1(c.codec->name ? c.codec->name : "unknown")));
 			if (encCtx)
 			{
 				avcodec_free_context(&encCtx);
@@ -651,7 +771,16 @@ void fplayer::StreamFFmpeg::pushComposeSceneLoop(const QString& outputUrl, const
 			}
 			encCtx->width = outW;
 			encCtx->height = outH;
-			encCtx->pix_fmt = pickEncoderPixelFormat(c.codec, c.isHardware);
+			if (!composeEncoderSupportsYuv420p(c.codec))
+			{
+				// appendLogLine(QStringLiteral("[组合推流] 编码器 %1 不支持 YUV420P，跳过（组合链路仅支持三平面写入）")
+				// 	              .arg(QString::fromLatin1(c.codec->name ? c.codec->name : "unknown")));
+				avcodec_free_context(&encCtx);
+				encCtx = nullptr;
+				continue;
+			}
+			encCtx->pix_fmt = AV_PIX_FMT_YUV420P;
+			encCtx->sample_aspect_ratio = AVRational{1, 1};
 			encCtx->time_base = AVRational{1, targetFps};
 			encCtx->framerate = AVRational{targetFps, 1};
 			encCtx->gop_size = targetFps * 2;
@@ -673,10 +802,22 @@ void fplayer::StreamFFmpeg::pushComposeSceneLoop(const QString& outputUrl, const
 			if (ret >= 0)
 			{
 				enc = c.codec;
+				if (!firstTriedEncoder.isEmpty() && firstTriedEncoder != QString::fromLatin1(enc->name ? enc->name : ""))
+				{
+					// appendLogLine(QStringLiteral("[组合推流] 硬编不可用，已自动回退到 %1")
+					// 	              .arg(QString::fromLatin1(enc->name ? enc->name : "unknown")));
+				}
 				break;
+			}
+			if (firstTriedEncoder.isEmpty())
+			{
+				firstTriedEncoder = QString::fromLatin1(c.codec->name ? c.codec->name : "");
 			}
 			char errbuf[AV_ERROR_MAX_STRING_SIZE];
 			av_strerror(ret, errbuf, sizeof(errbuf));
+			// appendLogLine(QStringLiteral("[组合推流] 编码器打开失败=%1 err=%2")
+			// 	              .arg(QString::fromLatin1(c.codec->name ? c.codec->name : "unknown"))
+			// 	              .arg(QString::fromUtf8(errbuf)));
 			lastOpenError = QString::fromUtf8(errbuf);
 		}
 		if (!enc)
@@ -694,6 +835,13 @@ void fplayer::StreamFFmpeg::pushComposeSceneLoop(const QString& outputUrl, const
 		}
 		outStream->time_base = encCtx->time_base;
 		avcodec_parameters_from_context(outStream->codecpar, encCtx);
+		outStream->codecpar->sample_aspect_ratio.num = 1;
+		outStream->codecpar->sample_aspect_ratio.den = 1;
+		// appendLogLine(QStringLiteral("[组合推流] 使用编码器=%1 输出=%2x%3 fps=%4")
+		// 	              .arg(QString::fromLatin1(enc->name ? enc->name : "unknown"))
+		// 	              .arg(encCtx->width)
+		// 	              .arg(encCtx->height)
+		// 	              .arg(targetFps));
 	}
 
 	if (!(ofmt->oformat->flags & AVFMT_NOFILE))
@@ -725,14 +873,25 @@ void fplayer::StreamFFmpeg::pushComposeSceneLoop(const QString& outputUrl, const
 		setLastError(QStringLiteral("组合推流分配编码帧失败"));
 		goto cleanup;
 	}
-	appendLogLine(QStringLiteral("[组合推流] 场景=%1x%2 输出=%3x%4 源数量=%5").arg(sceneW).arg(sceneH).arg(outW).arg(outH).arg(items.size()));
+	if (!encFrame->data[0] || !encFrame->data[1] || !encFrame->data[2] || encCtx->pix_fmt != AV_PIX_FMT_YUV420P)
+	{
+		exitCode = AVERROR(EINVAL);
+		setLastError(QStringLiteral("组合推流编码帧需为 YUV420P 且含 Y/U/V 三平面"));
+		goto cleanup;
+	}
+	// appendLogLine(QStringLiteral("[组合推流] 场景=%1x%2 输出=%3x%4 源数量=%5").arg(sceneW).arg(sceneH).arg(outW).arg(outH).arg(items.size()));
 	if (!params.audioOutputSource.trimmed().isEmpty() && params.audioOutputSource.trimmed() != QStringLiteral("off"))
 	{
-		appendLogLine(QStringLiteral("[组合推流] 当前版本暂未启用组合音频混音，输出将为无声视频。"));
+		// appendLogLine(QStringLiteral("[组合推流] 当前版本暂未启用组合音频混音，输出将为无声视频。"));
 	}
+	// appendLogLine(QStringLiteral("[组合推流] 诊断: frameIntervalUs=%1").arg(frameIntervalUs));
 
 	startUs = av_gettime_relative();
 	nextFrameUs = startUs;
+	sourceNoFrame = QVector<int>(items.size(), 0);
+	sourceLastSerial = QVector<quint64>(items.size(), 0);
+	sourceLastSize = QVector<QSize>(items.size(), QSize());
+	sourceLastDiag = QVector<QString>(items.size(), QStringLiteral("n/a"));
 	while (!m_stopRequest.load(std::memory_order_relaxed))
 	{
 		const int64_t nowUs = av_gettime_relative();
@@ -740,7 +899,16 @@ void fplayer::StreamFFmpeg::pushComposeSceneLoop(const QString& outputUrl, const
 		{
 			av_usleep(static_cast<unsigned>(nextFrameUs - nowUs));
 		}
-		av_frame_make_writable(encFrame);
+		ret = av_frame_make_writable(encFrame);
+		if (ret < 0)
+		{
+			char errbuf[AV_ERROR_MAX_STRING_SIZE];
+			av_strerror(ret, errbuf, sizeof(errbuf));
+			// appendLogLine(QStringLiteral("[组合推流] av_frame_make_writable 失败 err=%1").arg(QString::fromUtf8(errbuf)));
+			exitCode = ret;
+			setLastError(QStringLiteral("组合推流编码帧不可写"));
+			goto cleanup;
+		}
 		for (int y = 0; y < encCtx->height; ++y)
 		{
 			memset(encFrame->data[0] + y * encFrame->linesize[0], 16, encCtx->width);
@@ -751,12 +919,14 @@ void fplayer::StreamFFmpeg::pushComposeSceneLoop(const QString& outputUrl, const
 			memset(encFrame->data[2] + y * encFrame->linesize[2], 128, encCtx->width / 2);
 		}
 
-		for (const ComposeItem& it : items)
+		int composedCount = 0;
+		for (int si = 0; si < items.size(); ++si)
 		{
-			int dx = it.rect.x() * outW / qMax(1, sceneW);
-			int dy = it.rect.y() * outH / qMax(1, sceneH);
-			int dw = qMax(2, it.rect.width() * outW / qMax(1, sceneW)) & ~1;
-			int dh = qMax(2, it.rect.height() * outH / qMax(1, sceneH)) & ~1;
+			const ComposeItem& it = items.at(si);
+			int dx = composeOffX + static_cast<int>(std::lround(static_cast<double>(it.rect.x()) * composeScale));
+			int dy = composeOffY + static_cast<int>(std::lround(static_cast<double>(it.rect.y()) * composeScale));
+			int dw = qMax(2, static_cast<int>(std::lround(static_cast<double>(it.rect.width()) * composeScale)) & ~1);
+			int dh = qMax(2, static_cast<int>(std::lround(static_cast<double>(it.rect.height()) * composeScale)) & ~1);
 			if (dx < 0 || dy < 0 || dx + dw > outW || dy + dh > outH)
 			{
 				dx = qBound(0, dx, qMax(0, outW - 2));
@@ -773,41 +943,151 @@ void fplayer::StreamFFmpeg::pushComposeSceneLoop(const QString& outputUrl, const
 				const auto cam = fplayer::CameraFrameBus::instance().snapshot();
 				if (!cam.valid || cam.width <= 0 || cam.height <= 0)
 				{
+					++noFrameCount;
+					++sourceNoFrame[si];
 					continue;
 				}
-				drawPlaneNearest(encFrame->data[0] + dy * encFrame->linesize[0] + dx, encFrame->linesize[0], dw, dh,
-				                 cam.y, cam.yStride, cam.width, cam.height);
-				drawPlaneNearest(encFrame->data[1] + (dy / 2) * encFrame->linesize[1] + dx / 2, encFrame->linesize[1], dw / 2, dh / 2,
-				                 cam.u, cam.uStride, cam.width / 2, cam.height / 2);
-				drawPlaneNearest(encFrame->data[2] + (dy / 2) * encFrame->linesize[2] + dx / 2, encFrame->linesize[2], dw / 2, dh / 2,
-				                 cam.v, cam.vStride, cam.width / 2, cam.height / 2);
+				if (cam.yStride <= 0 || cam.uStride <= 0 || cam.vStride <= 0 || cam.y.isEmpty() || cam.u.isEmpty() || cam.v.isEmpty())
+				{
+					// appendLogLine(QStringLiteral("[组合推流] source#%1 camera帧异常 serial=%2 size=%3x%4 stride=%5/%6/%7 bytes=%8/%9/%10")
+					// 	              .arg(si)
+					// 	              .arg(cam.serial)
+					// 	              .arg(cam.width)
+					// 	              .arg(cam.height)
+					// 	              .arg(cam.yStride)
+					// 	              .arg(cam.uStride)
+					// 	              .arg(cam.vStride)
+					// 	              .arg(cam.y.size())
+					// 	              .arg(cam.u.size())
+					// 	              .arg(cam.v.size()));
+					continue;
+				}
+				const int camUvW = (cam.width + 1) / 2;
+				const int camUvH = (cam.height + 1) / 2;
+				if (!planeBytesEnough(cam.y, cam.yStride, cam.width, cam.height) ||
+				    !planeBytesEnough(cam.u, cam.uStride, camUvW, camUvH) ||
+				    !planeBytesEnough(cam.v, cam.vStride, camUvW, camUvH))
+				{
+					// appendLogLine(QStringLiteral("[组合推流] source#%1 camera平面长度不足 serial=%2 size=%3x%4 stride=%5/%6/%7 bytes=%8/%9/%10")
+					// 	              .arg(si)
+					// 	              .arg(cam.serial)
+					// 	              .arg(cam.width)
+					// 	              .arg(cam.height)
+					// 	              .arg(cam.yStride)
+					// 	              .arg(cam.uStride)
+					// 	              .arg(cam.vStride)
+					// 	              .arg(cam.y.size())
+					// 	              .arg(cam.u.size())
+					// 	              .arg(cam.v.size()));
+					continue;
+				}
+				sourceNoFrame[si] = 0;
+				sourceLastSerial[si] = cam.serial;
+				sourceLastSize[si] = QSize(cam.width, cam.height);
+				sourceLastDiag[si] = QStringLiteral("camera serial=%1 %2x%3 stride=%4/%5/%6")
+					                     .arg(cam.serial)
+					                     .arg(cam.width)
+					                     .arg(cam.height)
+					                     .arg(cam.yStride)
+					                     .arg(cam.uStride)
+					                     .arg(cam.vStride);
+				drawYuv420pContainInSlot(dx, dy, dw, dh, cam.y, cam.u, cam.v, cam.yStride, cam.uStride, cam.vStride, cam.width, cam.height);
+				++composedCount;
 				continue;
 			}
-			if (it.kind == ComposeItem::Kind::Screen)
+			// 屏幕与文件素材均走 ScreenFrameBus（按 sourceId 分通道），槽位内等比 contain 由 drawYuv420pContainInSlot 统一处理。
+			if (it.kind == ComposeItem::Kind::Screen || it.kind == ComposeItem::Kind::File)
 			{
 				const auto scr = fplayer::ScreenFrameBus::instance().snapshot(it.sourceId);
 				if (!scr.valid || scr.width <= 0 || scr.height <= 0)
 				{
+					++noFrameCount;
+					++sourceNoFrame[si];
 					continue;
 				}
-				drawPlaneNearest(encFrame->data[0] + dy * encFrame->linesize[0] + dx, encFrame->linesize[0], dw, dh,
-				                 scr.y, scr.yStride, scr.width, scr.height);
-				drawPlaneNearest(encFrame->data[1] + (dy / 2) * encFrame->linesize[1] + dx / 2, encFrame->linesize[1], dw / 2, dh / 2,
-				                 scr.u, scr.uStride, scr.width / 2, scr.height / 2);
-				drawPlaneNearest(encFrame->data[2] + (dy / 2) * encFrame->linesize[2] + dx / 2, encFrame->linesize[2], dw / 2, dh / 2,
-				                 scr.v, scr.vStride, scr.width / 2, scr.height / 2);
+				if (scr.yStride <= 0 || scr.uStride <= 0 || scr.vStride <= 0 || scr.y.isEmpty() || scr.u.isEmpty() || scr.v.isEmpty())
+				{
+					// appendLogLine(QStringLiteral("[组合推流] source#%1 screen帧异常 sid=%2 serial=%3 size=%4x%5 stride=%6/%7/%8 bytes=%9/%10/%11")
+					// 	              .arg(si)
+					// 	              .arg(it.sourceId)
+					// 	              .arg(scr.serial)
+					// 	              .arg(scr.width)
+					// 	              .arg(scr.height)
+					// 	              .arg(scr.yStride)
+					// 	              .arg(scr.uStride)
+					// 	              .arg(scr.vStride)
+					// 	              .arg(scr.y.size())
+					// 	              .arg(scr.u.size())
+					// 	              .arg(scr.v.size()));
+					continue;
+				}
+				const int scrUvW = (scr.width + 1) / 2;
+				const int scrUvH = (scr.height + 1) / 2;
+				if (!planeBytesEnough(scr.y, scr.yStride, scr.width, scr.height) ||
+				    !planeBytesEnough(scr.u, scr.uStride, scrUvW, scrUvH) ||
+				    !planeBytesEnough(scr.v, scr.vStride, scrUvW, scrUvH))
+				{
+					// appendLogLine(QStringLiteral("[组合推流] source#%1 screen平面长度不足 sid=%2 serial=%3 size=%4x%5 stride=%6/%7/%8 bytes=%9/%10/%11")
+					// 	              .arg(si)
+					// 	              .arg(it.sourceId)
+					// 	              .arg(scr.serial)
+					// 	              .arg(scr.width)
+					// 	              .arg(scr.height)
+					// 	              .arg(scr.yStride)
+					// 	              .arg(scr.uStride)
+					// 	              .arg(scr.vStride)
+					// 	              .arg(scr.y.size())
+					// 	              .arg(scr.u.size())
+					// 	              .arg(scr.v.size()));
+					continue;
+				}
+				sourceNoFrame[si] = 0;
+				sourceLastSerial[si] = scr.serial;
+				sourceLastSize[si] = QSize(scr.width, scr.height);
+				const QString busTag = (it.kind == ComposeItem::Kind::File) ? QStringLiteral("file") : QStringLiteral("screen");
+				sourceLastDiag[si] = QStringLiteral("%1 sid=%2 serial=%3 %4x%5 stride=%6/%7/%8")
+					                     .arg(busTag)
+					                     .arg(it.sourceId)
+					                     .arg(scr.serial)
+					                     .arg(scr.width)
+					                     .arg(scr.height)
+					                     .arg(scr.yStride)
+					                     .arg(scr.uStride)
+					                     .arg(scr.vStride);
+				drawYuv420pContainInSlot(dx, dy, dw, dh, scr.y, scr.u, scr.v, scr.yStride, scr.uStride, scr.vStride, scr.width, scr.height);
+				++composedCount;
 			}
 		}
 
 		encFrame->pts = av_rescale_q(nextFrameUs - startUs, AVRational{1, 1000000}, encCtx->time_base);
 		ret = avcodec_send_frame(encCtx, encFrame);
+		if (ret < 0)
+		{
+			char errbuf[AV_ERROR_MAX_STRING_SIZE];
+			av_strerror(ret, errbuf, sizeof(errbuf));
+			// appendLogLine(QStringLiteral("[组合推流] avcodec_send_frame失败 pts=%1 err=%2")
+			// 	              .arg(encFrame->pts)
+			// 	              .arg(QString::fromUtf8(errbuf)));
+			(void)errbuf;
+		}
 		if (ret >= 0)
 		{
 			while (avcodec_receive_packet(encCtx, outPkt) == 0)
 			{
 				av_packet_rescale_ts(outPkt, encCtx->time_base, ofmt->streams[0]->time_base);
 				outPkt->stream_index = 0;
-				av_interleaved_write_frame(ofmt, outPkt);
+				const int wret = av_interleaved_write_frame(ofmt, outPkt);
+				if (wret < 0)
+				{
+					char errbuf[AV_ERROR_MAX_STRING_SIZE];
+					av_strerror(wret, errbuf, sizeof(errbuf));
+					// appendLogLine(QStringLiteral("[组合推流] 写包失败 pts=%1 dts=%2 size=%3 err=%4")
+					// 	              .arg(outPkt->pts)
+					// 	              .arg(outPkt->dts)
+					// 	              .arg(outPkt->size)
+					// 	              .arg(QString::fromUtf8(errbuf)));
+					(void)errbuf;
+				}
 				av_packet_unref(outPkt);
 			}
 		}
@@ -817,6 +1097,38 @@ void fplayer::StreamFFmpeg::pushComposeSceneLoop(const QString& outputUrl, const
 		{
 			nextFrameUs = av_gettime_relative();
 		}
+#if 0
+		// 组合推流心跳与逐源诊断（排障时可打开）
+		static int heartbeat = 0;
+		++heartbeat;
+		if (heartbeat % qMax(1, targetFps * 2) == 0)
+		{
+			appendLogLine(QStringLiteral("[组合推流] 心跳 composed=%1/%2 noFrame=%3 pts=%4")
+				              .arg(composedCount)
+				              .arg(items.size())
+				              .arg(noFrameCount)
+				              .arg(pts));
+			for (int i = 0; i < items.size(); ++i)
+			{
+				const auto& it = items.at(i);
+				const QString kind = (it.kind == ComposeItem::Kind::Camera)
+					                     ? QStringLiteral("camera")
+					                     : (it.kind == ComposeItem::Kind::Screen ? QStringLiteral("screen") : QStringLiteral("file"));
+				appendLogLine(QStringLiteral("[组合推流] source#%1 kind=%2 sid=%3 noFrameStreak=%4 lastSerial=%5 lastSize=%6x%7")
+					              .arg(i)
+					              .arg(kind)
+					              .arg(it.sourceId)
+					              .arg(sourceNoFrame[i])
+					              .arg(sourceLastSerial[i])
+					              .arg(sourceLastSize[i].width())
+					              .arg(sourceLastSize[i].height()));
+				appendLogLine(QStringLiteral("[组合推流] source#%1 diag=%2").arg(i).arg(sourceLastDiag[i]));
+			}
+			noFrameCount = 0;
+		}
+#else
+		(void)composedCount;
+#endif
 	}
 
 	avcodec_send_frame(encCtx, nullptr);
@@ -2528,10 +2840,15 @@ audio_preview_init_done:
 	ofmt->interrupt_callback.callback = &StreamFFmpeg::interruptCallback;
 	ofmt->interrupt_callback.opaque = &m_stopRequest;
 
-	// 等待当前屏幕预览帧可用，避免推流线程空跑。
+	// 等待当前屏幕预览帧可用，避免推流线程空跑。（暂停后总线不再更新 serial，需回退 snapshot 取最后一帧。）
 	for (int i = 0; i < 300 && !m_stopRequest.load(std::memory_order_relaxed); ++i)
 	{
 		if (fplayer::ScreenFrameBus::instance().snapshotIfNew(lastSerial, frame) && frame.width > 0 && frame.height > 0)
+		{
+			break;
+		}
+		frame = fplayer::ScreenFrameBus::instance().snapshot();
+		if (frame.valid && frame.width > 0 && frame.height > 0)
 		{
 			break;
 		}
@@ -3370,15 +3687,25 @@ audio_preview_init_done:
 			writeFailed = true;
 			break;
 		}
-		if (!fplayer::ScreenFrameBus::instance().snapshotIfNew(lastSerial, frame) || frame.width <= 0 || frame.height <= 0)
+		const bool gotNew = fplayer::ScreenFrameBus::instance().snapshotIfNew(lastSerial, frame);
+		if (!gotNew)
 		{
-			QThread::msleep(2);
-			continue;
+			// 预览暂停时 serial 不递增：用最后一帧按帧率重复编码，拉流端才能持续收到视频而非一直缓冲。
+			frame = fplayer::ScreenFrameBus::instance().snapshot();
+			if (!frame.valid || frame.width <= 0 || frame.height <= 0)
+			{
+				QThread::msleep(2);
+				continue;
+			}
 		}
-		lastSerial = frame.serial;
+		else
+		{
+			lastSerial = frame.serial;
+		}
 		const auto now = std::chrono::steady_clock::now();
 		if (now < nextEncodeAt)
 		{
+			QThread::msleep(1);
 			continue;
 		}
 		nextEncodeAt = now + std::chrono::milliseconds(frameIntervalMs);
@@ -3640,6 +3967,7 @@ void fplayer::StreamFFmpeg::pushCameraPreviewLoop(const QString& outputUrl, cons
 	bool wroteHeader = false;
 	int64_t framePts = 0;
 	uint64_t lastSerial = 0;
+	std::chrono::steady_clock::time_point nextCamHoldEncodeAt{};
 	auto avStatWindowStart = std::chrono::steady_clock::time_point{};
 	int avStatVideoPkts = 0;
 	int avStatAudioPkts = 0;
@@ -3677,6 +4005,7 @@ void fplayer::StreamFFmpeg::pushCameraPreviewLoop(const QString& outputUrl, cons
 	const char* outPath = outUtf8.constData();
 	const CaptureParams params = parseCaptureParams(captureSpec);
 	const int targetFps = qMax(1, params.fps);
+	const int camHoldFrameIntervalMs = qMax(1, 1000 / targetFps);
 	const QString requestedAudioOut = params.audioOutputSource.trimmed();
 	const QString requestedAudioIn = params.audioInputSource.trimmed();
 	const bool hasIn = !requestedAudioIn.isEmpty() && requestedAudioIn != QStringLiteral("off");
@@ -4363,6 +4692,7 @@ void fplayer::StreamFFmpeg::pushCameraPreviewLoop(const QString& outputUrl, cons
 		});
 	}
 
+	nextCamHoldEncodeAt = std::chrono::steady_clock::now();
 	while (!m_stopRequest.load(std::memory_order_relaxed))
 	{
 		const int threadAudioErr = audioThreadErr.load(std::memory_order_relaxed);
@@ -4375,12 +4705,27 @@ void fplayer::StreamFFmpeg::pushCameraPreviewLoop(const QString& outputUrl, cons
 			break;
 		}
 		frame = fplayer::CameraFrameBus::instance().snapshot();
-		if (!frame.valid || frame.serial == lastSerial)
+		if (!frame.valid || frame.width <= 0 || frame.height <= 0)
 		{
 			QThread::msleep(5);
 			continue;
 		}
-		lastSerial = frame.serial;
+		const bool newCamSerial = (frame.serial != lastSerial);
+		if (newCamSerial)
+		{
+			lastSerial = frame.serial;
+		}
+		else
+		{
+			// 预览暂停：serial 不变，按目标帧率重复编码最后一帧，否则拉流端无视频包。
+			const auto nowHold = std::chrono::steady_clock::now();
+			if (nowHold < nextCamHoldEncodeAt)
+			{
+				QThread::msleep(1);
+				continue;
+			}
+			nextCamHoldEncodeAt = nowHold + std::chrono::milliseconds(camHoldFrameIntervalMs);
+		}
 		if (frame.width != encCtx->width || frame.height != encCtx->height)
 		{
 			setLastError(QStringLiteral("摄像头预览分辨率发生变化，请停止后重新推流"));

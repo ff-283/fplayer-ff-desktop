@@ -3,6 +3,7 @@
 #include <QDateTime>
 #include <QGuiApplication>
 #include <QMetaObject>
+#include <QPointer>
 #include <QScreen>
 #include <QThread>
 #include <logger/logger.h>
@@ -273,12 +274,17 @@ void fplayer::ScreenCaptureDxgi::dispatchFrameToView(const QByteArray& yData, co
 	{
 		return;
 	}
-	QMetaObject::invokeMethod(m_glWidget, [this, yData, uData, vData, width, height, yStride, uStride, vStride]() {
-		if (!m_glWidget)
+	// 采集线程反复写入 m_previewY/U/V；lambda 排队时若只浅拷贝 QByteArray，会与采集线程共享同一块缓冲区导致数据竞争。
+	const QByteArray yCopy(yData.constData(), yData.size());
+	const QByteArray uCopy(uData.constData(), uData.size());
+	const QByteArray vCopy(vData.constData(), vData.size());
+	QPointer<FGLWidget> target = m_glWidget;
+	QMetaObject::invokeMethod(m_glWidget, [target, yCopy, uCopy, vCopy, width, height, yStride, uStride, vStride]() {
+		if (!target)
 		{
 			return;
 		}
-		m_glWidget->updateYUVFrame(yData, uData, vData, width, height, yStride, uStride, vStride);
+		target->updateYUVFrame(yCopy, uCopy, vCopy, width, height, yStride, uStride, vStride);
 	}, Qt::QueuedConnection);
 }
 
@@ -602,8 +608,10 @@ bool fplayer::ScreenCaptureDxgi::captureOneFrame()
 		m_loggedFrameMeta = true;
 		m_lastFrameMetaLogMs = nowMs;
 		m_lastDxgiFormat = static_cast<int>(td.Format);
+#if 0
 		LOG_INFO("[screen][dxgi]", "frame meta w=", static_cast<int>(td.Width), " h=", static_cast<int>(td.Height), " fmt=",
 		         dxgiFormatName(td.Format), " bpp=", bytesPerPixel);
+#endif
 	}
 
 	ID3D11Texture2D* staging = static_cast<ID3D11Texture2D*>(m_stagingTex);

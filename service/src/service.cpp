@@ -252,6 +252,14 @@ QString fplayer::Service::playerDebugStats() const
 	return m_player ? m_player->debugStats() : QStringLiteral("n/a");
 }
 
+void fplayer::Service::setPlayerComposeStreamBusId(const QString& sourceId)
+{
+	if (m_player)
+	{
+		m_player->setComposeStreamBusId(sourceId);
+	}
+}
+
 QList<QString> fplayer::Service::getScreenList() const
 {
 	QList<QString> screenList;

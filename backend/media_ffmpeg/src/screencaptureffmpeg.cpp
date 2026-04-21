@@ -2,6 +2,7 @@
 
 #include <QGuiApplication>
 #include <QMetaObject>
+#include <QPointer>
 #include <QScreen>
 #include <QThread>
 #include <logger/logger.h>
@@ -249,12 +250,16 @@ void fplayer::ScreenCaptureFFmpeg::dispatchFrameToView(const QByteArray& yData, 
 	{
 		return;
 	}
-	QMetaObject::invokeMethod(m_glWidget, [this, yData, uData, vData, width, height, yStride, uStride, vStride]() {
-		if (!m_glWidget)
+	const QByteArray yCopy(yData.constData(), yData.size());
+	const QByteArray uCopy(uData.constData(), uData.size());
+	const QByteArray vCopy(vData.constData(), vData.size());
+	QPointer<FGLWidget> target = m_glWidget;
+	QMetaObject::invokeMethod(m_glWidget, [target, yCopy, uCopy, vCopy, width, height, yStride, uStride, vStride]() {
+		if (!target)
 		{
 			return;
 		}
-		m_glWidget->updateYUVFrame(yData, uData, vData, width, height, yStride, uStride, vStride);
+		target->updateYUVFrame(yCopy, uCopy, vCopy, width, height, yStride, uStride, vStride);
 	}, Qt::QueuedConnection);
 }
 

@@ -35,6 +35,9 @@ namespace fplayer
             virtual bool isPlaying() const;
             virtual void setPreviewTarget(const PreviewTarget& target) = 0;
 
+            /** 组合推流时向 ScreenFrameBus 发布的通道 ID；空字符串表示不发布。 */
+            virtual void setComposeStreamBusId(const QString& sourceId) { (void)sourceId; }
+
             MediaBackendType getBackendType() const;
 
         protected:

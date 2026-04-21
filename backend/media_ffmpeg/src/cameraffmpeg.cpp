@@ -586,12 +586,14 @@ namespace fplayer
 					QByteArray uBuffer(reinterpret_cast<const char*>(renderFrame->data[1]), uStride * uvHeight);
 					QByteArray vBuffer(reinterpret_cast<const char*>(renderFrame->data[2]), vStride * uvHeight);
 
+#if 0
 					static int frameCount = 0;
 					if (++frameCount % 30 == 0)
 					{
 						qDebug() << "[CameraFFmpeg] Emitting YUV frame:" << width << "x" << height
 								<< "Y stride:" << yStride << "src format:" << frame->format;
 					}
+#endif
 					emit yuvFrameReady(
 							yBuffer,
 							uBuffer,

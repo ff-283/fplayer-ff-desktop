@@ -19,6 +19,7 @@
 #include <QMetaObject>
 
 #include <fplayer/common/fglwidget/fglwidget.h>
+#include <fplayer/common/screenframebus/screenframebus.h>
 #include <logger/logger.h>
 
 extern "C" {
@@ -995,8 +996,17 @@ QString PlayerFFmpeg::debugStats() const
 		m_impl->glWidget = static_cast<FGLWidget*>(target.backend_hint);
 	}
 
+	void PlayerFFmpeg::setComposeStreamBusId(const QString& sourceId)
+	{
+		m_composeStreamBusId = sourceId;
+	}
+
 	void PlayerFFmpeg::queuePreviewYuv(QByteArray y, QByteArray u, QByteArray v, const int width, const int height, const int yStride, const int uStride, const int vStride)
 	{
+		if (!m_composeStreamBusId.isEmpty())
+		{
+			ScreenFrameBus::instance().publish(y, u, v, width, height, yStride, uStride, vStride, m_composeStreamBusId);
+		}
 		if (!m_impl->glWidget)
 		{
 			return;

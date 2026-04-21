@@ -36,12 +36,14 @@ namespace fplayer
 		QString debugStats() const override;
 		bool isPlaying() const override;
 		void setPreviewTarget(const PreviewTarget& target) override;
+		void setComposeStreamBusId(const QString& sourceId) override;
 
 	private slots:
 		void deliverPreviewFrame();
 
 	private:
 		void queuePreviewYuv(QByteArray y, QByteArray u, QByteArray v, int width, int height, int yStride, int uStride, int vStride);
+		QString m_composeStreamBusId;
 
 		struct Impl;
 		Impl* m_impl;

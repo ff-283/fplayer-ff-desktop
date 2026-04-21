@@ -314,22 +314,33 @@ namespace fplayer
 	{
 		if (yData.isEmpty() || uData.isEmpty() || vData.isEmpty() || width <= 0 || height <= 0)
 		{
-			qDebug() << "[FGLWidget::updateYUVFrame] Invalid parameters";
+			// qDebug() << "[FGLWidget::updateYUVFrame] Invalid parameters";
 			return;
 		}
 		if (yStride <= 0 || uStride <= 0 || vStride <= 0)
 		{
-			qDebug() << "[FGLWidget::updateYUVFrame] Invalid stride";
+			// qDebug() << "[FGLWidget::updateYUVFrame] Invalid stride";
 			return;
 		}
 		const int uvWidth = (width + 1) / 2;
 		const int uvHeight = (height + 1) / 2;
+		// 防御性校验：异常 stride（例如误传 19200）会在后续纹理上传/重打包阶段触发越界风险，直接拒收。
+		const int maxReasonableYStride = qMax(width * 4, width);
+		const int maxReasonableUVStride = qMax(uvWidth * 4, uvWidth);
+		if (yStride > maxReasonableYStride || uStride > maxReasonableUVStride || vStride > maxReasonableUVStride)
+		{
+			// qDebug() << "[FGLWidget::updateYUVFrame] Reject abnormal stride"
+			//          << "w/h=" << width << "x" << height
+			//          << "stride=" << yStride << "/" << uStride << "/" << vStride
+			//          << "max=" << maxReasonableYStride << "/" << maxReasonableUVStride;
+			return;
+		}
 		const qsizetype yNeed = static_cast<qsizetype>(yStride) * (height - 1) + width;
 		const qsizetype uNeed = static_cast<qsizetype>(uStride) * (uvHeight - 1) + uvWidth;
 		const qsizetype vNeed = static_cast<qsizetype>(vStride) * (uvHeight - 1) + uvWidth;
 		if (yData.size() < yNeed || uData.size() < uNeed || vData.size() < vNeed)
 		{
-			qDebug() << "[FGLWidget::updateYUVFrame] Buffer smaller than stride*size";
+			// qDebug() << "[FGLWidget::updateYUVFrame] Buffer smaller than stride*size";
 			return;
 		}
 
@@ -351,13 +362,18 @@ namespace fplayer
 		m_yuvData.uBuffer = uData;
 		m_yuvData.vBuffer = vData;
 		m_yuvData.hasData = true;
-		// 仅在首帧、格式变化、低频心跳时打印，避免逐帧日志拖慢 UI 线程。
+		// 仅在首帧、格式变化、低频心跳时打印，避免逐帧日志拖慢 UI 线程（排障时可临时打开）。
+#if 0
 		static int heartbeatCounter = 0;
 		if (firstFrame || formatChanged || (++heartbeatCounter % 300 == 0))
 		{
 			qDebug() << "[FGLWidget::updateYUVFrame] Frame:" << width << "x" << height
 			         << "Y stride:" << yStride << "U stride:" << uStride << "V stride:" << vStride;
 		}
+#else
+		(void)firstFrame;
+		(void)formatChanged;
+#endif
 
 		update();
 	}

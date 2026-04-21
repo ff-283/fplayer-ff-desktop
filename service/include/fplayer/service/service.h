@@ -86,6 +86,8 @@ namespace fplayer
 		void playerSetPlaybackRate(double rate);
 		double playerPlaybackRate() const;
 		QString playerDebugStats() const;
+		/** 文件播放 YUV 发布到 ScreenFrameBus 的通道（组合推流用）；传空停止发布。 */
+		void setPlayerComposeStreamBusId(const QString& sourceId);
 		QList<QString> getScreenList() const;
 		bool selectScreen(int index);
 		void screenSetActive(bool active);

@@ -97,6 +97,8 @@ private:
 	int preferredFpsForScreen(int screenIndex) const;
 	void updateCaptureCursorCheckToolTip();
 	void ensureComposeWorkspace();
+	/** 离开组合模式时暂停/关闭所有素材采集与播放，保留列表与子窗口以便再次进入时恢复布局（冻结）。 */
+	void suspendComposeSourcesForBackground();
 	void setComposeMode(bool enabled);
 	void clearComposeSources();
 	void addComposeFileSource();
@@ -113,7 +115,11 @@ private:
 	void setComposeCropMode(int index, bool enabled);
 	void requestComposeSourceContextMenu(const QPoint& globalPos, int index);
 	void syncComposeControlPanel();
-	void refreshComposeScreenCaptureState(int activeScreenSourceIndex);
+	/** 根据当前选中的组合素材行，刷新屏幕采集激活状态（仅允许一路 DXGI 等采集实例处于激活）。 */
+	void refreshComposeScreenCaptureState(int selectedComposeIndex, int preferScreenRow = -1, int excludeScreenRow = -1);
+	bool composeSourceIsPlaying(int index) const;
+	void updateComposePlaybackIcons();
+	void toggleComposeSourcePlayPauseAt(int index);
 	void applyComposeZOrder();
 	void applyComposeAspectRatio();
 	void resizeWindowForComposeAspect();
