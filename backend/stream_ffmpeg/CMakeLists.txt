@@ -9,7 +9,10 @@ target_link_libraries(${PROJECT_NAME} PUBLIC FPlayer_Api)
 target_link_libraries(${PROJECT_NAME} PUBLIC FPlayer_Common)
 target_link_libraries(${PROJECT_NAME} PRIVATE Logger)
 target_link_directories(${PROJECT_NAME} PRIVATE ${FFMPEG_LIBRARIES})
-target_link_libraries(${PROJECT_NAME} PRIVATE avdevice avformat avcodec swscale swresample avutil)
+target_link_libraries(${PROJECT_NAME} PRIVATE
+        avdevice
+        avfilter
+        avformat avcodec swscale swresample avutil)
 if (WIN32)
     target_link_libraries(${PROJECT_NAME} PRIVATE ksuser uuid)# mingw下需要
 endif()

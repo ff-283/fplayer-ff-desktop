@@ -95,6 +95,12 @@ namespace fplayer
 
 	FGLWidget::FGLWidget(QWidget* parent) : QOpenGLWidget(parent), QOpenGLFunctions()
 	{
+	// Linux/X11 下 QOpenGLWidget 若走部分更新或背景擦除，易出现持续闪烁/抖动。
+	setUpdateBehavior(QOpenGLWidget::NoPartialUpdate);
+	setAttribute(Qt::WA_OpaquePaintEvent, true);
+	setAttribute(Qt::WA_NoSystemBackground, true);
+	setAutoFillBackground(false);
+
 		QSurfaceFormat fmt = format();
 		if (fmt.swapInterval() != 1)
 		{

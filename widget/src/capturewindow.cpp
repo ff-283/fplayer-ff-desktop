@@ -1,4 +1,4 @@
-#include "ui_CaptureWindow.h"
+#include "ui_capturewindow.h"
 
 #include <fplayer/widget/capturewindow.h>
 #include <fplayer/service/service.h>
