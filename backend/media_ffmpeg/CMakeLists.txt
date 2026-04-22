@@ -33,7 +33,4 @@ install(TARGETS ${PROJECT_NAME}
 
 install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 
-# 将ffmpeg依赖库添加到安装项目中
-if (WIN32)
-    install(DIRECTORY ${FFMPEG_DIR}/bin/win/ DESTINATION ${CMAKE_INSTALL_BINDIR})
-endif ()
+# FFmpeg 运行库安装由 cmake/3rd.cmake 统一处理，避免重复安装规则。

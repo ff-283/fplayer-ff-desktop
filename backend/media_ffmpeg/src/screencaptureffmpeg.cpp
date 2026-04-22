@@ -5,6 +5,7 @@
 #include <QPointer>
 #include <QScreen>
 #include <QThread>
+#include <cstdlib>
 #include <logger/logger.h>
 
 #include <fplayer/common/fglwidget/fglwidget.h>
@@ -83,14 +84,37 @@ bool fplayer::ScreenCaptureFFmpeg::openInputForSelectedScreen()
 		av_dict_set(&options, "offset_y", QString::number(screen.y).toUtf8().constData(), 0);
 		av_dict_set(&options, "video_size", QString("%1x%2").arg(screen.width).arg(screen.height).toUtf8().constData(), 0);
 	}
-	const AVInputFormat* inputFmt = av_find_input_format("gdigrab");
-	const int ret = avformat_open_input(&m_formatContext, "desktop", inputFmt, &options);
+	const AVInputFormat* inputFmt = nullptr;
+	QByteArray inputUrl;
+#if defined(_WIN32)
+	inputFmt = av_find_input_format("gdigrab");
+	inputUrl = "desktop";
+#elif defined(__linux__)
+	inputFmt = av_find_input_format("x11grab");
+	const char* displayEnv = std::getenv("DISPLAY");
+	const char* waylandEnv = std::getenv("WAYLAND_DISPLAY");
+	if ((!displayEnv || !*displayEnv) && waylandEnv && *waylandEnv)
+	{
+		av_dict_free(&options);
+		LOG_WARN("[screen][ffmpeg]", "wayland detected but DISPLAY is empty; x11grab unavailable on this session");
+		return false;
+	}
+	const QString display = (displayEnv && *displayEnv) ? QString::fromUtf8(displayEnv) : QStringLiteral(":0.0");
+	inputUrl = QString("%1+%2,%3").arg(display).arg(screen.x).arg(screen.y).toUtf8();
+	av_dict_set(&options, "video_size", QString("%1x%2").arg(screen.width).arg(screen.height).toUtf8().constData(), 0);
+#endif
+	if (!inputFmt)
+	{
+		av_dict_free(&options);
+		return false;
+	}
+	const int ret = avformat_open_input(&m_formatContext, inputUrl.constData(), inputFmt, &options);
 	av_dict_free(&options);
 	if (ret < 0)
 	{
 		char errbuf[AV_ERROR_MAX_STRING_SIZE] = {};
 		av_strerror(ret, errbuf, sizeof(errbuf));
-		LOG_WARN("[screen][ffmpeg]", "open gdigrab failed, index=", m_screenIndex, " screens=", m_descriptions.size(),
+		LOG_WARN("[screen][ffmpeg]", "open screen input failed, index=", m_screenIndex, " screens=", m_descriptions.size(),
 		         " err=", errbuf);
 		return false;
 	}

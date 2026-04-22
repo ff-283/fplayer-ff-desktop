@@ -12,6 +12,7 @@ extern "C"
 
 namespace fplayer::windows_api
 {
+#ifdef _WIN32
 	namespace
 	{
 		QStringList listDshowAudioDeviceNames()
@@ -186,4 +187,5 @@ namespace fplayer::windows_api
 		detailLog = errors.isEmpty() ? QStringLiteral("no-candidate-device") : errors.join(QStringLiteral("; "));
 		return false;
 	}
+#endif
 }

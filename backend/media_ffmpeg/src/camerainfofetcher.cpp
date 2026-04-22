@@ -11,6 +11,7 @@ extern "C" {
 #include <mutex>
 #include <cstdlib>
 #include <QSet>
+#include <QStringList>
 
 #ifdef _WIN32
 #include <dshow.h>
@@ -317,6 +318,77 @@ QList<fplayer::CameraDescription> fplayer::CameraDescriptionFetcher::getDescript
 		moniker->Release();
 	}
 
+#elif defined(__linux__)
+	// Linux: 通过 FFmpeg v4l2 设备枚举获取摄像头列表。
+	// 这里优先保证设备可见性，格式列表先给默认常用值；真实可用格式在打开时再校验。
+	const AVInputFormat* v4l2Fmt = av_find_input_format("v4l2");
+	if (!v4l2Fmt)
+	{
+		return descriptions;
+	}
+
+	AVDeviceInfoList* devList = nullptr;
+	const int listRet = avdevice_list_input_sources(v4l2Fmt, nullptr, nullptr, &devList);
+	if (listRet < 0 || !devList)
+	{
+		return descriptions;
+	}
+
+	for (int i = 0; i < devList->nb_devices; ++i)
+	{
+		const AVDeviceInfo* info = devList->devices[i];
+		if (!info)
+		{
+			continue;
+		}
+
+		CameraDescription device;
+		device.id = QString::fromUtf8(info->device_name ? info->device_name : "");
+		device.description = QString::fromUtf8(info->device_description ? info->device_description : "");
+		if (device.description.trimmed().isEmpty())
+		{
+			device.description = device.id;
+		}
+		if (device.id.trimmed().isEmpty())
+		{
+			continue;
+		}
+
+		QList<FCameraFormat> formatList;
+		const QStringList defaultFormats{
+			QStringLiteral("1280x720 30fps"),
+			QStringLiteral("1920x1080 30fps"),
+			QStringLiteral("640x480 30fps")
+		};
+		for (const QString& fmtText : defaultFormats)
+		{
+			FCameraFormat fmt{};
+			if (fmtText.startsWith(QStringLiteral("1280x720")))
+			{
+				fmt.width = 1280;
+				fmt.height = 720;
+				fmt.fps = 30;
+			}
+			else if (fmtText.startsWith(QStringLiteral("1920x1080")))
+			{
+				fmt.width = 1920;
+				fmt.height = 1080;
+				fmt.fps = 30;
+			}
+			else
+			{
+				fmt.width = 640;
+				fmt.height = 480;
+				fmt.fps = 30;
+			}
+			formatList.push_back(fmt);
+			device.formats.push_back(fmtText);
+		}
+
+		descriptions.push_back(device);
+		m_cameraFormats.push_back(formatList);
+	}
+	avdevice_free_list_devices(&devList);
 #endif
 	return descriptions;
 }

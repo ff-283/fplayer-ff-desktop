@@ -33,12 +33,13 @@ extern "C"
 #include <fplayer/common/cameraframebus/cameraframebus.h>
 #include <fplayer/common/screenframebus/screenframebus.h>
 #include "audio_pipeline.h"
+#include "platform/audioinputprobe.h"
 #include "streamffmpeg_helpers.h"
-#include "platform/windows/audioinputprobe.h"
 #include "platform/windows/wasapiloopbackcapture.h"
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <mutex>
 #include <vector>
@@ -1402,7 +1403,7 @@ void fplayer::StreamFFmpeg::pushComposeSceneLoop(const QString& outputUrl, const
 			QString openDetail;
 			const QString selectedPrimary = dualAudioRequested ? audioSourcePrimary : resolvedAudioSource;
 			const bool primaryFromOutputSelection = !dualAudioRequested && hasOut;
-			if (!fplayer::windows_api::openDshowAudioInputWithFallback(selectedPrimary, m_stopRequest, audioIfmt, openedAudioDevice, openDetail))
+			if (!fplayer::platform_audio::openAudioInputWithFallback(selectedPrimary, m_stopRequest, audioIfmt, openedAudioDevice, openDetail))
 			{
 				QString wasapiErr;
 				if ((primaryFromOutputSelection || selectedPrimary == QStringLiteral("system")) && wasapiAudio.init(wasapiErr))
@@ -1485,7 +1486,7 @@ void fplayer::StreamFFmpeg::pushComposeSceneLoop(const QString& outputUrl, const
 			{
 				QString openedAudioDevice2;
 				QString openDetail2;
-				if (!fplayer::windows_api::openDshowAudioInputWithFallback(audioSourceSecondary, m_stopRequest, audioIfmt2, openedAudioDevice2, openDetail2))
+				if (!fplayer::platform_audio::openAudioInputWithFallback(audioSourceSecondary, m_stopRequest, audioIfmt2, openedAudioDevice2, openDetail2))
 				{
 					QString wasapiErr2;
 					if (wasapiAudio2.init(wasapiErr2))
@@ -2736,7 +2737,7 @@ void fplayer::StreamFFmpeg::pushScreenLoop(const QString& outputUrl, const QStri
 		QString openDetail;
 		const QString selectedPrimary = dualAudioRequested ? audioSourcePrimary : resolvedAudioSource;
 		const bool primaryFromOutputSelection = !dualAudioRequested && hasOut;
-		if (!fplayer::windows_api::openDshowAudioInputWithFallback(selectedPrimary, m_stopRequest, audioIfmt, openedAudioDevice, openDetail))
+		if (!fplayer::platform_audio::openAudioInputWithFallback(selectedPrimary, m_stopRequest, audioIfmt, openedAudioDevice, openDetail))
 		{
 			QString wasapiErr;
 			if ((primaryFromOutputSelection || selectedPrimary == QStringLiteral("system")) && wasapiAudio.init(wasapiErr))
@@ -2838,7 +2839,7 @@ void fplayer::StreamFFmpeg::pushScreenLoop(const QString& outputUrl, const QStri
 		{
 			QString openedAudioDevice2;
 			QString openDetail2;
-			if (!fplayer::windows_api::openDshowAudioInputWithFallback(audioSourceSecondary, m_stopRequest, audioIfmt2, openedAudioDevice2,
+			if (!fplayer::platform_audio::openAudioInputWithFallback(audioSourceSecondary, m_stopRequest, audioIfmt2, openedAudioDevice2,
 			                                                           openDetail2))
 			{
 				QString wasapiErr2;
@@ -2915,7 +2916,32 @@ audio_init_done:
 		}
 		av_dict_set(&inOpts, "offset_x", QByteArray::number(params.x).constData(), 0);
 		av_dict_set(&inOpts, "offset_y", QByteArray::number(params.y).constData(), 0);
-		const AVInputFormat* inFmt = av_find_input_format("gdigrab");
+		const AVInputFormat* inFmt = nullptr;
+		QByteArray screenInputUrl;
+#if defined(_WIN32)
+		inFmt = av_find_input_format("gdigrab");
+		screenInputUrl = "desktop";
+#elif defined(__linux__)
+		inFmt = av_find_input_format("x11grab");
+		const char* displayEnv = std::getenv("DISPLAY");
+		const char* waylandEnv = std::getenv("WAYLAND_DISPLAY");
+		if ((!displayEnv || !*displayEnv) && waylandEnv && *waylandEnv)
+		{
+			av_dict_free(&inOpts);
+			exitCode = AVERROR_EXTERNAL;
+			setLastError(QStringLiteral("当前会话为 Wayland 且缺少 XWayland DISPLAY，暂不支持 x11grab 屏幕采集"));
+			goto cleanup;
+		}
+		const QByteArray display = (displayEnv && *displayEnv) ? QByteArray(displayEnv) : QByteArray(":0.0");
+		screenInputUrl = display + "+" + QByteArray::number(params.x) + "," + QByteArray::number(params.y);
+#endif
+		if (!inFmt)
+		{
+			av_dict_free(&inOpts);
+			exitCode = AVERROR_INPUT_CHANGED;
+			setLastError(QStringLiteral("当前平台不支持桌面采集输入格式"));
+			goto cleanup;
+		}
 		ifmt = avformat_alloc_context();
 		if (!ifmt)
 		{
@@ -2926,7 +2952,7 @@ audio_init_done:
 		}
 		ifmt->interrupt_callback.callback = &StreamFFmpeg::interruptCallback;
 		ifmt->interrupt_callback.opaque = &m_stopRequest;
-		ret = avformat_open_input(&ifmt, "desktop", inFmt, &inOpts);
+		ret = avformat_open_input(&ifmt, screenInputUrl.constData(), inFmt, &inOpts);
 		av_dict_free(&inOpts);
 		if (ret < 0)
 		{
@@ -3859,7 +3885,7 @@ void fplayer::StreamFFmpeg::pushScreenPreviewLoop(const QString& outputUrl, cons
 		QString openDetail;
 		const QString selectedPrimarySource = dualAudioRequested ? audioSourcePrimary : resolvedAudioSource;
 		const bool primaryFromOutputSelection = !dualAudioRequested && hasOut;
-		if (!fplayer::windows_api::openDshowAudioInputWithFallback(selectedPrimarySource, m_stopRequest, audioIfmt, openedAudioDevice, openDetail))
+		if (!fplayer::platform_audio::openAudioInputWithFallback(selectedPrimarySource, m_stopRequest, audioIfmt, openedAudioDevice, openDetail))
 		{
 			QString wasapiErr;
 			if ((primaryFromOutputSelection || selectedPrimarySource == QStringLiteral("system")) && wasapiAudio.init(wasapiErr))
@@ -3958,7 +3984,7 @@ void fplayer::StreamFFmpeg::pushScreenPreviewLoop(const QString& outputUrl, cons
 		{
 			QString openedAudioDevice2;
 			QString openDetail2;
-			if (!fplayer::windows_api::openDshowAudioInputWithFallback(audioSourceSecondary, m_stopRequest, audioIfmt2, openedAudioDevice2, openDetail2))
+			if (!fplayer::platform_audio::openAudioInputWithFallback(audioSourceSecondary, m_stopRequest, audioIfmt2, openedAudioDevice2, openDetail2))
 			{
 				QString wasapiErr2;
 				if (wasapiAudio2.init(wasapiErr2))
@@ -5306,7 +5332,7 @@ void fplayer::StreamFFmpeg::pushCameraPreviewLoop(const QString& outputUrl, cons
 		QString openedAudioDevice;
 		QString openDetail;
 		const QString selectedPrimary = dualAudioRequested ? audioPrimarySource : resolvedAudioSource;
-		if (!fplayer::windows_api::openDshowAudioInputWithFallback(selectedPrimary, m_stopRequest, audioIfmt, openedAudioDevice, openDetail))
+		if (!fplayer::platform_audio::openAudioInputWithFallback(selectedPrimary, m_stopRequest, audioIfmt, openedAudioDevice, openDetail))
 		{
 			QString wasapiErr;
 			if (selectedPrimary == QStringLiteral("system") && wasapiAudio.init(wasapiErr))
@@ -5399,7 +5425,7 @@ void fplayer::StreamFFmpeg::pushCameraPreviewLoop(const QString& outputUrl, cons
 		{
 			QString openedAudioDevice2;
 			QString openDetail2;
-			if (!fplayer::windows_api::openDshowAudioInputWithFallback(audioSecondarySource, m_stopRequest, audioIfmt2, openedAudioDevice2, openDetail2))
+			if (!fplayer::platform_audio::openAudioInputWithFallback(audioSecondarySource, m_stopRequest, audioIfmt2, openedAudioDevice2, openDetail2))
 			{
 				QString wasapiErr2;
 				if (audioSecondarySource == QStringLiteral("system") && wasapiAudio2.init(wasapiErr2))
@@ -6264,7 +6290,14 @@ void fplayer::StreamFFmpeg::pushCameraLoop(const QString& outputUrl, const QStri
 	const QByteArray outUtf8 = outputUrl.toUtf8();
 	const char* outPath = outUtf8.constData();
 	const CaptureParams params = parseCaptureParams(captureSpec);
-	const QByteArray deviceUtf8 = params.device.toUtf8();
+	QString normalizedDevice = params.device.trimmed();
+#if defined(__linux__)
+	if (normalizedDevice.startsWith(QStringLiteral("video="), Qt::CaseInsensitive))
+	{
+		normalizedDevice = normalizedDevice.mid(QStringLiteral("video=").size()).trimmed();
+	}
+#endif
+	const QByteArray deviceUtf8 = normalizedDevice.toUtf8();
 	const char* devicePath = deviceUtf8.constData();
 	const int targetFps = qMax(1, params.fps);
 	const QString requestedAudioOut = params.audioOutputSource.trimmed();
@@ -6284,7 +6317,7 @@ void fplayer::StreamFFmpeg::pushCameraLoop(const QString& outputUrl, const QStri
 		QString openedAudioDevice;
 		QString openDetail;
 		const QString selectedPrimary = dualAudioRequested ? audioPrimarySource : resolvedAudioSource;
-		if (!fplayer::windows_api::openDshowAudioInputWithFallback(selectedPrimary, m_stopRequest, audioIfmt, openedAudioDevice, openDetail))
+		if (!fplayer::platform_audio::openAudioInputWithFallback(selectedPrimary, m_stopRequest, audioIfmt, openedAudioDevice, openDetail))
 		{
 			QString wasapiErr;
 			if (selectedPrimary == QStringLiteral("system") && wasapiAudio.init(wasapiErr))
@@ -6377,7 +6410,7 @@ void fplayer::StreamFFmpeg::pushCameraLoop(const QString& outputUrl, const QStri
 		{
 			QString openedAudioDevice2;
 			QString openDetail2;
-			if (!fplayer::windows_api::openDshowAudioInputWithFallback(audioSecondarySource, m_stopRequest, audioIfmt2, openedAudioDevice2, openDetail2))
+			if (!fplayer::platform_audio::openAudioInputWithFallback(audioSecondarySource, m_stopRequest, audioIfmt2, openedAudioDevice2, openDetail2))
 			{
 				QString wasapiErr2;
 				if (audioSecondarySource == QStringLiteral("system") && wasapiAudio2.init(wasapiErr2))
@@ -6451,7 +6484,19 @@ void fplayer::StreamFFmpeg::pushCameraLoop(const QString& outputUrl, const QStri
 			const QByteArray sizeText = QByteArray::number(params.width) + "x" + QByteArray::number(params.height);
 			av_dict_set(&inOpts, "video_size", sizeText.constData(), 0);
 		}
-		const AVInputFormat* inFmt = av_find_input_format("dshow");
+		const AVInputFormat* inFmt = nullptr;
+#if defined(_WIN32)
+		inFmt = av_find_input_format("dshow");
+#elif defined(__linux__)
+		inFmt = av_find_input_format("v4l2");
+#endif
+		if (!inFmt)
+		{
+			av_dict_free(&inOpts);
+			exitCode = AVERROR_INPUT_CHANGED;
+			setLastError(QStringLiteral("当前平台不支持摄像头采集输入格式"));
+			goto cleanup;
+		}
 		ifmt = avformat_alloc_context();
 		if (!ifmt)
 		{

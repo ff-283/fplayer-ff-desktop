@@ -14,7 +14,9 @@ target_link_libraries(${PROJECT_NAME} PRIVATE FPlayer_Common FPlayer_Widget FPla
 
 #copy_imported_dependencies(${PROJECT_NAME} ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
 
-qt_deploy_runtime(${PROJECT_NAME}) # 在build目录中对构建目标程序执行windeployqt，确保所需要Qt库和插件被正确附带
+if (WIN32)
+    qt_deploy_runtime(${PROJECT_NAME}) # 在build目录中对构建目标程序执行windeployqt，确保所需要Qt库和插件被正确附带
+endif ()
 
 # 设置安装项目
 install(TARGETS ${PROJECT_NAME}
@@ -25,6 +27,8 @@ install(TARGETS ${PROJECT_NAME}
         INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
 )
 
-qt_install_deploy_windeployqt(${PROJECT_NAME}) # 在安装完成的目录下对构建目标程序执行windeployqt，确保所需要Qt库和插件被正确安装
+if (WIN32)
+    qt_install_deploy_windeployqt(${PROJECT_NAME}) # 在安装完成的目录下对构建目标程序执行windeployqt，确保所需要Qt库和插件被正确安装
+endif ()
 
 #install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})

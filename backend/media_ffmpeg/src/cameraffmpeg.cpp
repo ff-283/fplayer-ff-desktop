@@ -245,8 +245,16 @@ namespace fplayer
 		// 打开摄像头
 		// const Impl::CameraDeviceInfo& deviceInfo = m_impl->cameraDevices[index];
 		const auto deviceInfo = m_descriptions[index];
-		// QString devicePath = "video=" + deviceInfo.name;
-		QString devicePath = "video=" + deviceInfo.description;
+		QString devicePath;
+#if defined(_WIN32)
+		// Windows dshow 设备路径形如 "video=<device-name>"。
+		devicePath = "video=" + deviceInfo.description;
+#elif defined(__linux__)
+		// Linux v4l2 优先使用 /dev/video* 设备节点。
+		devicePath = deviceInfo.id.trimmed().isEmpty() ? deviceInfo.description.trimmed() : deviceInfo.id.trimmed();
+#else
+		devicePath = deviceInfo.description;
+#endif
 
 		// 为切换场景缩短探测时长，降低打开延迟。
 		if (!m_impl->formatContext)
@@ -284,8 +292,21 @@ namespace fplayer
 			}
 		}
 
+		const char* inputFmtName =
+#if defined(_WIN32)
+			"dshow";
+#elif defined(__linux__)
+			"v4l2";
+#else
+			"dshow";
+#endif
+		const AVInputFormat* inputFmt = av_find_input_format(inputFmtName);
+		if (!inputFmt)
+		{
+			return false;
+		}
 		int ret = avformat_open_input(&m_impl->formatContext, devicePath.toUtf8().constData(),
-		                              av_find_input_format("dshow"), &options);
+		                              inputFmt, &options);
 		av_dict_free(&options);
 		if (ret < 0)
 		{
@@ -301,7 +322,7 @@ namespace fplayer
 				av_dict_set(&fallbackOptions, "analyzeduration", "200000", 0);
 				av_dict_set(&fallbackOptions, "probesize", "32768", 0);
 				ret = avformat_open_input(&m_impl->formatContext, devicePath.toUtf8().constData(),
-				                          av_find_input_format("dshow"), &fallbackOptions);
+				                          inputFmt, &fallbackOptions);
 				av_dict_free(&fallbackOptions);
 				if (ret >= 0)
 				{
