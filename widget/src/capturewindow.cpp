@@ -67,9 +67,18 @@
 #include <QTcpServer>
 #include <QHostAddress>
 #include <QNetworkInterface>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QNetworkRequest>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonParseError>
+#include <QUrl>
+#include <QUrlQuery>
 #include <QPointer>
 #include <QCloseEvent>
 #include <QApplication>
+#include <QThread>
 #include <functional>
 #include <thread>
 #include <algorithm>
@@ -183,6 +192,250 @@ QStringList collectLanIpv4List()
 		list << QStringLiteral("127.0.0.1");
 	}
 	return list;
+}
+
+bool requestServiceStreamStart(const QString& gatewayBaseUrl,
+                               const QString& app,
+                               const QString& stream,
+                               const QString& serviceMode,
+                               const QJsonObject& publisherMeta,
+                               const QJsonObject& sourceMeta,
+                               QString& publishRtmp,
+                               QString& playHttpFlv,
+                               QString& streamId,
+                               QString& error)
+{
+	const QString base = gatewayBaseUrl.trimmed();
+	if (base.isEmpty())
+	{
+		error = QStringLiteral("服务地址为空");
+		return false;
+	}
+	QUrl requestUrl(base);
+	if (!requestUrl.isValid())
+	{
+		error = QStringLiteral("服务地址格式无效");
+		return false;
+	}
+	auto buildApiPath = [](const QString& basePath, const QString& apiSuffix) {
+		QString path = basePath.trimmed();
+		if (path.isEmpty())
+		{
+			path = QStringLiteral("/");
+		}
+		if (!path.startsWith(QLatin1Char('/')))
+		{
+			path.prepend(QLatin1Char('/'));
+		}
+		while (path.endsWith(QLatin1Char('/')))
+		{
+			path.chop(1);
+		}
+		const QString prefix = QStringLiteral("/api/v1");
+		if (path == prefix || path.endsWith(prefix))
+		{
+			return path + apiSuffix;
+		}
+		if (path == QStringLiteral("/"))
+		{
+			return prefix + apiSuffix;
+		}
+		return path + prefix + apiSuffix;
+	};
+	requestUrl.setPath(buildApiPath(requestUrl.path(), QStringLiteral("/streams/start")));
+
+	QNetworkRequest req(requestUrl);
+	req.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
+
+	QJsonObject body{
+		{QStringLiteral("app"), app.trimmed().isEmpty() ? QStringLiteral("live") : app.trimmed()},
+		{QStringLiteral("stream"), stream.trimmed().isEmpty() ? QStringLiteral("stream001") : stream.trimmed()},
+		{QStringLiteral("serviceMode"), serviceMode.trimmed().isEmpty() ? QStringLiteral("httpflv") : serviceMode.trimmed()},
+		{QStringLiteral("publisherMeta"), publisherMeta},
+		{QStringLiteral("sourceMeta"), sourceMeta}
+	};
+
+	QNetworkAccessManager manager;
+	QNetworkReply* reply = manager.post(req, QJsonDocument(body).toJson(QJsonDocument::Compact));
+	QEventLoop loop;
+	QTimer timeout;
+	timeout.setSingleShot(true);
+	timeout.setInterval(5000);
+	QObject::connect(&timeout, &QTimer::timeout, &loop, [&]() {
+		error = QStringLiteral("请求服务超时（5s）");
+		if (reply)
+		{
+			reply->abort();
+		}
+		loop.quit();
+	});
+	QObject::connect(reply, &QNetworkReply::finished, &loop, [&]() {
+		loop.quit();
+	});
+	timeout.start();
+	loop.exec();
+
+	if (!timeout.isActive())
+	{
+		reply->deleteLater();
+		return false;
+	}
+	timeout.stop();
+
+	if (reply->error() != QNetworkReply::NoError)
+	{
+		error = QStringLiteral("请求服务失败: %1").arg(reply->errorString());
+		reply->deleteLater();
+		return false;
+	}
+
+	const QByteArray data = reply->readAll();
+	reply->deleteLater();
+	QJsonParseError parseError;
+	const QJsonDocument doc = QJsonDocument::fromJson(data, &parseError);
+	if (parseError.error != QJsonParseError::NoError || !doc.isObject())
+	{
+		error = QStringLiteral("服务返回解析失败");
+		return false;
+	}
+	const QJsonObject obj = doc.object();
+	publishRtmp = obj.value(QStringLiteral("publishRtmp")).toString().trimmed();
+	playHttpFlv = obj.value(QStringLiteral("playHttpFlv")).toString().trimmed();
+	streamId = obj.value(QStringLiteral("id")).toString().trimmed();
+	if (playHttpFlv.isEmpty() && obj.value(QStringLiteral("playUrls")).isObject())
+	{
+		playHttpFlv = obj.value(QStringLiteral("playUrls")).toObject().value(QStringLiteral("httpFlv")).toString().trimmed();
+	}
+	if (publishRtmp.isEmpty())
+	{
+		error = QStringLiteral("服务未返回 RTMP 推流地址");
+		return false;
+	}
+	return true;
+}
+
+bool requestServiceStreamStatus(const QString& gatewayBaseUrl,
+                                const QString& app,
+                                const QString& stream,
+                                QString& preferredPullUrl,
+                                QString& playHttpFlv,
+                                QString& playRtmp,
+                                QString& error)
+{
+	const QString base = gatewayBaseUrl.trimmed();
+	const QString appName = app.trimmed();
+	const QString streamName = stream.trimmed();
+	if (base.isEmpty())
+	{
+		error = QStringLiteral("服务地址为空");
+		return false;
+	}
+	if (appName.isEmpty() || streamName.isEmpty())
+	{
+		error = QStringLiteral("app 和 stream 不能为空");
+		return false;
+	}
+	QUrl requestUrl(base);
+	if (!requestUrl.isValid())
+	{
+		error = QStringLiteral("服务地址格式无效");
+		return false;
+	}
+	auto buildApiPath = [](const QString& basePath, const QString& apiSuffix) {
+		QString path = basePath.trimmed();
+		if (path.isEmpty())
+		{
+			path = QStringLiteral("/");
+		}
+		if (!path.startsWith(QLatin1Char('/')))
+		{
+			path.prepend(QLatin1Char('/'));
+		}
+		while (path.endsWith(QLatin1Char('/')))
+		{
+			path.chop(1);
+		}
+		const QString prefix = QStringLiteral("/api/v1");
+		if (path == prefix || path.endsWith(prefix))
+		{
+			return path + apiSuffix;
+		}
+		if (path == QStringLiteral("/"))
+		{
+			return prefix + apiSuffix;
+		}
+		return path + prefix + apiSuffix;
+	};
+	requestUrl.setPath(buildApiPath(requestUrl.path(), QStringLiteral("/streams/resolve")));
+	QUrlQuery query;
+	query.addQueryItem(QStringLiteral("app"), appName);
+	query.addQueryItem(QStringLiteral("stream"), streamName);
+	requestUrl.setQuery(query);
+
+	QNetworkAccessManager manager;
+	QNetworkReply* reply = manager.get(QNetworkRequest(requestUrl));
+	QEventLoop loop;
+	QTimer timeout;
+	timeout.setSingleShot(true);
+	timeout.setInterval(5000);
+	QObject::connect(&timeout, &QTimer::timeout, &loop, [&]() {
+		error = QStringLiteral("请求服务超时（5s）");
+		if (reply)
+		{
+			reply->abort();
+		}
+		loop.quit();
+	});
+	QObject::connect(reply, &QNetworkReply::finished, &loop, [&]() {
+		loop.quit();
+	});
+	timeout.start();
+	loop.exec();
+
+	if (!timeout.isActive())
+	{
+		reply->deleteLater();
+		return false;
+	}
+	timeout.stop();
+
+	if (reply->error() != QNetworkReply::NoError)
+	{
+		error = QStringLiteral("请求服务失败: %1").arg(reply->errorString());
+		reply->deleteLater();
+		return false;
+	}
+	const QByteArray data = reply->readAll();
+	reply->deleteLater();
+	QJsonParseError parseError;
+	const QJsonDocument doc = QJsonDocument::fromJson(data, &parseError);
+	if (parseError.error != QJsonParseError::NoError || !doc.isObject())
+	{
+		error = QStringLiteral("服务返回解析失败");
+		return false;
+	}
+	const QJsonObject obj = doc.object();
+	playHttpFlv = obj.value(QStringLiteral("playHttpFlv")).toString().trimmed();
+	playRtmp = obj.value(QStringLiteral("publishRtmp")).toString().trimmed();
+	if (obj.value(QStringLiteral("playUrls")).isObject())
+	{
+		const QJsonObject urls = obj.value(QStringLiteral("playUrls")).toObject();
+		if (playHttpFlv.isEmpty())
+		{
+			playHttpFlv = urls.value(QStringLiteral("httpFlv")).toString().trimmed();
+		}
+		if (playRtmp.isEmpty())
+		{
+			playRtmp = urls.value(QStringLiteral("rtmp")).toString().trimmed();
+		}
+	}
+	preferredPullUrl = !playHttpFlv.isEmpty() ? playHttpFlv : playRtmp;
+	if (preferredPullUrl.isEmpty())
+	{
+		error = QStringLiteral("服务未返回可用拉流地址");
+		return false;
+	}
+	return true;
 }
 
 void syncStreamLogView(QTextEdit* logView, const QString& latestLog)
@@ -1506,6 +1759,23 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		}
 		cmbOutput->setCurrentText(QStringLiteral(""));
 		cmbOutput->lineEdit()->setPlaceholderText(tr("输出地址，例如 rtmp://127.0.0.1:1935/live/stream"));
+		auto* cmbPushRouteMode = new QComboBox(&dlg);
+		cmbPushRouteMode->addItem(tr("P2P 直连"), QStringLiteral("p2p"));
+		cmbPushRouteMode->addItem(tr("推送服务端"), QStringLiteral("service"));
+		cmbPushRouteMode->setCurrentIndex(0);
+		auto* edtGateway = new QLineEdit(QStringLiteral("http://127.0.0.1:9000"), &dlg);
+		edtGateway->setPlaceholderText(tr("服务地址，例如 http://127.0.0.1:9000"));
+		auto* edtServiceApp = new QLineEdit(QStringLiteral("live"), &dlg);
+		auto* edtServiceStream = new QLineEdit(QStringLiteral("stream001"), &dlg);
+		auto* cmbServiceMode = new QComboBox(&dlg);
+		cmbServiceMode->addItem(tr("广播分发"), QStringLiteral("broadcast"));
+		cmbServiceMode->addItem(tr("HTTP-FLV 转换"), QStringLiteral("httpflv"));
+		cmbServiceMode->setCurrentIndex(1);
+		auto* lblServicePlayUrl = new QLabel(tr("未创建"), &dlg);
+		lblServicePlayUrl->setWordWrap(true);
+		lblServicePlayUrl->setTextInteractionFlags(Qt::TextSelectableByMouse);
+		auto* lblServiceHint = new QLabel(tr("说明：推流前会先向服务端创建会话，再使用返回的 RTMP 地址推流。"), &dlg);
+		lblServiceHint->setWordWrap(true);
 		auto* spFps = new QSpinBox(&dlg);
 		spFps->setRange(0, 240);
 		spFps->setSpecialValueText(tr("跟随当前"));
@@ -1758,8 +2028,15 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		layout->addRow(tr("视频编码器"), cmbEncoder);
 		layout->addRow(tr("输入设备"), cmbAudioInput);
 		layout->addRow(tr("输出设备"), cmbAudioOutput);
+		layout->addRow(tr("推流模式"), cmbPushRouteMode);
 		layout->addRow(tr("协议模板"), cmbProtocol);
 		layout->addRow(tr("输出"), cmbOutput);
+		layout->addRow(tr("服务地址"), edtGateway);
+		layout->addRow(tr("服务 app"), edtServiceApp);
+		layout->addRow(tr("服务 stream"), edtServiceStream);
+		layout->addRow(tr("服务类型"), cmbServiceMode);
+		layout->addRow(tr("HTTP-FLV"), lblServicePlayUrl);
+		layout->addRow(lblServiceHint);
 		layout->addRow(lblStatus);
 		layout->addRow(txtLog);
 		auto* buttons = new QDialogButtonBox(&dlg);
@@ -1769,12 +2046,18 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		buttons->addButton(btnStart, QDialogButtonBox::AcceptRole);
 		buttons->addButton(btnStop, QDialogButtonBox::ActionRole);
 		layout->addRow(buttons);
-		auto applyPushUiRunningState = [btnStart, btnStop, cmbProtocol, cmbOutput, spFps, cmbSize, spBitrate, cmbEncoder, cmbAudioInput,
-		                                cmbAudioOutput, fileScene](const bool running) {
+		auto applyPushUiRunningState = [btnStart, btnStop, cmbPushRouteMode, cmbProtocol, cmbOutput, edtGateway, edtServiceApp,
+		                                edtServiceStream, cmbServiceMode, spFps, cmbSize, spBitrate, cmbEncoder, cmbAudioInput, cmbAudioOutput,
+		                                fileScene](const bool running) {
 			btnStart->setEnabled(!running);
 			btnStop->setEnabled(running);
+			cmbPushRouteMode->setEnabled(!running);
 			cmbProtocol->setEnabled(!running);
 			cmbOutput->setEnabled(!running);
+			edtGateway->setEnabled(!running);
+			edtServiceApp->setEnabled(!running);
+			edtServiceStream->setEnabled(!running);
+			cmbServiceMode->setEnabled(!running);
 			spFps->setEnabled(!running && !fileScene);
 			cmbSize->setEnabled(!running && !fileScene);
 			spBitrate->setEnabled(!running);
@@ -1799,15 +2082,98 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 			}
 			return true;
 		};
+		auto refreshServiceRouteUi = [layout, cmbPushRouteMode, cmbProtocol, cmbOutput, edtGateway, edtServiceApp, edtServiceStream,
+		                              cmbServiceMode, lblServicePlayUrl, lblServiceHint]() {
+			const bool viaService = cmbPushRouteMode->currentData().toString() == QStringLiteral("service");
+			cmbProtocol->setVisible(!viaService);
+			cmbOutput->setVisible(!viaService);
+			edtGateway->setVisible(viaService);
+			edtServiceApp->setVisible(viaService);
+			edtServiceStream->setVisible(viaService);
+			cmbServiceMode->setVisible(viaService);
+			lblServicePlayUrl->setVisible(viaService);
+			lblServiceHint->setVisible(viaService);
+			if (QWidget* label = layout->labelForField(cmbProtocol))
+			{
+				label->setVisible(!viaService);
+			}
+			if (QWidget* label = layout->labelForField(cmbOutput))
+			{
+				label->setVisible(!viaService);
+			}
+			if (QWidget* label = layout->labelForField(edtGateway))
+			{
+				label->setVisible(viaService);
+			}
+			if (QWidget* label = layout->labelForField(edtServiceApp))
+			{
+				label->setVisible(viaService);
+			}
+			if (QWidget* label = layout->labelForField(edtServiceStream))
+			{
+				label->setVisible(viaService);
+			}
+			if (QWidget* label = layout->labelForField(cmbServiceMode))
+			{
+				label->setVisible(viaService);
+			}
+			if (QWidget* label = layout->labelForField(lblServicePlayUrl))
+			{
+				label->setVisible(viaService);
+			}
+		};
+		connect(cmbPushRouteMode, &QComboBox::currentTextChanged, &dlg, [refreshServiceRouteUi]() {
+			refreshServiceRouteUi();
+		});
+		refreshServiceRouteUi();
+
 		connect(btnStop, &QPushButton::clicked, &dlg,
 		        [this, applyPushUiRunningState]() {
 			this->m_service->streamStop();
 			applyPushUiRunningState(false);
 		});
 		connect(btnStart, &QPushButton::clicked, &dlg,
-		        [this, btnStart, cmbProtocol, cmbOutput, spFps, cmbSize, spBitrate, cmbEncoder, cmbAudioInput, cmbAudioOutput,
-		         chkKeepAspect, fileScene, screenScene, composeScene, addRecent, applyPushUiRunningState]() {
-			const QString pushOutput = cmbOutput->currentText().trimmed();
+		        [this, btnStart, cmbPushRouteMode, cmbProtocol, cmbOutput, edtGateway, edtServiceApp, edtServiceStream, cmbServiceMode,
+		         lblServicePlayUrl,
+		         spFps, cmbSize, spBitrate, cmbEncoder, cmbAudioInput, cmbAudioOutput, chkKeepAspect, fileScene, screenScene, composeScene,
+		         addRecent, applyPushUiRunningState]() {
+			QString pushOutput = cmbOutput->currentText().trimmed();
+			const bool viaService = cmbPushRouteMode->currentData().toString() == QStringLiteral("service");
+			if (viaService)
+			{
+				QString publishRtmp;
+				QString playHttpFlv;
+				QString streamId;
+				QString requestError;
+				const QString serviceMode = cmbServiceMode->currentData().toString().trimmed();
+				const QString lanIp = selectLanHostForPublish();
+				QJsonObject publisherMeta{
+					{QStringLiteral("publisherIp"), lanIp},
+					{QStringLiteral("publisherPort"), 1935},
+					{QStringLiteral("scene"), composeScene ? QStringLiteral("compose")
+					                                      : (screenScene ? QStringLiteral("screen")
+					                                                     : (fileScene ? QStringLiteral("file") : QStringLiteral("camera")))}
+				};
+				QJsonObject sourceMeta{
+					{QStringLiteral("fps"), spFps->value()},
+					{QStringLiteral("bitrateKbps"), spBitrate->value()},
+					{QStringLiteral("videoEncoder"), cmbEncoder->currentData().toString()},
+					{QStringLiteral("audioInput"), cmbAudioInput->currentData().toString()},
+					{QStringLiteral("audioOutput"), cmbAudioOutput->currentData().toString()}
+				};
+				if (!requestServiceStreamStart(edtGateway->text(), edtServiceApp->text(), edtServiceStream->text(), serviceMode, publisherMeta,
+				                               sourceMeta,
+				                               publishRtmp, playHttpFlv, streamId, requestError))
+				{
+					QMessageBox::warning(this, tr("推流失败"), tr("服务端流创建失败：%1").arg(requestError));
+					return;
+				}
+				pushOutput = publishRtmp;
+				cmbOutput->setCurrentText(pushOutput);
+				lblServicePlayUrl->setText(playHttpFlv.isEmpty()
+					                           ? tr("未返回（streamId=%1）").arg(streamId)
+					                           : tr("%1\nstreamId=%2").arg(playHttpFlv, streamId));
+			}
 			if (pushOutput.isEmpty())
 			{
 				QMessageBox::warning(this, tr("推流失败"), tr("输出地址不能为空。"));
@@ -1993,6 +2359,22 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		cmbPullMode->addItem(tr("监看模式"), QStringLiteral("preview"));
 		cmbPullMode->addItem(tr("录制模式"), QStringLiteral("record"));
 		cmbPullMode->setCurrentIndex(0);
+		auto* cmbPullRouteMode = new QComboBox(dlg);
+		cmbPullRouteMode->addItem(tr("P2P 拉流"), QStringLiteral("p2p"));
+		cmbPullRouteMode->addItem(tr("服务端拉流"), QStringLiteral("service"));
+		cmbPullRouteMode->setCurrentIndex(0);
+		auto* edtPullGateway = new QLineEdit(QStringLiteral("http://127.0.0.1:9000"), dlg);
+		edtPullGateway->setPlaceholderText(tr("服务地址，例如 http://127.0.0.1:9000"));
+		auto* edtPullServiceApp = new QLineEdit(QStringLiteral("live"), dlg);
+		auto* edtPullServiceStream = new QLineEdit(QStringLiteral("stream001"), dlg);
+		edtPullServiceStream->setPlaceholderText(tr("输入 stream（如 stream001）"));
+		auto* cmbPullServicePrefer = new QComboBox(dlg);
+		cmbPullServicePrefer->addItem(tr("优先 HTTP-FLV"), QStringLiteral("httpflv"));
+		cmbPullServicePrefer->addItem(tr("优先 RTMP"), QStringLiteral("rtmp"));
+		auto* btnResolvePullUrl = new QPushButton(tr("解析地址"), dlg);
+		auto* lblServiceResolvedUrl = new QLabel(tr("未解析"), dlg);
+		lblServiceResolvedUrl->setWordWrap(true);
+		lblServiceResolvedUrl->setTextInteractionFlags(Qt::TextSelectableByMouse);
 		const QString lanHost = selectLanHostForPublish();
 		auto makePublishUrl = [cmbProtocol, edtStreamKey, reservedPort, lanHost]() {
 			const QString protocol = cmbProtocol->currentData().toString().trimmed().toLower();
@@ -2053,6 +2435,25 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		connect(btnCopyUrl, &QPushButton::clicked, dlg, [lblPullUrl]() {
 			QApplication::clipboard()->setText(lblPullUrl->text().trimmed());
 		});
+		connect(btnResolvePullUrl, &QPushButton::clicked, dlg,
+		        [this, edtPullGateway, edtPullServiceApp, edtPullServiceStream, cmbPullServicePrefer, lblServiceResolvedUrl]() {
+			QString preferred;
+			QString httpFlv;
+			QString rtmp;
+			QString err;
+			if (!requestServiceStreamStatus(edtPullGateway->text(), edtPullServiceApp->text(), edtPullServiceStream->text(),
+			                                preferred, httpFlv, rtmp, err))
+			{
+				QMessageBox::warning(this, tr("解析失败"), err);
+				return;
+			}
+			const bool preferRtmp = cmbPullServicePrefer->currentData().toString() == QStringLiteral("rtmp");
+			const QString picked = preferRtmp ? (!rtmp.isEmpty() ? rtmp : preferred) : preferred;
+			lblServiceResolvedUrl->setText(tr("推荐地址：%1\nHTTP-FLV：%2\nRTMP：%3")
+			                               .arg(picked.isEmpty() ? tr("无") : picked)
+			                               .arg(httpFlv.isEmpty() ? tr("无") : httpFlv)
+			                               .arg(rtmp.isEmpty() ? tr("无") : rtmp));
+		});
 		auto* lblStatus = new QLabel(tr("状态：未启动"), dlg);
 		auto* txtLog = new QTextEdit(dlg);
 		txtLog->setReadOnly(true);
@@ -2072,15 +2473,75 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		buttons->addButton(btnDiag, QDialogButtonBox::ActionRole);
 		m_pullStartButton = btnStart;
 		m_pullStopButton = btnStop;
-		auto applyPullUiRunningState = [btnStart, btnStop, cmbPullMode, cmbProtocol, edtStreamKey, cmbOutput, btnBrowseOutput](bool running) {
+		auto applyPullUiRunningState = [btnStart, btnStop, cmbPullMode, cmbPullRouteMode, cmbProtocol, edtStreamKey, cmbOutput,
+		                                btnBrowseOutput, edtPullGateway, edtPullServiceApp, edtPullServiceStream, cmbPullServicePrefer,
+		                                btnResolvePullUrl](
+			bool running) {
 			btnStart->setEnabled(!running);
 			btnStop->setEnabled(running);
 			cmbPullMode->setEnabled(!running);
+			cmbPullRouteMode->setEnabled(!running);
 			cmbProtocol->setEnabled(!running);
 			edtStreamKey->setEnabled(!running);
 			cmbOutput->setEnabled(!running);
 			btnBrowseOutput->setEnabled(!running);
+			edtPullGateway->setEnabled(!running);
+			edtPullServiceApp->setEnabled(!running);
+			edtPullServiceStream->setEnabled(!running);
+			cmbPullServicePrefer->setEnabled(!running);
+			btnResolvePullUrl->setEnabled(!running);
 		};
+		auto refreshPullRouteUi = [layout, cmbPullRouteMode, cmbProtocol, edtStreamKey, urlRow, lblPullUrl, btnCopyUrl, edtPullGateway,
+		                           edtPullServiceApp, edtPullServiceStream, cmbPullServicePrefer, btnResolvePullUrl,
+		                           lblServiceResolvedUrl]() {
+			const bool viaService = cmbPullRouteMode->currentData().toString() == QStringLiteral("service");
+			cmbProtocol->setVisible(!viaService);
+			edtStreamKey->setVisible(!viaService);
+			lblPullUrl->setVisible(!viaService);
+			btnCopyUrl->setVisible(!viaService);
+			edtPullGateway->setVisible(viaService);
+			edtPullServiceApp->setVisible(viaService);
+			edtPullServiceStream->setVisible(viaService);
+			cmbPullServicePrefer->setVisible(viaService);
+			btnResolvePullUrl->setVisible(viaService);
+			lblServiceResolvedUrl->setVisible(viaService);
+			if (QWidget* label = layout->labelForField(cmbProtocol))
+			{
+				label->setVisible(!viaService);
+			}
+			if (QWidget* label = layout->labelForField(edtStreamKey))
+			{
+				label->setVisible(!viaService);
+			}
+			if (QWidget* label = layout->labelForField(urlRow))
+			{
+				label->setVisible(!viaService);
+			}
+			if (QWidget* label = layout->labelForField(edtPullGateway))
+			{
+				label->setVisible(viaService);
+			}
+			if (QWidget* label = layout->labelForField(edtPullServiceApp))
+			{
+				label->setVisible(viaService);
+			}
+			if (QWidget* label = layout->labelForField(edtPullServiceStream))
+			{
+				label->setVisible(viaService);
+			}
+			if (QWidget* label = layout->labelForField(cmbPullServicePrefer))
+			{
+				label->setVisible(viaService);
+			}
+			if (QWidget* label = layout->labelForField(lblServiceResolvedUrl))
+			{
+				label->setVisible(viaService);
+			}
+		};
+		connect(cmbPullRouteMode, &QComboBox::currentTextChanged, dlg, [refreshPullRouteUi]() {
+			refreshPullRouteUi();
+		});
+		refreshPullRouteUi();
 		auto refreshPullModeUi = [cmbPullMode, cmbOutput, btnBrowseOutput, layout]() {
 			const bool recordMode = cmbPullMode->currentData().toString() == QStringLiteral("record");
 			cmbOutput->setVisible(recordMode);
@@ -2162,8 +2623,35 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 			syncStreamLogView(txtLog, mergedLog);
 		});
 		logTimer->start();
-		connect(btnStart, &QPushButton::clicked, dlg, [this, dlg, cmbPullMode, cmbOutput, makePullListenUrl, addRecent, applyPullUiRunningState, requestStopPullAsync]() {
-			const QString pullInput = makePullListenUrl();
+		connect(btnStart, &QPushButton::clicked, dlg,
+		        [this, dlg, cmbPullMode, cmbPullRouteMode, cmbOutput, makePullListenUrl, edtPullGateway, edtPullServiceApp, edtPullServiceStream,
+		         cmbPullServicePrefer, lblServiceResolvedUrl, addRecent, applyPullUiRunningState, requestStopPullAsync]() {
+			QString pullInput = makePullListenUrl();
+			const bool viaService = cmbPullRouteMode->currentData().toString() == QStringLiteral("service");
+			QString resolvedHttpFlv;
+			QString resolvedRtmp;
+			if (viaService)
+			{
+				const QString prev = dlg->property("pullExtraLog").toString();
+				dlg->setProperty("pullExtraLog", prev + tr("[服务端拉流] 开始解析地址 app=%1 stream=%2\n")
+				                .arg(edtPullServiceApp->text().trimmed(), edtPullServiceStream->text().trimmed()));
+				QString preferred;
+				QString err;
+				if (!requestServiceStreamStatus(edtPullGateway->text(), edtPullServiceApp->text(), edtPullServiceStream->text(),
+				                                preferred, resolvedHttpFlv, resolvedRtmp, err))
+				{
+					QMessageBox::warning(this, tr("拉流失败"), tr("服务端地址解析失败：%1").arg(err));
+					return;
+				}
+				const bool preferRtmp = cmbPullServicePrefer->currentData().toString() == QStringLiteral("rtmp");
+				pullInput = preferRtmp ? (!resolvedRtmp.isEmpty() ? resolvedRtmp : preferred) : preferred;
+				const QString prev2 = dlg->property("pullExtraLog").toString();
+				dlg->setProperty("pullExtraLog", prev2 + tr("[服务端拉流] 解析成功，最终地址=%1\n").arg(pullInput));
+				lblServiceResolvedUrl->setText(tr("推荐地址：%1\nHTTP-FLV：%2\nRTMP：%3")
+				                               .arg(pullInput.isEmpty() ? tr("无") : pullInput)
+				                               .arg(resolvedHttpFlv.isEmpty() ? tr("无") : resolvedHttpFlv)
+				                               .arg(resolvedRtmp.isEmpty() ? tr("无") : resolvedRtmp));
+			}
 			const bool recordMode = cmbPullMode->currentData().toString() == QStringLiteral("record");
 			QString pullOutput = recordMode ? cmbOutput->currentText().trimmed() : QString();
 			if (pullInput.isEmpty() || (recordMode && pullOutput.isEmpty()))
@@ -2171,7 +2659,51 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 				QMessageBox::warning(this, tr("拉流失败"), recordMode ? tr("输入地址和保存路径不能为空。") : tr("输入地址不能为空。"));
 				return;
 			}
-			if (!this->m_service->streamStartPull(pullInput, pullOutput))
+			bool started = false;
+			QStringList candidates;
+			candidates << pullInput;
+			if (viaService)
+			{
+				if (!resolvedRtmp.isEmpty() && !candidates.contains(resolvedRtmp))
+				{
+					candidates << resolvedRtmp;
+				}
+				if (!resolvedHttpFlv.isEmpty() && !candidates.contains(resolvedHttpFlv))
+				{
+					candidates << resolvedHttpFlv;
+				}
+			}
+			QString extra = dlg->property("pullExtraLog").toString();
+			int attempt = 0;
+			for (const QString& candidate : candidates)
+			{
+				++attempt;
+				if (candidate.trimmed().isEmpty())
+				{
+					continue;
+				}
+				extra += tr("[服务端拉流] 尝试地址 %1/%2: %3\n").arg(attempt).arg(candidates.size()).arg(candidate);
+				dlg->setProperty("pullExtraLog", extra);
+				started = this->m_service->streamStartPull(candidate, pullOutput);
+				if (!started)
+				{
+					extra += tr("[服务端拉流] 启动调用失败: %1\n").arg(this->m_service->streamLastError());
+					dlg->setProperty("pullExtraLog", extra);
+					continue;
+				}
+				// 等待短时间，若连接快速失败（典型 404），自动尝试下一个候选地址。
+				QThread::msleep(viaService ? 900 : 300);
+				if (this->m_service->streamIsRunning())
+				{
+					pullInput = candidate;
+					started = true;
+					break;
+				}
+				started = false;
+				extra += tr("[服务端拉流] 地址失败，错误=%1\n").arg(this->m_service->streamLastError());
+				dlg->setProperty("pullExtraLog", extra);
+			}
+			if (!started)
 			{
 				QMessageBox::warning(this, tr("拉流失败"), this->m_service->streamLastError());
 				return;
@@ -2326,9 +2858,16 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 			dlg->setProperty("pullExtraLog", prev + message);
 		});
 		layout->addRow(tr("协议模板"), cmbProtocol);
+		layout->addRow(tr("拉流模式"), cmbPullRouteMode);
 		layout->addRow(tr("模式"), cmbPullMode);
 		layout->addRow(tr("推流码"), edtStreamKey);
 		layout->addRow(tr("拉流地址"), urlRow);
+		layout->addRow(tr("服务地址"), edtPullGateway);
+		layout->addRow(tr("服务 app"), edtPullServiceApp);
+		layout->addRow(tr("服务 stream"), edtPullServiceStream);
+		layout->addRow(tr("优先协议"), cmbPullServicePrefer);
+		layout->addRow(QString(), btnResolvePullUrl);
+		layout->addRow(tr("解析结果"), lblServiceResolvedUrl);
 		layout->addRow(tr("保存路径"), cmbOutput);
 		layout->addRow(QString(), btnBrowseOutput);
 		layout->addRow(lblStatus);
