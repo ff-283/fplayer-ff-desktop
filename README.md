@@ -37,9 +37,37 @@
 
 ## 技术栈
 
+- C++17
+- Qt 6.10.2
+- FFmpeg（推拉流、编解码）
+- WebRTC（低延迟链路能力）
+- CMake（工程组织与构建）
 
+## 编译环境要求（Windows）
 
+建议使用 Windows 10/11 x64，并准备以下环境：
 
+- Visual Studio 2022（含 MSVC v143、Windows 10/11 SDK）
+- CMake 3.24+（建议更高版本）
+- Qt 6.10.2（与当前工程配置保持一致）
+- Git 2.40+（建议）
+
+可选工具（按需）：
+
+- MinGW 64（如果你使用 MinGW 工具链编译）
+- Ninja（若使用 `-G Ninja` 构建）
+
+快速自检命令：
+
+```powershell
+cmake --version
+git --version
+```
+
+Qt / 编译器建议通过 IDE 或环境变量确认：
+
+- `qmake -v`（如果已配置到 PATH）
+- 或在 CMake 配置中显式指定 `Qt6_DIR` / `CMAKE_PREFIX_PATH`
 
 ## 技术选型
 
