@@ -1768,8 +1768,8 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		auto* edtServiceApp = new QLineEdit(QStringLiteral("live"), &dlg);
 		auto* edtServiceStream = new QLineEdit(QStringLiteral("stream001"), &dlg);
 		auto* cmbServiceMode = new QComboBox(&dlg);
-		cmbServiceMode->addItem(tr("广播分发"), QStringLiteral("broadcast"));
-		cmbServiceMode->addItem(tr("HTTP-FLV 转换"), QStringLiteral("httpflv"));
+		cmbServiceMode->addItem(tr("广播分发（RTMP + FLV + HLS）"), QStringLiteral("broadcast"));
+		cmbServiceMode->addItem(tr("广播分发 + HTTP-FLV 优先（含 HLS）"), QStringLiteral("httpflv"));
 		cmbServiceMode->setCurrentIndex(1);
 		auto* lblServicePlayUrl = new QLabel(tr("未创建"), &dlg);
 		lblServicePlayUrl->setWordWrap(true);
