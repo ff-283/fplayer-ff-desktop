@@ -1776,6 +1776,11 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		lblServicePlayUrl->setTextInteractionFlags(Qt::TextSelectableByMouse);
 		auto* lblServiceHint = new QLabel(tr("说明：推流前会先向服务端创建会话，再使用返回的 RTMP 地址推流。"), &dlg);
 		lblServiceHint->setWordWrap(true);
+		auto* lblServiceLoadWarning = new QLabel(
+			tr("注意：分辨率和帧率请勿设置过高，防止服务端负载过大影响拉流稳定性，建议不要超过 1920x1080 & 60fps。"),
+			&dlg);
+		lblServiceLoadWarning->setWordWrap(true);
+		lblServiceLoadWarning->setStyleSheet(QStringLiteral("color:#d32f2f; font-weight:600;"));
 		auto* spFps = new QSpinBox(&dlg);
 		spFps->setRange(0, 240);
 		spFps->setSpecialValueText(tr("跟随当前"));
@@ -2037,6 +2042,7 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		layout->addRow(tr("服务类型"), cmbServiceMode);
 		layout->addRow(tr("HTTP-FLV"), lblServicePlayUrl);
 		layout->addRow(lblServiceHint);
+		layout->addRow(lblServiceLoadWarning);
 		layout->addRow(lblStatus);
 		layout->addRow(txtLog);
 		auto* buttons = new QDialogButtonBox(&dlg);
@@ -2083,7 +2089,7 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 			return true;
 		};
 		auto refreshServiceRouteUi = [layout, cmbPushRouteMode, cmbProtocol, cmbOutput, edtGateway, edtServiceApp, edtServiceStream,
-		                              cmbServiceMode, lblServicePlayUrl, lblServiceHint]() {
+		                              cmbServiceMode, lblServicePlayUrl, lblServiceHint, lblServiceLoadWarning]() {
 			const bool viaService = cmbPushRouteMode->currentData().toString() == QStringLiteral("service");
 			cmbProtocol->setVisible(!viaService);
 			cmbOutput->setVisible(!viaService);
@@ -2093,6 +2099,7 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 			cmbServiceMode->setVisible(viaService);
 			lblServicePlayUrl->setVisible(viaService);
 			lblServiceHint->setVisible(viaService);
+			lblServiceLoadWarning->setVisible(viaService);
 			if (QWidget* label = layout->labelForField(cmbProtocol))
 			{
 				label->setVisible(!viaService);
@@ -3254,6 +3261,9 @@ void CaptureWindow::setComposeMode(const bool enabled)
 		stopScreenCapture();
 		m_service->playerPause();
 		m_service->cameraPause();
+		// 从摄像头模式切到组合模式前，重建主相机实例以释放设备占用，
+		// 避免组合内新建相机素材时因句柄冲突拿不到画面。
+		m_service->initCamera(m_cameraBackendType);
 		// 原生/GL 预览控件与透明度特效叠加时在窗口拉伸阶段容易残影，这里禁用透明叠加切换。
 		if (ui && ui->wgtView)
 		{
@@ -3271,6 +3281,27 @@ void CaptureWindow::setComposeMode(const bool enabled)
 		}
 		for (auto& src : m_composeSources)
 		{
+			if (src.kind == ComposeSourceItem::SourceKind::Camera && src.service && src.view)
+			{
+				// 组合模式重新进入时，恢复摄像头源的预览绑定与设备选择。
+				src.service->initCamera(m_cameraBackendType);
+				src.service->bindCameraPreview(src.view);
+				src.service->cameraSetFrameBusSourceId(src.sourceId);
+				const QStringList cameras = src.service->getCameraList();
+				if (!cameras.isEmpty())
+				{
+					const int dev = qBound(0, src.deviceIndex, cameras.size() - 1);
+					src.deviceIndex = dev;
+					src.service->selectCamera(dev);
+					const QStringList formats = src.service->getCameraFormats(dev);
+					if (!formats.isEmpty())
+					{
+						src.formatIndex = qBound(0, src.formatIndex, formats.size() - 1);
+						src.service->selectCameraFormat(src.formatIndex);
+					}
+					src.service->cameraResume();
+				}
+			}
 			if (src.subWindow)
 			{
 				src.subWindow->show();
@@ -3313,6 +3344,17 @@ void CaptureWindow::setComposeMode(const bool enabled)
 		return;
 	}
 	suspendComposeSourcesForBackground();
+	for (auto& src : m_composeSources)
+	{
+		if (src.kind == ComposeSourceItem::SourceKind::Camera && src.service && src.view)
+		{
+			// 离开组合模式时释放组合内摄像头设备占用，避免与主摄像头模式互抢资源。
+			src.service->cameraPause();
+			src.service->initCamera(m_cameraBackendType);
+			src.service->bindCameraPreview(src.view);
+			src.service->cameraSetFrameBusSourceId(src.sourceId);
+		}
+	}
 	for (auto& src : m_composeSources)
 	{
 		if (src.subWindow)
