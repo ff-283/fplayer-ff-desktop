@@ -113,6 +113,7 @@ Qt / 编译器建议通过 IDE 或环境变量确认：
 <p align="center">
   <img src="./doc/img/build/build.png" alt="build">
 </p>
+
 ```cmake
 -DCMAKE_PREFIX_PATH=D:/SoftWare/Qt/Qt6.10.2/6.10.2/msvc2022_64
 -DQt6_DIR=D:/SoftWare/Qt/Qt6.10.2/6.10.2/msvc2022_64/lib/cmake/Qt6
