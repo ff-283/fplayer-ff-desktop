@@ -62,6 +62,7 @@ function Invoke-Step {
     )
     Write-Host ""
     Write-Host "==> $Title" -ForegroundColor Cyan
+    $global:LASTEXITCODE = 0
     & $Action
     if ($LASTEXITCODE -ne 0) {
         throw "Step failed: $Title (exit code: $LASTEXITCODE)"
@@ -187,16 +188,31 @@ if (-not $SkipInstall) {
     Invoke-Step "Install ($Config)" { & $cmakeExe --install $absBuildDir --config $Config }
 }
 
+$packageSucceededGenerators = @()
+$packageFailedGenerators = @()
 foreach ($generator in $selectedGenerators) {
-    Invoke-Step "Package ($Config, $generator)" {
-        Push-Location $absBuildDir
-        try {
-            & $cpackExe --config (Join-Path $absBuildDir "CPackConfig.cmake") -C $Config -G $generator
+    Write-Host ""
+    Write-Host "==> Package ($Config, $generator)" -ForegroundColor Cyan
+    Push-Location $absBuildDir
+    try {
+        & $cpackExe --config (Join-Path $absBuildDir "CPackConfig.cmake") -C $Config -G $generator
+        if ($LASTEXITCODE -eq 0) {
+            $packageSucceededGenerators += $generator
         }
-        finally {
-            Pop-Location
+        else {
+            $packageFailedGenerators += "$generator(exit=$LASTEXITCODE)"
+            Write-Warning "Package failed for generator: $generator"
         }
     }
+    finally {
+        Pop-Location
+    }
+}
+if ($packageSucceededGenerators.Count -eq 0) {
+    throw ("All package generators failed: {0}" -f ($packageFailedGenerators -join ", "))
+}
+if ($packageFailedGenerators.Count -gt 0) {
+    Write-Warning ("Some generators failed: {0}" -f ($packageFailedGenerators -join ", "))
 }
 
 $packageFiles = Get-ChildItem -Path $absBuildDir -File |

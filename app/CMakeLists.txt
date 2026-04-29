@@ -1,7 +1,11 @@
 project(FPlayer_App)
 
 config_project(ON)
-add_executable(${PROJECT_NAME})
+if (WIN32)
+    add_executable(${PROJECT_NAME} WIN32)
+else()
+    add_executable(${PROJECT_NAME})
+endif()
 find_package(Qt6 COMPONENTS Widgets Core Gui Designer REQUIRED)
 
 file(GLOB_RECURSE src CONFIGURE_DEPENDS *.cpp *.h)

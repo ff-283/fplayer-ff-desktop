@@ -77,6 +77,7 @@
 #include <QUrlQuery>
 #include <QPointer>
 #include <QCloseEvent>
+#include <QWindowStateChangeEvent>
 #include <QApplication>
 #include <QThread>
 #include <functional>
@@ -96,6 +97,7 @@ class PullPreviewDialog final : public QDialog
 public:
 	explicit PullPreviewDialog(QWidget* parent = nullptr) : QDialog(parent) {}
 	std::function<bool()> beforeClose;
+	std::function<void(Qt::WindowStates oldState, Qt::WindowStates newState)> onWindowStateChanged;
 
 protected:
 	void closeEvent(QCloseEvent* event) override
@@ -106,6 +108,16 @@ protected:
 			return;
 		}
 		QDialog::closeEvent(event);
+	}
+
+	void changeEvent(QEvent* event) override
+	{
+		if (event->type() == QEvent::WindowStateChange && onWindowStateChanged)
+		{
+			auto* stateEvent = static_cast<QWindowStateChangeEvent*>(event);
+			onWindowStateChanged(stateEvent->oldState(), windowState());
+		}
+		QDialog::changeEvent(event);
 	}
 };
 
@@ -1709,6 +1721,16 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 	connect(actionPushStream, &QAction::triggered, this, [this]() {
 		PullPreviewDialog dlg(this);
 		dlg.setWindowTitle(tr("推流配置"));
+		dlg.setWindowFlag(Qt::WindowMinimizeButtonHint, true);
+		dlg.setWindowFlag(Qt::WindowSystemMenuHint, true);
+		dlg.onWindowStateChanged = [this](const Qt::WindowStates oldState, const Qt::WindowStates newState) {
+			const bool wasMinimized = oldState.testFlag(Qt::WindowMinimized);
+			const bool isMinimized = newState.testFlag(Qt::WindowMinimized);
+			if (!wasMinimized && isMinimized)
+			{
+				this->showMinimized();
+			}
+		};
 		auto* layout = new QFormLayout(&dlg);
 		layout->setVerticalSpacing(10);
 		layout->setRowWrapPolicy(QFormLayout::WrapLongRows);
