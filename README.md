@@ -69,6 +69,27 @@ Qt / 编译器建议通过 IDE 或环境变量确认：
 - `qmake -v`（如果已配置到 PATH）
 - 或在 CMake 配置中显式指定 `Qt6_DIR` / `CMAKE_PREFIX_PATH`
 
+## Windows 安装包打包
+
+项目支持在 Windows 下通过 CPack 生成安装包：
+
+- `.exe`（NSIS）
+- `.msi`（WiX）
+
+推荐使用一键脚本（项目根目录执行）：
+
+```powershell
+.\scripts\package-windows.ps1
+```
+
+默认会将安装包统一复制到：
+
+- `disk/windows`
+
+详细说明见：
+
+- `doc/Windows-打包说明.md`
+
 ## 技术选型
 
 >

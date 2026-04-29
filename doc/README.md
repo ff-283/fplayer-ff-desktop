@@ -24,6 +24,14 @@
 - `推拉流-开发文档.md`
   - 推拉流实现细节、链路设计、关键模块
 
+- `Windows-打包说明.md`
+  - Windows 下安装包产物（`.exe` / `.msi`）生成方式
+  - 一键脚本 `scripts/package-windows.ps1` 使用说明
+
+- `release-packaging.md`
+  - 对齐 mobile 风格的 desktop 发包规范文档
+  - 包含脚本行为、参数矩阵、成功判定与发布流程
+
 - `屏幕捕获模式-设计与拆分说明.md`
   - 屏幕采集链路设计、模式拆分与约束
 

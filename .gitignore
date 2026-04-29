@@ -10,3 +10,18 @@
 /httpRequests/
 .idea/
 /*build*
+
+# Desktop packaging outputs (do not commit)
+/disk/
+/dist/
+/_CPack_Packages/
+/CPackConfig.cmake
+/CPackSourceConfig.cmake
+/*.msi
+/*.exe
+/*.zip
+/*.7z
+
+# Common local build folders
+/.vs/
+/.cache/

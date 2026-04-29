@@ -50,6 +50,28 @@ if (UNIX AND NOT APPLE)
     set(CPACK_DEBIAN_FILE_NAME DEB-DEFAULT)
     set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
 endif()
+
+if (WIN32 AND MSVC)
+    # Use both generators: NSIS for setup.exe and WIX for msi.
+    set(CPACK_GENERATOR "NSIS;WIX")
+
+    set(CPACK_PACKAGE_NAME "FPlayer Desktop")
+    set(CPACK_PACKAGE_VENDOR "fplayer")
+    set(CPACK_PACKAGE_CONTACT "fplayer@local")
+    set(CPACK_PACKAGE_VERSION "0.1.0")
+    set(CPACK_PACKAGE_INSTALL_DIRECTORY "FPlayerDesktop")
+
+    # NSIS metadata.
+    set(CPACK_NSIS_PACKAGE_NAME "FPlayer Desktop")
+    set(CPACK_NSIS_DISPLAY_NAME "FPlayer Desktop")
+    set(CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL ON)
+
+    # WIX metadata.
+    # Upgrade GUID should stay stable across versions to enable upgrades.
+    set(CPACK_WIX_UPGRADE_GUID "659644c7-7eca-4dbf-8884-682d0c6b761c")
+    # Auto-generate product GUID for each build.
+    set(CPACK_WIX_PRODUCT_GUID "*")
+endif()
 include(CPack)
 
 
