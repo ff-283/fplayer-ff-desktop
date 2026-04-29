@@ -9,6 +9,9 @@ file(GLOB_RECURSE uis CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/*.ui)
 file(GLOB_RECURSE qrcs CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/res/*.qrc)
 
 target_sources(${PROJECT_NAME} PRIVATE ${src} ${uis} ${qrcs})
+if (WIN32)
+    target_sources(${PROJECT_NAME} PRIVATE app_icon.rc)
+endif()
 target_link_libraries(${PROJECT_NAME} PRIVATE Qt6::Core Qt6::Widgets Qt6::Gui)
 target_link_libraries(${PROJECT_NAME} PRIVATE FPlayer_Common FPlayer_Widget FPlayer_Api)
 

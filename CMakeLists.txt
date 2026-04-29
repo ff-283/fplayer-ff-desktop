@@ -52,6 +52,8 @@ if (UNIX AND NOT APPLE)
 endif()
 
 if (WIN32 AND MSVC)
+    set(FPLAYER_WINDOWS_ICON "${CMAKE_SOURCE_DIR}/app/res/icon/LOGO_ICON_CUTED.ico")
+
     # Use both generators: NSIS for setup.exe and WIX for msi.
     set(CPACK_GENERATOR "NSIS;WIX")
 
@@ -65,12 +67,15 @@ if (WIN32 AND MSVC)
     set(CPACK_NSIS_PACKAGE_NAME "FPlayer Desktop")
     set(CPACK_NSIS_DISPLAY_NAME "FPlayer Desktop")
     set(CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL ON)
+    set(CPACK_NSIS_MUI_ICON "${FPLAYER_WINDOWS_ICON}")
+    set(CPACK_NSIS_MUI_UNIICON "${FPLAYER_WINDOWS_ICON}")
 
     # WIX metadata.
     # Upgrade GUID should stay stable across versions to enable upgrades.
     set(CPACK_WIX_UPGRADE_GUID "659644c7-7eca-4dbf-8884-682d0c6b761c")
     # Auto-generate product GUID for each build.
     set(CPACK_WIX_PRODUCT_GUID "*")
+    set(CPACK_WIX_PRODUCT_ICON "${FPLAYER_WINDOWS_ICON}")
 endif()
 include(CPack)
 
