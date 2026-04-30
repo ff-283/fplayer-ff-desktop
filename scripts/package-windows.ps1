@@ -9,7 +9,9 @@ param(
     [string]$CMakePath = "",
     [string]$CPackPath = "",
     [string]$Qt6Dir = "",
-    [string]$CMakePrefixPath = ""
+    [string]$CMakePrefixPath = "",
+    [string]$Version = "",
+    [string]$BrandIconPng = "doc/img/icons/icon.png"
 )
 
 $ErrorActionPreference = "Stop"
@@ -67,6 +69,45 @@ function Invoke-Step {
     if ($LASTEXITCODE -ne 0) {
         throw "Step failed: $Title (exit code: $LASTEXITCODE)"
     }
+}
+
+function Sync-BrandIconAssets {
+    param(
+        [Parameter(Mandatory = $true)][string]$ProjectRoot,
+        [Parameter(Mandatory = $true)][string]$BrandIconPngPath
+    )
+
+    $resolvedPng = if ([System.IO.Path]::IsPathRooted($BrandIconPngPath)) {
+        $BrandIconPngPath
+    }
+    else {
+        Join-Path $ProjectRoot $BrandIconPngPath
+    }
+    if (-not (Test-Path $resolvedPng)) {
+        throw "Brand icon png not found: $resolvedPng"
+    }
+
+    $magickExe = Resolve-Executable -Name "magick" -FallbackPaths @(
+        (Join-Path $env:ProgramFiles "ImageMagick-7.1.2-Q16-HDRI\magick.exe"),
+        (Join-Path ${env:ProgramFiles(x86)} "ImageMagick-7.1.2-Q16-HDRI\magick.exe")
+    )
+    if (-not $magickExe) {
+        throw 'ImageMagick not found. Install ImageMagick or add "magick" to PATH.'
+    }
+
+    $widgetIconPng = Join-Path $ProjectRoot "widget/res/icon/icon.png"
+    $appIconIco = Join-Path $ProjectRoot "app/res/icon/icon.ico"
+
+    New-Item -ItemType Directory -Force -Path (Split-Path $widgetIconPng -Parent) | Out-Null
+    New-Item -ItemType Directory -Force -Path (Split-Path $appIconIco -Parent) | Out-Null
+    Copy-Item -Path $resolvedPng -Destination $widgetIconPng -Force
+
+    & $magickExe $resolvedPng -define "icon:auto-resize=256,128,64,48,32,16" $appIconIco
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to generate ico from png: $resolvedPng"
+    }
+
+    Write-Host ("Synced brand icon assets from: {0}" -f $resolvedPng) -ForegroundColor Green
 }
 
 if (($env:OS -ne "Windows_NT") -and (-not ($PSVersionTable.PSVersion.Major -ge 6 -and $IsWindows))) {
@@ -172,6 +213,8 @@ $absBuildDir = Join-Path $projectRoot $BuildDir
 $absInstallDir = Join-Path $projectRoot $InstallDir
 $absOutputDir = Join-Path $projectRoot $OutputDir
 
+Invoke-Step "Sync brand icon assets" { Sync-BrandIconAssets -ProjectRoot $projectRoot.Path -BrandIconPngPath $BrandIconPng }
+
 $configureArgs = @(
     "-S", $projectRoot.Path,
     "-B", $absBuildDir,
@@ -180,6 +223,7 @@ $configureArgs = @(
 if ($Generator -ne "") { $configureArgs += @("-G", $Generator) }
 if ($Qt6Dir -ne "") { $configureArgs += @("-DQt6_DIR=$Qt6Dir") }
 if ($CMakePrefixPath -ne "") { $configureArgs += @("-DCMAKE_PREFIX_PATH=$CMakePrefixPath") }
+if ($Version -ne "") { $configureArgs += @("-DFPLAYER_PACKAGE_VERSION=$Version") }
 
 Invoke-Step "Configure project" { & $cmakeExe @configureArgs }
 Invoke-Step "Build ($Config)" { & $cmakeExe --build $absBuildDir --config $Config }

@@ -5,6 +5,7 @@
 #include <fplayer/widget/fvideoview.h>
 #include <fplayer/common/fglwidget/fglwidget.h>
 #include <fplayer/common/screenframebus/screenframebus.h>
+#include <fplayer/common/cameraframebus/cameraframebus.h>
 
 #include <QVBoxLayout>
 #include <QCamera>
@@ -14,6 +15,7 @@
 #include <QDebug>
 #include <qicon.h>
 #include <QApplication>
+#include <QCoreApplication>
 #include <QLineEdit>
 #include <QTextEdit>
 #include <QPlainTextEdit>
@@ -42,6 +44,7 @@
 #include <QFormLayout>
 #include <QPushButton>
 #include <QMessageBox>
+#include <QSystemTrayIcon>
 #include <QTextEdit>
 #include <QSpinBox>
 #include <QRegularExpression>
@@ -64,6 +67,7 @@
 #include <QEasingCurve>
 #include <QUuid>
 #include <QClipboard>
+#include <QImage>
 #include <QTcpServer>
 #include <QHostAddress>
 #include <QNetworkInterface>
@@ -76,6 +80,10 @@
 #include <QUrl>
 #include <QUrlQuery>
 #include <QPointer>
+#include <QDateTime>
+#include <QDir>
+#include <QFile>
+#include <QStandardPaths>
 #include <QCloseEvent>
 #include <QWindowStateChangeEvent>
 #include <QApplication>
@@ -205,6 +213,89 @@ QStringList collectLanIpv4List()
 	}
 	return list;
 }
+
+void showNonBlockingHint(QWidget* anchor, const QString& text, int durationMs = 2200)
+{
+	if (!anchor)
+	{
+		return;
+	}
+	auto* toast = new QLabel(text);
+	toast->setWindowFlags(Qt::ToolTip | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
+	toast->setAttribute(Qt::WA_DeleteOnClose, true);
+	toast->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+	toast->setWordWrap(true);
+	toast->setMargin(10);
+	toast->setStyleSheet(QStringLiteral(
+		"QLabel{background:rgba(23,28,44,235);color:#f7fbff;border:1px solid #6f86c6;border-radius:8px;font-weight:600;}"));
+	toast->setMinimumWidth(320);
+	toast->setMaximumWidth(560);
+	toast->adjustSize();
+	const QRect anchorRect = anchor->rect();
+	const QPoint topRight = anchor->mapToGlobal(anchorRect.topRight());
+	const int x = topRight.x() - toast->width() - 18;
+	const int y = topRight.y() + 18;
+	toast->move(x, y);
+	toast->show();
+	QTimer::singleShot(durationMs, toast, &QWidget::close);
+}
+
+inline int clampRgb(const int v)
+{
+	return v < 0 ? 0 : (v > 255 ? 255 : v);
+}
+
+QImage i420ToImage(const QByteArray& yPlane,
+                   const QByteArray& uPlane,
+                   const QByteArray& vPlane,
+                   const int width,
+                   const int height,
+                   const int yStride,
+                   const int uStride,
+                   const int vStride)
+{
+	if (width <= 0 || height <= 0 || yStride <= 0 || uStride <= 0 || vStride <= 0)
+	{
+		return {};
+	}
+	const int uvW = (width + 1) / 2;
+	const int uvH = (height + 1) / 2;
+	if (yPlane.size() < yStride * height || uPlane.size() < uStride * uvH || vPlane.size() < vStride * uvH)
+	{
+		return {};
+	}
+	QImage image(width, height, QImage::Format_RGB888);
+	if (image.isNull())
+	{
+		return {};
+	}
+	const auto* yData = reinterpret_cast<const quint8*>(yPlane.constData());
+	const auto* uData = reinterpret_cast<const quint8*>(uPlane.constData());
+	const auto* vData = reinterpret_cast<const quint8*>(vPlane.constData());
+	for (int yy = 0; yy < height; ++yy)
+	{
+		uchar* rgb = image.scanLine(yy);
+		const int uvY = yy / 2;
+		for (int xx = 0; xx < width; ++xx)
+		{
+			const int uvX = xx / 2;
+			const int Y = yData[yy * yStride + xx];
+			const int U = uData[uvY * uStride + uvX];
+			const int V = vData[uvY * vStride + uvX];
+			const int c = Y - 16;
+			const int d = U - 128;
+			const int e = V - 128;
+			const int r = (298 * c + 409 * e + 128) >> 8;
+			const int g = (298 * c - 100 * d - 208 * e + 128) >> 8;
+			const int b = (298 * c + 516 * d + 128) >> 8;
+			rgb[xx * 3 + 0] = static_cast<uchar>(clampRgb(r));
+			rgb[xx * 3 + 1] = static_cast<uchar>(clampRgb(g));
+			rgb[xx * 3 + 2] = static_cast<uchar>(clampRgb(b));
+		}
+	}
+	return image;
+}
+
 
 bool requestServiceStreamStart(const QString& gatewayBaseUrl,
                                const QString& app,
@@ -509,6 +600,7 @@ public:
 		}
 		updateContentGeometry();
 	}
+	std::function<void(const QRect& oldRect, const QRect& newRect)> onContentGeometryChanged;
 
 protected:
 	void resizeEvent(QResizeEvent* event) override
@@ -539,7 +631,17 @@ private:
 		}
 		const int x = (r.width() - cw) / 2;
 		const int y = (r.height() - ch) / 2;
-		m_content->setGeometry(x, y, qMax(1, cw), qMax(1, ch));
+		const QRect nextRect(x, y, qMax(1, cw), qMax(1, ch));
+		const QRect oldRect = m_content->geometry();
+		if (oldRect == nextRect)
+		{
+			return;
+		}
+		m_content->setGeometry(nextRect);
+		if (onContentGeometryChanged)
+		{
+			onContentGeometryChanged(oldRect, nextRect);
+		}
 	}
 
 	int m_aspectW = 16;
@@ -1254,6 +1356,11 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 	setAttribute(Qt::WA_StyledBackground, true);
 	setStyleSheet(QStringLiteral(
 		"QWidget#CaptureWindow{background:#090d14;color:#d6e2f1;}"
+		"QLabel{color:#dfe8f6;}"
+		"QCheckBox{color:#dfe8f6;spacing:6px;}"
+		"QCheckBox::indicator{width:14px;height:14px;}"
+		"QCheckBox::indicator:unchecked{border:1px solid #7d8da5;background:#0d1320;border-radius:3px;}"
+		"QCheckBox::indicator:checked{border:1px solid #9f84d6;background:#6f49b5;border-radius:3px;}"
 		"QMenuBar{background:#0d1320;color:#e7defc;border:none;padding:4px 6px;}"
 		"QMenuBar::item{background:transparent;padding:6px 10px;border-radius:5px;}"
 		"QMenuBar::item:selected{background:#241c3c;}"
@@ -1270,11 +1377,12 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		"QToolButton:hover{background:#241c3d;}"
 		"QComboBox,QLineEdit,QSpinBox,QAbstractSpinBox,QListWidget,QTextEdit{"
 		"background:#0d0b1d;border:1px solid #4f3b79;border-radius:6px;color:#e2d9f7;padding:3px 4px;}"
+		"QLineEdit::placeholder{color:#95a2b8;}"
+		"QComboBox:disabled,QLineEdit:disabled,QSpinBox:disabled,QAbstractSpinBox:disabled,QTextEdit:disabled,QPushButton:disabled{color:#a8b4c9;}"
 		"QComboBox:focus,QLineEdit:focus,QSpinBox:focus,QAbstractSpinBox:focus,QTextEdit:focus{background:#15122a;border-color:#8b67c7;}"
 		"QComboBox::drop-down{border-left:1px solid #5f478f;width:22px;}"
 		"QComboBox::down-arrow{image:none;width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:6px solid #ccb8f2;}"
-		"QComboBox QAbstractItemView{background:#131128;border:none;selection-background-color:#3b2964;}"
-		"QCheckBox{spacing:6px;}"
+		"QComboBox QAbstractItemView{background:#131128;color:#e6deff;border:1px solid #4f3b79;selection-background-color:#3b2964;selection-color:#ffffff;}"
 		"QSlider::groove:horizontal{background:#2a2340;height:6px;border-radius:3px;}"
 		"QSlider::handle:horizontal{background:#bc8cff;border:1px solid #dfc4ff;width:14px;margin:-5px 0;border-radius:7px;}"
 		"QListWidget::item{padding:6px;border-radius:5px;}"
@@ -1285,6 +1393,8 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		"#wgtDevices{background:transparent;}"
 	));
 	m_service = new fplayer::Service();
+	m_capturePrefPath = m_service ? m_service->systemSettingsPath() : QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("system_settings.yaml"));
+	loadCapturePreferences();
 	m_pullReservedPort = choosePullListenPort(m_pullReservedPort);
 	m_modeMenuBar = new QMenuBar(this);
 	ui->verticalLayout->setMenuBar(m_modeMenuBar);
@@ -1333,6 +1443,12 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 	this->ui->btnFullscreen->setFocusPolicy(Qt::NoFocus);
 	this->ui->chkCaptureCursor->setVisible(false);
 	this->ui->cmbScreenFps->setVisible(false);
+	m_mainRecordTimer = new QTimer(this);
+	m_mainRecordTimer->setInterval(500);
+	connect(m_mainRecordTimer, &QTimer::timeout, this, &CaptureWindow::updateRecordButtonUi);
+	m_pullRecordTimer = new QTimer(this);
+	m_pullRecordTimer->setInterval(500);
+	connect(m_pullRecordTimer, &QTimer::timeout, this, &CaptureWindow::updatePullRecordButtonUi);
 
 	m_fileProgress = new QSlider(Qt::Horizontal, this);
 	m_fileProgress->setMinimum(0);
@@ -1380,31 +1496,25 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 	m_debugStatsTimer->setInterval(500);
 	connect(m_debugStatsTimer, &QTimer::timeout, this, &CaptureWindow::updateDebugStatsUi);
 	auto refreshFullscreenButton = [this]() {
-		if (this->isFullScreen())
-		{
-			this->ui->btnFullscreen->setIcon(QIcon::fromTheme(QIcon::ThemeIcon::ViewRestore));
-		}
-		else
-		{
-			this->ui->btnFullscreen->setIcon(QIcon::fromTheme(QIcon::ThemeIcon::ViewFullscreen));
-		}
+		Q_UNUSED(this);
+		this->ui->btnFullscreen->setIcon(QIcon::fromTheme(QIcon::ThemeIcon::ViewFullscreen));
 	};
 
 	// 1) 初始化摄像头
 	m_service->initCamera(backendType);
 	// 文件播放模块当前仅实现 FFmpeg 后端，固定用 FFmpeg 初始化播放器。
 	m_service->initPlayer(fplayer::MediaBackendType::FFmpeg);
-	// 屏幕捕获后端选择：
-	// - Windows 且构建启用了 DXGI 模块时：使用 DXGI（Desktop Duplication）
-	// - 其他情况：回退到 FFmpeg（gdigrab）路径
-#if defined(_WIN32) && defined(FPLAYER_WITH_SCREEN_DXGI)
-	m_screenBackendType = fplayer::MediaBackendType::Dxgi;
-#else
-	m_screenBackendType = fplayer::MediaBackendType::FFmpeg;
+	// 屏幕捕获后端选择遵循系统设置；若当前构建不支持 DXGI，则自动回退 FFmpeg。
+#if !(defined(_WIN32) && defined(FPLAYER_WITH_SCREEN_DXGI))
+	if (m_screenBackendType == fplayer::MediaBackendType::Dxgi)
+	{
+		m_screenBackendType = fplayer::MediaBackendType::FFmpeg;
+	}
 #endif
 	m_service->initScreenCapture(m_screenBackendType);
 	m_service->initStream(fplayer::MediaBackendType::FFmpeg);
 	this->ui->wgtView->setBackendType(backendType);
+	setupTrayIcon();
 
 	// 2) 绑定预览窗口
 	m_service->bindCameraPreview(this->ui->wgtView);
@@ -1601,6 +1711,9 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 	connect(this->ui->btnPlay, &QPushButton::clicked, [this]() {
 		this->togglePlayPause();
 	});
+	connect(this->ui->btnCut, &QPushButton::clicked, this, &CaptureWindow::handleMainCaptureScreenshot);
+	connect(this->ui->btnCast, &QPushButton::clicked, this, &CaptureWindow::handleMainCaptureRecordToggle);
+	connect(this->ui->btnSettings, &QPushButton::clicked, this, &CaptureWindow::handleMainCaptureSettings);
 
 	auto switchToCameraMode = [this]() {
 		setComposeMode(false);
@@ -1734,18 +1847,9 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		auto* layout = new QFormLayout(&dlg);
 		layout->setVerticalSpacing(10);
 		layout->setRowWrapPolicy(QFormLayout::WrapLongRows);
-		auto addRecent = [](QStringList& list, const QString& value) {
-			const QString v = value.trimmed();
-			if (v.isEmpty())
-			{
-				return;
-			}
-			list.removeAll(v);
-			list.prepend(v);
-			while (list.size() > 8)
-			{
-				list.removeLast();
-			}
+		auto addRecent = [this](QStringList& list, const QString& value) {
+			fplayer::Service::addRecentSetting(list, value, 8);
+			saveCapturePreferences();
 		};
 		auto* cmbProtocol = new QComboBox(&dlg);
 		cmbProtocol->addItem(tr("RTMP"), QStringLiteral("rtmp://127.0.0.1:1935/live/stream"));
@@ -1755,11 +1859,11 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		const bool fileScene = (m_captureMode == CaptureMode::File);
 		const bool screenScene = (m_captureMode == CaptureMode::Screen);
 		const bool composeScene = m_isComposeMode;
-		auto* lblInputMode = new QLabel(screenScene
-			                                ? tr("来源：屏幕采集后端（由 Service 统一编排）")
-			                                : (fileScene
-				                                   ? tr("来源：当前文件模式媒体源")
-				                                   : (composeScene ? tr("来源：组合预览窗口（所见即所得）") : tr("来源：当前摄像头模式"))),
+		auto* lblInputMode = new QLabel(composeScene
+			                                ? tr("来源：组合模式预览画布（由 Service 统一编排）")
+			                                : (screenScene
+				                                   ? tr("来源：屏幕采集后端（由 Service 统一编排）")
+				                                   : (fileScene ? tr("来源：当前文件模式媒体源") : tr("来源：当前摄像头模式"))),
 		                            &dlg);
 		lblInputMode->setWordWrap(true);
 		lblInputMode->setMinimumHeight(lblInputMode->fontMetrics().lineSpacing() * 2 + 6);
@@ -1784,15 +1888,21 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		auto* cmbPushRouteMode = new QComboBox(&dlg);
 		cmbPushRouteMode->addItem(tr("P2P 直连"), QStringLiteral("p2p"));
 		cmbPushRouteMode->addItem(tr("推送服务端"), QStringLiteral("service"));
-		cmbPushRouteMode->setCurrentIndex(0);
-		auto* edtGateway = new QLineEdit(QStringLiteral("http://127.0.0.1:9000"), &dlg);
+		{
+			const int idx = cmbPushRouteMode->findData(m_pushRouteMode);
+			cmbPushRouteMode->setCurrentIndex(idx >= 0 ? idx : 0);
+		}
+		auto* edtGateway = new QLineEdit(m_pushGateway, &dlg);
 		edtGateway->setPlaceholderText(tr("服务地址，例如 http://127.0.0.1:9000"));
-		auto* edtServiceApp = new QLineEdit(QStringLiteral("live"), &dlg);
-		auto* edtServiceStream = new QLineEdit(QStringLiteral("stream001"), &dlg);
+		auto* edtServiceApp = new QLineEdit(m_pushServiceApp, &dlg);
+		auto* edtServiceStream = new QLineEdit(m_pushServiceStream, &dlg);
 		auto* cmbServiceMode = new QComboBox(&dlg);
 		cmbServiceMode->addItem(tr("广播分发（RTMP + FLV + HLS）"), QStringLiteral("broadcast"));
 		cmbServiceMode->addItem(tr("广播分发 + HTTP-FLV 优先（含 HLS）"), QStringLiteral("httpflv"));
-		cmbServiceMode->setCurrentIndex(1);
+		{
+			const int idx = cmbServiceMode->findData(m_pushServiceMode);
+			cmbServiceMode->setCurrentIndex(idx >= 0 ? idx : 1);
+		}
 		auto* lblServicePlayUrl = new QLabel(tr("未创建"), &dlg);
 		lblServicePlayUrl->setWordWrap(true);
 		lblServicePlayUrl->setTextInteractionFlags(Qt::TextSelectableByMouse);
@@ -1806,6 +1916,7 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		auto* spFps = new QSpinBox(&dlg);
 		spFps->setRange(0, 240);
 		spFps->setSpecialValueText(tr("跟随当前"));
+		spFps->setValue(qBound(0, m_pushFps, 240));
 		auto* cmbSize = new QComboBox(&dlg);
 		cmbSize->setEditable(true);
 		cmbSize->setInsertPolicy(QComboBox::NoInsert);
@@ -1841,10 +1952,20 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 				appendSizeOption(s.width(), s.height());
 			}
 		};
+		auto appendComposeSizes = [this, appendSizeOption]() {
+			const int aw = qMax(1, m_composeAspectW);
+			const int ah = qMax(1, m_composeAspectH);
+			const QList<int> widths{3840, 2560, 1920, 1600, 1280, 960, 854, 640};
+			for (const int w : widths)
+			{
+				int h = qMax(2, ((w * ah) / aw) & ~1);
+				appendSizeOption(w, h);
+			}
+		};
 		auto* spBitrate = new QSpinBox(&dlg);
 		spBitrate->setRange(0, 50000);
 		spBitrate->setSpecialValueText(tr("跟随当前"));
-		spBitrate->setValue(0);
+		spBitrate->setValue(qBound(0, m_pushBitrateKbps, 50000));
 		spBitrate->setSuffix(tr(" kbps"));
 		auto* cmbEncoder = new QComboBox(&dlg);
 		cmbEncoder->addItem(tr("自动（优先NVENC/AMF）"), QStringLiteral("auto"));
@@ -1921,8 +2042,63 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		cmbAudioInput->setEnabled(!fileScene);
 		cmbAudioOutput->setEnabled(!fileScene);
 		auto* chkKeepAspect = new QCheckBox(tr("保持宽高比"), &dlg);
-		chkKeepAspect->setChecked(true);
-		if (screenScene)
+		chkKeepAspect->setChecked(m_pushKeepAspect);
+		if (!m_pushProtocolTemplate.trimmed().isEmpty())
+		{
+			cmbOutput->setCurrentText(m_pushProtocolTemplate);
+			const int pidx = cmbProtocol->findData(m_pushProtocolTemplate);
+			if (pidx >= 0)
+			{
+				cmbProtocol->setCurrentIndex(pidx);
+			}
+		}
+		if (!m_pushSize.trimmed().isEmpty())
+		{
+			cmbSize->setCurrentText(m_pushSize);
+		}
+		{
+			const int eidx = cmbEncoder->findData(m_pushEncoder);
+			if (eidx >= 0)
+			{
+				cmbEncoder->setCurrentIndex(eidx);
+			}
+		}
+		{
+			const int aInIdx = cmbAudioInput->findData(m_pushAudioInput);
+			if (aInIdx >= 0)
+			{
+				cmbAudioInput->setCurrentIndex(aInIdx);
+			}
+		}
+		{
+			const int aOutIdx = cmbAudioOutput->findData(m_pushAudioOutput);
+			if (aOutIdx >= 0)
+			{
+				cmbAudioOutput->setCurrentIndex(aOutIdx);
+			}
+		}
+		if (composeScene)
+		{
+			// 组合模式尺寸来源固定为“画布比例 + 预设档位”，完全不依赖素材选择状态。
+			cmbSize->clear();
+			const int aw = qMax(1, m_composeAspectW);
+			const int ah = qMax(1, m_composeAspectH);
+			const QList<int> widths{3840, 2560, 1920, 1600, 1280, 960, 854, 640};
+			for (const int w : widths)
+			{
+				const int h = qMax(2, ((w * ah) / aw) & ~1);
+				const QString s = QStringLiteral("%1x%2").arg(w).arg(h);
+				cmbSize->addItem(s, s);
+			}
+			QString composeSize = m_composeOutputSize.trimmed();
+			if (composeSize.isEmpty() && m_composeSizeCombo && m_composeSizeCombo->count() > 0)
+			{
+				composeSize = m_composeSizeCombo->currentData().toString().trimmed();
+			}
+			const int idx = composeSize.isEmpty() ? -1 : cmbSize->findData(composeSize);
+			cmbSize->setCurrentIndex(idx >= 0 ? idx : 0);
+		}
+		else if (screenScene)
 		{
 			const int curFps = this->m_service ? this->m_service->screenFrameRate() : 30;
 			spFps->setValue(curFps);
@@ -2043,7 +2219,7 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 			}
 		});
 		layout->addRow(lblInputMode);
-		if (fileScene)
+		if (fileScene && !composeScene)
 		{
 			layout->addRow(tr("输入源"), lblInputValue);
 		}
@@ -2168,6 +2344,20 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		         addRecent, applyPushUiRunningState]() {
 			QString pushOutput = cmbOutput->currentText().trimmed();
 			const bool viaService = cmbPushRouteMode->currentData().toString() == QStringLiteral("service");
+			m_pushGateway = edtGateway->text().trimmed();
+			m_pushServiceApp = edtServiceApp->text().trimmed();
+			m_pushServiceStream = edtServiceStream->text().trimmed();
+			m_pushRouteMode = cmbPushRouteMode->currentData().toString();
+			m_pushServiceMode = cmbServiceMode->currentData().toString();
+			m_pushProtocolTemplate = cmbOutput->currentText().trimmed();
+			m_pushFps = spFps->value();
+			m_pushSize = cmbSize->currentText().trimmed();
+			m_pushBitrateKbps = spBitrate->value();
+			m_pushEncoder = cmbEncoder->currentData().toString();
+			m_pushAudioInput = cmbAudioInput->currentData().toString();
+			m_pushAudioOutput = cmbAudioOutput->currentData().toString();
+			m_pushKeepAspect = chkKeepAspect->isChecked();
+			saveCapturePreferences();
 			if (viaService)
 			{
 				QString publishRtmp;
@@ -2322,18 +2512,9 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 			m_pullMonitorDialog->activateWindow();
 			return;
 		}
-		auto addRecent = [](QStringList& list, const QString& value) {
-			const QString v = value.trimmed();
-			if (v.isEmpty())
-			{
-				return;
-			}
-			list.removeAll(v);
-			list.prepend(v);
-			while (list.size() > 8)
-			{
-				list.removeLast();
-			}
+		auto addRecent = [this](QStringList& list, const QString& value) {
+			fplayer::Service::addRecentSetting(list, value, 8);
+			saveCapturePreferences();
 		};
 		auto* dlg = new QDialog(this);
 		dlg->setAttribute(Qt::WA_DeleteOnClose, true);
@@ -2364,38 +2545,14 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		auto* btnCopyUrl = new QPushButton(tr("复制"), urlRow);
 		urlLayout->addWidget(lblPullUrl, 1);
 		urlLayout->addWidget(btnCopyUrl, 0);
-		auto* cmbOutput = new QComboBox(dlg);
-		cmbOutput->setEditable(true);
-		{
-			QStringList outputItems = m_recentPullOutputs;
-			if (outputItems.isEmpty())
-			{
-				outputItems << QStringLiteral("D:/temp/pull.mp4");
-				outputItems << QStringLiteral("pull_output.mp4");
-			}
-			cmbOutput->addItems(outputItems);
-		}
-		auto* btnBrowseOutput = new QPushButton(tr("选择输出文件"), dlg);
-		connect(btnBrowseOutput, &QPushButton::clicked, dlg, [cmbOutput, this]() {
-			const QString outPath = QFileDialog::getSaveFileName(this, tr("选择拉流输出文件"), QString(),
-			                                                     tr("Media Files (*.mp4 *.mkv *.flv);;All Files (*.*)"));
-			if (!outPath.isEmpty())
-			{
-				cmbOutput->setCurrentText(outPath);
-			}
-		});
-		auto* cmbPullMode = new QComboBox(dlg);
-		cmbPullMode->addItem(tr("监看模式"), QStringLiteral("preview"));
-		cmbPullMode->addItem(tr("录制模式"), QStringLiteral("record"));
-		cmbPullMode->setCurrentIndex(0);
 		auto* cmbPullRouteMode = new QComboBox(dlg);
 		cmbPullRouteMode->addItem(tr("P2P 拉流"), QStringLiteral("p2p"));
 		cmbPullRouteMode->addItem(tr("服务端拉流"), QStringLiteral("service"));
 		cmbPullRouteMode->setCurrentIndex(0);
-		auto* edtPullGateway = new QLineEdit(QStringLiteral("http://127.0.0.1:9000"), dlg);
+		auto* edtPullGateway = new QLineEdit(m_pullGateway, dlg);
 		edtPullGateway->setPlaceholderText(tr("服务地址，例如 http://127.0.0.1:9000"));
-		auto* edtPullServiceApp = new QLineEdit(QStringLiteral("live"), dlg);
-		auto* edtPullServiceStream = new QLineEdit(QStringLiteral("stream001"), dlg);
+		auto* edtPullServiceApp = new QLineEdit(m_pullServiceApp, dlg);
+		auto* edtPullServiceStream = new QLineEdit(m_pullServiceStream, dlg);
 		edtPullServiceStream->setPlaceholderText(tr("输入 stream（如 stream001）"));
 		auto* cmbPullServicePrefer = new QComboBox(dlg);
 		cmbPullServicePrefer->addItem(tr("优先 HTTP-FLV"), QStringLiteral("httpflv"));
@@ -2502,18 +2659,15 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		buttons->addButton(btnDiag, QDialogButtonBox::ActionRole);
 		m_pullStartButton = btnStart;
 		m_pullStopButton = btnStop;
-		auto applyPullUiRunningState = [btnStart, btnStop, cmbPullMode, cmbPullRouteMode, cmbProtocol, edtStreamKey, cmbOutput,
-		                                btnBrowseOutput, edtPullGateway, edtPullServiceApp, edtPullServiceStream, cmbPullServicePrefer,
+		auto applyPullUiRunningState = [btnStart, btnStop, cmbPullRouteMode, cmbProtocol, edtStreamKey,
+		                                edtPullGateway, edtPullServiceApp, edtPullServiceStream, cmbPullServicePrefer,
 		                                btnResolvePullUrl](
 			bool running) {
 			btnStart->setEnabled(!running);
 			btnStop->setEnabled(running);
-			cmbPullMode->setEnabled(!running);
 			cmbPullRouteMode->setEnabled(!running);
 			cmbProtocol->setEnabled(!running);
 			edtStreamKey->setEnabled(!running);
-			cmbOutput->setEnabled(!running);
-			btnBrowseOutput->setEnabled(!running);
 			edtPullGateway->setEnabled(!running);
 			edtPullServiceApp->setEnabled(!running);
 			edtPullServiceStream->setEnabled(!running);
@@ -2571,18 +2725,6 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 			refreshPullRouteUi();
 		});
 		refreshPullRouteUi();
-		auto refreshPullModeUi = [cmbPullMode, cmbOutput, btnBrowseOutput, layout]() {
-			const bool recordMode = cmbPullMode->currentData().toString() == QStringLiteral("record");
-			cmbOutput->setVisible(recordMode);
-			btnBrowseOutput->setVisible(recordMode);
-			if (QWidget* label = layout->labelForField(cmbOutput))
-			{
-				label->setVisible(recordMode);
-			}
-		};
-		connect(cmbPullMode, &QComboBox::currentTextChanged, dlg, [refreshPullModeUi]() {
-			refreshPullModeUi();
-		});
 		auto requestStopPullAsync = [this, dlg, applyPullUiRunningState]() {
 			if (!this->m_service)
 			{
@@ -2602,12 +2744,27 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 					return;
 				}
 				selfGuard->m_service->streamStop();
+				selfGuard->m_service->streamStopPullRecording();
+				if (selfGuard->m_pullRecordService)
+				{
+					LOG_INFO("[pull-record]", "stop record service on pull stop");
+					selfGuard->m_pullRecordService->streamStop();
+				}
 				QMetaObject::invokeMethod(selfGuard, [selfGuard, dlgGuard]() {
 					if (!selfGuard || !dlgGuard)
 					{
 						return;
 					}
 					dlgGuard->setProperty("pullStopping", false);
+					selfGuard->m_pullRecording = false;
+					selfGuard->m_pullRecordingViaMainService = false;
+					selfGuard->m_pullRecordOutputPath.clear();
+					selfGuard->m_pullSessionStartMs = 0;
+					if (selfGuard->m_pullRecordTimer)
+					{
+						selfGuard->m_pullRecordTimer->stop();
+					}
+					selfGuard->updatePullRecordButtonUi();
 					if (selfGuard->m_pullPreviewDialog)
 					{
 						selfGuard->m_pullPreviewDialog->close();
@@ -2653,10 +2810,14 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		});
 		logTimer->start();
 		connect(btnStart, &QPushButton::clicked, dlg,
-		        [this, dlg, cmbPullMode, cmbPullRouteMode, cmbOutput, makePullListenUrl, edtPullGateway, edtPullServiceApp, edtPullServiceStream,
+		        [this, dlg, cmbPullRouteMode, makePullListenUrl, edtPullGateway, edtPullServiceApp, edtPullServiceStream,
 		         cmbPullServicePrefer, lblServiceResolvedUrl, addRecent, applyPullUiRunningState, requestStopPullAsync]() {
 			QString pullInput = makePullListenUrl();
 			const bool viaService = cmbPullRouteMode->currentData().toString() == QStringLiteral("service");
+			m_pullGateway = edtPullGateway->text().trimmed();
+			m_pullServiceApp = edtPullServiceApp->text().trimmed();
+			m_pullServiceStream = edtPullServiceStream->text().trimmed();
+			saveCapturePreferences();
 			QString resolvedHttpFlv;
 			QString resolvedRtmp;
 			if (viaService)
@@ -2681,11 +2842,9 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 				                               .arg(resolvedHttpFlv.isEmpty() ? tr("无") : resolvedHttpFlv)
 				                               .arg(resolvedRtmp.isEmpty() ? tr("无") : resolvedRtmp));
 			}
-			const bool recordMode = cmbPullMode->currentData().toString() == QStringLiteral("record");
-			QString pullOutput = recordMode ? cmbOutput->currentText().trimmed() : QString();
-			if (pullInput.isEmpty() || (recordMode && pullOutput.isEmpty()))
+			if (pullInput.isEmpty())
 			{
-				QMessageBox::warning(this, tr("拉流失败"), recordMode ? tr("输入地址和保存路径不能为空。") : tr("输入地址不能为空。"));
+				QMessageBox::warning(this, tr("拉流失败"), tr("输入地址不能为空。"));
 				return;
 			}
 			bool started = false;
@@ -2713,7 +2872,8 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 				}
 				extra += tr("[服务端拉流] 尝试地址 %1/%2: %3\n").arg(attempt).arg(candidates.size()).arg(candidate);
 				dlg->setProperty("pullExtraLog", extra);
-				started = this->m_service->streamStartPull(candidate, pullOutput);
+				// 主链路负责预览；录制由独立录制链路承担，互不影响。
+				started = this->m_service->streamStartPull(candidate, QString());
 				if (!started)
 				{
 					extra += tr("[服务端拉流] 启动调用失败: %1\n").arg(this->m_service->streamLastError());
@@ -2738,11 +2898,40 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 				return;
 			}
 			this->m_service->streamSetPreviewPaused(false);
-			addRecent(m_recentPullInputs, pullInput);
-			if (recordMode)
+			m_pullCurrentInputUrl = pullInput;
+			m_pullRecordInputUrl = pullInput;
+			m_pullSessionStartMs = QDateTime::currentMSecsSinceEpoch();
+			if (m_pullRecordTimer)
 			{
-				addRecent(m_recentPullOutputs, pullOutput);
+				m_pullRecordTimer->start();
 			}
+			for (const QString& candidate : candidates)
+			{
+				const QString s = candidate.trimmed().toLower();
+				if (s.isEmpty())
+				{
+					continue;
+				}
+				const bool looksListener = s.contains(QStringLiteral("://0.0.0.0:")) ||
+				                           s.contains(QStringLiteral("://[::]:")) ||
+				                           s.contains(QStringLiteral("listen=1")) ||
+				                           s.contains(QStringLiteral("mode=listener"));
+				if (!looksListener)
+				{
+					m_pullRecordInputUrl = candidate.trimmed();
+					break;
+				}
+			}
+			if (m_pullRecordService)
+			{
+				m_pullRecordService->streamStop();
+			}
+			m_pullRecording = false;
+			if (m_pullRecordTimer)
+			{
+				m_pullRecordTimer->stop();
+			}
+			addRecent(m_recentPullInputs, pullInput);
 			applyPullUiRunningState(true);
 			dlg->setProperty("pullPreviewAutoOpened", false);
 			if (!m_pullPreviewDialog)
@@ -2758,8 +2947,13 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 				auto* ctrlRow = new QWidget(preview);
 				auto* ctrlLayout = new QHBoxLayout(ctrlRow);
 				ctrlLayout->setContentsMargins(0, 0, 0, 0);
-				auto* btnPause = new QPushButton(tr("暂停"), ctrlRow);
-				auto* btnRefresh = new QPushButton(tr("刷新"), ctrlRow);
+				auto* btnPause = new QPushButton(ctrlRow);
+				auto* btnRefresh = new QPushButton(ctrlRow);
+				auto* btnShot = new QPushButton(ctrlRow);
+				auto* btnRecord = new QPushButton(ctrlRow);
+				auto* btnSettings = new QPushButton(ctrlRow);
+				auto* btnFullscreen = new QPushButton(ctrlRow);
+				auto* lblRecordDuration = new QLabel(tr("拉流时长：00:00"), ctrlRow);
 				auto* sldVolume = new QSlider(Qt::Horizontal, ctrlRow);
 				auto* lblVolume = new QLabel(tr("音量"), ctrlRow);
 				auto* lblVolumeValue = new QLabel(ctrlRow);
@@ -2769,14 +2963,47 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 				sldVolume->setTickPosition(QSlider::TicksBelow);
 				sldVolume->setTickInterval(20);
 				sldVolume->setToolTip(tr("音量：%1%").arg(sldVolume->value()));
-				btnPause->setMinimumWidth(74);
-				btnRefresh->setMinimumWidth(74);
+				for (auto* b : {btnPause, btnRefresh, btnSettings, btnFullscreen})
+				{
+					b->setMinimumSize(40, 40);
+					b->setMaximumSize(40, 40);
+					b->setText(QString());
+					b->setFocusPolicy(Qt::NoFocus);
+					b->setIconSize(QSize(24, 24));
+				}
+				btnPause->setToolTip(tr("暂停/继续"));
+				btnRefresh->setToolTip(tr("刷新"));
+				btnShot->setToolTip(tr("截图"));
+				btnRecord->setToolTip(tr("录制"));
+				btnSettings->setToolTip(tr("设置"));
+				btnFullscreen->setToolTip(tr("全屏/退出全屏"));
+				btnShot->setMinimumHeight(40);
+				btnShot->setMaximumHeight(40);
+				btnShot->setMinimumWidth(80);
+				btnShot->setMaximumWidth(80);
+				btnRecord->setMinimumHeight(40);
+				btnRecord->setMaximumHeight(40);
+				btnRecord->setMinimumWidth(80);
+				btnRecord->setMaximumWidth(80);
+				btnShot->setText(tr("截图"));
+				btnPause->setIcon(QIcon::fromTheme(QIcon::ThemeIcon::MediaPlaybackPause));
+				btnRefresh->setIcon(QIcon::fromTheme(QStringLiteral("view-refresh")));
+				btnShot->setIcon(QIcon::fromTheme(QIcon::ThemeIcon::CameraPhoto));
+				btnRecord->setIcon(QIcon::fromTheme(QIcon::ThemeIcon::CameraVideo));
+				btnSettings->setIcon(QIcon::fromTheme(QStringLiteral("document-properties")));
+				btnFullscreen->setIcon(QIcon::fromTheme(QIcon::ThemeIcon::ViewFullscreen));
+				lblRecordDuration->setMinimumWidth(140);
 				lblVolume->setMinimumWidth(34);
 				lblVolumeValue->setMinimumWidth(46);
 				lblVolumeValue->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
 				lblVolumeValue->setText(tr("%1%").arg(sldVolume->value()));
 				ctrlLayout->addWidget(btnPause, 0);
 				ctrlLayout->addWidget(btnRefresh, 0);
+				ctrlLayout->addWidget(btnShot, 0);
+				ctrlLayout->addWidget(btnRecord, 0);
+				ctrlLayout->addWidget(btnSettings, 0);
+				ctrlLayout->addWidget(btnFullscreen, 0);
+				ctrlLayout->addWidget(lblRecordDuration, 0);
 				ctrlLayout->addStretch(1);
 				ctrlLayout->addSpacing(8);
 				ctrlLayout->addWidget(lblVolume, 0);
@@ -2786,10 +3013,28 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 				m_pullPreviewDialog = preview;
 				m_pullPreviewView = view;
 				m_pullVolumeSlider = sldVolume;
+				m_pullPreviewShotButton = btnShot;
+				m_pullPreviewRecordButton = btnRecord;
+				m_pullPreviewSettingsButton = btnSettings;
+				m_pullPreviewRecordDurationLabel = lblRecordDuration;
 				connect(preview, &QObject::destroyed, this, [this, requestStopPullAsync]() {
 					m_pullPreviewDialog = nullptr;
 					m_pullPreviewView = nullptr;
 					m_pullVolumeSlider = nullptr;
+					m_pullPreviewShotButton = nullptr;
+					m_pullPreviewRecordButton = nullptr;
+					m_pullPreviewSettingsButton = nullptr;
+					m_pullPreviewRecordDurationLabel = nullptr;
+					m_pullRecording = false;
+					m_pullSessionStartMs = 0;
+					if (m_pullRecordTimer)
+					{
+						m_pullRecordTimer->stop();
+					}
+					if (m_pullRecordService)
+					{
+						m_pullRecordService->streamStop();
+					}
 					if (m_service && m_service->streamIsRunning())
 					{
 						requestStopPullAsync();
@@ -2818,11 +3063,207 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 				connect(btnPause, &QPushButton::clicked, preview, [this, btnPause]() {
 					const bool paused = this->m_service->streamPreviewPaused();
 					this->m_service->streamSetPreviewPaused(!paused);
-					btnPause->setText(paused ? tr("暂停") : tr("继续"));
+					btnPause->setIcon(QIcon::fromTheme(paused ? QIcon::ThemeIcon::MediaPlaybackPause : QIcon::ThemeIcon::MediaPlaybackStart));
 				});
 				connect(btnRefresh, &QPushButton::clicked, preview, [this, dlg]() {
 					const QString prev = dlg->property("pullExtraLog").toString();
 					dlg->setProperty("pullExtraLog", prev + tr("[预览] 已刷新进程内预览总线（pull_preview）\n"));
+				});
+				connect(btnShot, &QPushButton::clicked, preview, [this, view, preview]() {
+					QImage shotImage;
+					fplayer::ScreenFrame frame;
+					if (fplayer::ScreenFrameBus::instance().snapshotIfNew(0, frame, QStringLiteral("pull_preview")) && frame.valid)
+					{
+						shotImage = i420ToImage(frame.y, frame.u, frame.v, frame.width, frame.height, frame.yStride, frame.uStride, frame.vStride);
+					}
+					if (shotImage.isNull())
+					{
+						shotImage = view->grab().toImage();
+					}
+					if (shotImage.isNull())
+					{
+						QMessageBox::warning(this, tr("截图失败"), tr("当前拉流预览为空，无法截图。"));
+						return;
+					}
+					QDir dir(m_screenshotSaveDir);
+					if (!dir.exists())
+					{
+						dir.mkpath(QStringLiteral("."));
+					}
+					const QString savePath = makeScreenshotFilePath(QStringLiteral("pull_preview_shot"));
+					if (!shotImage.save(savePath))
+					{
+						QMessageBox::warning(this, tr("截图失败"), tr("图片保存失败：%1").arg(savePath));
+						return;
+					}
+					showNonBlockingHint(preview, tr("截图已保存：%1").arg(QDir::toNativeSeparators(savePath)));
+				});
+				connect(btnSettings, &QPushButton::clicked, preview, [this, preview]() {
+					openCaptureSettingsDialog(preview);
+				});
+				connect(btnRecord, &QPushButton::clicked, preview, [this, dlg]() {
+					const auto activePullInputFromLog = [this]() {
+						if (!m_service)
+						{
+							return QString();
+						}
+						const QString log = m_service->streamRecentPullLog();
+						const QRegularExpression re(QStringLiteral(R"(\[拉流\]\s*输入地址:\s*(.+))"));
+						QRegularExpressionMatchIterator it = re.globalMatch(log);
+						QString lastInput;
+						while (it.hasNext())
+						{
+							const auto m = it.next();
+							lastInput = m.captured(1).trimmed();
+						}
+						return lastInput;
+					};
+					const auto currentPullIsListenerFromLog = [this]() {
+						if (!m_service)
+						{
+							return false;
+						}
+						const QString log = m_service->streamRecentPullLog();
+						const QRegularExpression re(QStringLiteral(R"(\[拉流\]\s*监听模式:\s*(yes|no))"),
+						                            QRegularExpression::CaseInsensitiveOption);
+						QRegularExpressionMatchIterator it = re.globalMatch(log);
+						QString lastFlag;
+						while (it.hasNext())
+						{
+							const auto m = it.next();
+							lastFlag = m.captured(1).trimmed().toLower();
+						}
+						return lastFlag == QStringLiteral("yes");
+					};
+					if (m_pullRecording)
+					{
+						if (m_service)
+						{
+							m_service->streamStopPullRecording();
+						}
+						QFileInfo recordedInfo(m_pullRecordOutputPath);
+						const bool exists = recordedInfo.exists();
+						const qint64 sizeBytes = exists ? recordedInfo.size() : 0;
+						const QString stopLog = tr("[录制] 拉流录制结束: path=%1 exists=%2 size=%3\n")
+						                            .arg(m_pullRecordOutputPath.isEmpty() ? tr("<空>") : QDir::toNativeSeparators(m_pullRecordOutputPath))
+						                            .arg(exists ? tr("yes") : tr("no"))
+						                            .arg(sizeBytes);
+						const QString stoppedPath = m_pullRecordOutputPath;
+						dlg->setProperty("pullExtraLog", dlg->property("pullExtraLog").toString() + stopLog);
+						LOG_INFO("[pull-record]", "stop monitor recording path=", m_pullRecordOutputPath.toUtf8().constData(),
+						         " exists=", exists ? 1 : 0, " size=", static_cast<long long>(sizeBytes));
+						m_pullRecording = false;
+						m_pullRecordOutputPath.clear();
+						updatePullRecordButtonUi();
+						showNonBlockingHint(this,
+						                   tr("拉流预览录制已停止，文件已保存：%1")
+						                           .arg(QDir::toNativeSeparators(stoppedPath)));
+						return;
+					}
+					if (m_pullCurrentInputUrl.trimmed().isEmpty())
+					{
+						QMessageBox::warning(this, tr("录制失败"), tr("缺少拉流输入地址，无法开始录制。"));
+						return;
+					}
+					if (!m_service || !m_service->streamIsRunning())
+					{
+						QMessageBox::warning(this, tr("录制失败"), tr("当前拉流未运行，无法开始录制。"));
+						return;
+					}
+					QString recordInput = m_pullRecordInputUrl.trimmed();
+					if (recordInput.isEmpty())
+					{
+						recordInput = activePullInputFromLog().trimmed();
+					}
+					if (recordInput.isEmpty())
+					{
+						recordInput = m_pullCurrentInputUrl.trimmed();
+					}
+					recordInput.replace(QStringLiteral("://0.0.0.0:"), QStringLiteral("://127.0.0.1:"));
+					recordInput.replace(QStringLiteral("://[::]:"), QStringLiteral("://127.0.0.1:"));
+					QString outputPath = makeRecordingFilePath(QStringLiteral("pull_preview_record"));
+					QFileInfo outInfo(outputPath);
+					if (outInfo.suffix().trimmed().isEmpty())
+					{
+						outputPath += QStringLiteral(".mp4");
+						outInfo = QFileInfo(outputPath);
+					}
+					outputPath = outInfo.absoluteFilePath();
+					QDir outDir(m_recordSaveDir);
+					if (!outDir.exists())
+					{
+						outDir.mkpath(QStringLiteral("."));
+					}
+					const QString startLog = tr("[录制] 拉流录制开始: input=%1 output=%2\n")
+					                             .arg(recordInput, QDir::toNativeSeparators(outputPath));
+					dlg->setProperty("pullExtraLog", dlg->property("pullExtraLog").toString() + startLog);
+					LOG_INFO("[pull-record]", "start monitor recording input=", recordInput.toUtf8().constData(),
+					         " output=", outputPath.toUtf8().constData());
+					if (!m_service->streamStartPullRecording(outputPath))
+					{
+						dlg->setProperty("pullExtraLog",
+						                 dlg->property("pullExtraLog").toString() +
+						                 tr("[录制] 启动失败: %1\n").arg(m_service->streamLastError()));
+						QMessageBox::warning(this, tr("录制失败"),
+						                     tr("%1\n\n输入：%2\n输出：%3")
+						                             .arg(m_service->streamLastError(),
+						                                  recordInput,
+						                                  QDir::toNativeSeparators(outputPath)));
+						return;
+					}
+					m_pullRecording = true;
+					m_pullRecordOutputPath = outputPath;
+					m_pullRecordStartMs = QDateTime::currentMSecsSinceEpoch();
+					if (m_pullRecordTimer)
+					{
+						m_pullRecordTimer->start();
+					}
+					updatePullRecordButtonUi();
+					showNonBlockingHint(this,
+					                   tr("拉流预览录制已开始，保存到：%1").arg(QDir::toNativeSeparators(outputPath)));
+					QPointer<CaptureWindow> selfGuard(this);
+					QPointer<QDialog> pullDlgGuard(dlg);
+					QTimer::singleShot(900, this, [selfGuard, pullDlgGuard, recordInput, outputPath]() {
+						if (!selfGuard || !selfGuard->m_service)
+						{
+							return;
+						}
+						if (!selfGuard->m_pullRecording || selfGuard->m_service->streamIsPullRecording())
+						{
+							return;
+						}
+						const QString err = selfGuard->m_service->streamLastError();
+						const QString log = selfGuard->m_service->streamRecentPullLog();
+						if (pullDlgGuard)
+						{
+							pullDlgGuard->setProperty("pullExtraLog",
+							                 pullDlgGuard->property("pullExtraLog").toString() +
+							                 QObject::tr("[录制] 启动后快速退出: %1\n").arg(err));
+						}
+						QMessageBox::warning(selfGuard,
+						                     QObject::tr("录制失败"),
+						                     QObject::tr("录制链路启动后立即退出。\n错误：%1\n输入：%2\n输出：%3\n\n日志：\n%4")
+						                             .arg(err.isEmpty() ? QObject::tr("未知错误") : err,
+						                                  recordInput,
+						                                  QDir::toNativeSeparators(outputPath),
+						                                  log.isEmpty() ? QObject::tr("无") : log));
+						selfGuard->m_pullRecording = false;
+						if (selfGuard->m_pullRecordTimer)
+						{
+							selfGuard->m_pullRecordTimer->stop();
+						}
+						selfGuard->updatePullRecordButtonUi();
+					});
+				});
+				connect(btnFullscreen, &QPushButton::clicked, preview, [preview]() {
+					if (preview->isFullScreen())
+					{
+						preview->showNormal();
+					}
+					else
+					{
+						preview->showFullScreen();
+					}
 				});
 				connect(sldVolume, &QSlider::valueChanged, preview, [this](int value) {
 					this->m_service->streamSetPreviewVolume(static_cast<float>(value) / 100.0f);
@@ -2860,6 +3301,7 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 					                          Q_ARG(int, frame.vStride));
 				});
 				frameTimer->start();
+				updatePullRecordButtonUi();
 				preview->show();
 			}
 		});
@@ -2888,7 +3330,6 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		});
 		layout->addRow(tr("协议模板"), cmbProtocol);
 		layout->addRow(tr("拉流模式"), cmbPullRouteMode);
-		layout->addRow(tr("模式"), cmbPullMode);
 		layout->addRow(tr("推流码"), edtStreamKey);
 		layout->addRow(tr("拉流地址"), urlRow);
 		layout->addRow(tr("服务地址"), edtPullGateway);
@@ -2897,14 +3338,11 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		layout->addRow(tr("优先协议"), cmbPullServicePrefer);
 		layout->addRow(QString(), btnResolvePullUrl);
 		layout->addRow(tr("解析结果"), lblServiceResolvedUrl);
-		layout->addRow(tr("保存路径"), cmbOutput);
-		layout->addRow(QString(), btnBrowseOutput);
 		layout->addRow(lblStatus);
 		layout->addRow(txtLog);
 		layout->addRow(buttons);
 		refreshPullUrl();
 		refreshStreamKeyVisibility();
-		refreshPullModeUi();
 		dlg->show();
 	});
 	connect(m_fileTitleButton, &QToolButton::clicked, this, [this, actionFileMode]() {
@@ -2932,6 +3370,7 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 	});
 
 	refreshFullscreenButton();
+	updateRecordButtonUi();
 
 	auto canUseGlobalHotkey = []() -> bool {
 		QWidget* fw = QApplication::focusWidget();
@@ -2994,6 +3433,629 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 	});
 
 	relocateTitleWidget();
+}
+
+void CaptureWindow::loadCapturePreferences()
+{
+	const QString defaultShotDir = QStandardPaths::writableLocation(QStandardPaths::PicturesLocation);
+	const QString defaultVideoDir = QStandardPaths::writableLocation(QStandardPaths::MoviesLocation);
+	m_screenshotSaveDir = defaultShotDir.isEmpty() ? QDir::homePath() : defaultShotDir;
+	m_recordSaveDir = defaultVideoDir.isEmpty() ? m_screenshotSaveDir : defaultVideoDir;
+	m_pushGateway = QStringLiteral("http://127.0.0.1:9000");
+	m_pushServiceApp = QStringLiteral("live");
+	m_pushServiceStream = QStringLiteral("stream001");
+	m_pullGateway = QStringLiteral("http://127.0.0.1:9000");
+	m_pullServiceApp = QStringLiteral("live");
+	m_pullServiceStream = QStringLiteral("stream001");
+	m_pushRouteMode = QStringLiteral("p2p");
+	m_pushServiceMode = QStringLiteral("httpflv");
+	m_pushProtocolTemplate = QStringLiteral("rtmp://127.0.0.1:1935/live/stream");
+	m_pushFps = 0;
+	m_pushSize.clear();
+	m_pushBitrateKbps = 0;
+	m_pushEncoder = QStringLiteral("auto");
+	m_pushAudioInput = QStringLiteral("off");
+	m_pushAudioOutput = QStringLiteral("off");
+	m_pushKeepAspect = true;
+	m_closeToTrayOnClose = true;
+	m_composeOutputSize.clear();
+	m_screenBackendType = fplayer::MediaBackendType::Dxgi;
+	fplayer::SystemSettings data;
+	try
+	{
+		data = m_service ? m_service->loadSystemSettings() : fplayer::SystemSettings{};
+	}
+	catch (...)
+	{
+		data = fplayer::SystemSettings{};
+	}
+	if (!data.screenshotDir.trimmed().isEmpty())
+	{
+		m_screenshotSaveDir = data.screenshotDir;
+	}
+	if (!data.recordDir.trimmed().isEmpty())
+	{
+		m_recordSaveDir = data.recordDir;
+	}
+	m_recentPushInputs = data.recentPushInputs;
+	m_recentPushOutputs = data.recentPushOutputs;
+	m_recentPullInputs = data.recentPullInputs;
+	m_recentPullOutputs = data.recentPullOutputs;
+	if (!data.pushGateway.trimmed().isEmpty()) m_pushGateway = data.pushGateway;
+	if (!data.pushServiceApp.trimmed().isEmpty()) m_pushServiceApp = data.pushServiceApp;
+	if (!data.pushServiceStream.trimmed().isEmpty()) m_pushServiceStream = data.pushServiceStream;
+	if (!data.pullGateway.trimmed().isEmpty()) m_pullGateway = data.pullGateway;
+	if (!data.pullServiceApp.trimmed().isEmpty()) m_pullServiceApp = data.pullServiceApp;
+	if (!data.pullServiceStream.trimmed().isEmpty()) m_pullServiceStream = data.pullServiceStream;
+	if (!data.pushRouteMode.trimmed().isEmpty()) m_pushRouteMode = data.pushRouteMode;
+	if (!data.pushServiceMode.trimmed().isEmpty()) m_pushServiceMode = data.pushServiceMode;
+	if (!data.pushProtocolTemplate.trimmed().isEmpty()) m_pushProtocolTemplate = data.pushProtocolTemplate;
+	m_pushFps = data.pushFps;
+	m_pushSize = data.pushSize;
+	m_pushBitrateKbps = data.pushBitrateKbps;
+	if (!data.pushEncoder.trimmed().isEmpty()) m_pushEncoder = data.pushEncoder;
+	if (!data.pushAudioInput.trimmed().isEmpty()) m_pushAudioInput = data.pushAudioInput;
+	if (!data.pushAudioOutput.trimmed().isEmpty()) m_pushAudioOutput = data.pushAudioOutput;
+	m_pushKeepAspect = data.pushKeepAspect;
+	m_closeToTrayOnClose = data.closeToTrayOnClose;
+	if (!data.composeOutputSize.trimmed().isEmpty()) m_composeOutputSize = data.composeOutputSize;
+	{
+		const QString backend = data.screenCaptureBackend.trimmed().toLower();
+		if (backend == QStringLiteral("ffmpeg"))
+		{
+			m_screenBackendType = fplayer::MediaBackendType::FFmpeg;
+		}
+		else if (backend == QStringLiteral("dxgi"))
+		{
+			m_screenBackendType = fplayer::MediaBackendType::Dxgi;
+		}
+	}
+}
+
+void CaptureWindow::saveCapturePreferences() const
+{
+	fplayer::SystemSettings data;
+	data.screenshotDir = m_screenshotSaveDir;
+	data.recordDir = m_recordSaveDir;
+	data.recentPushInputs = m_recentPushInputs;
+	data.recentPushOutputs = m_recentPushOutputs;
+	data.recentPullInputs = m_recentPullInputs;
+	data.recentPullOutputs = m_recentPullOutputs;
+	data.pushGateway = m_pushGateway;
+	data.pushServiceApp = m_pushServiceApp;
+	data.pushServiceStream = m_pushServiceStream;
+	data.pullGateway = m_pullGateway;
+	data.pullServiceApp = m_pullServiceApp;
+	data.pullServiceStream = m_pullServiceStream;
+	data.pushRouteMode = m_pushRouteMode;
+	data.pushServiceMode = m_pushServiceMode;
+	data.pushProtocolTemplate = m_pushProtocolTemplate;
+	data.pushFps = m_pushFps;
+	data.pushSize = m_pushSize;
+	data.pushBitrateKbps = m_pushBitrateKbps;
+	data.pushEncoder = m_pushEncoder;
+	data.pushAudioInput = m_pushAudioInput;
+	data.pushAudioOutput = m_pushAudioOutput;
+	data.pushKeepAspect = m_pushKeepAspect;
+	data.closeToTrayOnClose = m_closeToTrayOnClose;
+	data.composeOutputSize = m_composeOutputSize;
+	data.screenCaptureBackend = (m_screenBackendType == fplayer::MediaBackendType::FFmpeg)
+		                            ? QStringLiteral("ffmpeg")
+		                            : QStringLiteral("dxgi");
+	if (m_service)
+	{
+		m_service->saveSystemSettings(data);
+	}
+}
+
+void CaptureWindow::openCaptureSettingsDialog(QWidget* parent)
+{
+	QDialog dlg(parent ? parent : this);
+	dlg.setWindowTitle(tr("系统设置"));
+	dlg.resize(760, 520);
+	dlg.setMinimumSize(700, 460);
+	auto* layout = new QFormLayout(&dlg);
+	auto* shotPath = new QLineEdit(m_screenshotSaveDir, &dlg);
+	auto* recPath = new QLineEdit(m_recordSaveDir, &dlg);
+	auto* shotBrowse = new QPushButton(tr("浏览..."), &dlg);
+	auto* recBrowse = new QPushButton(tr("浏览..."), &dlg);
+	auto* chkCloseToTray = new QCheckBox(tr("关闭主窗口时最小化到托盘（不退出程序）"), &dlg);
+	chkCloseToTray->setChecked(m_closeToTrayOnClose);
+	auto* cmbScreenBackend = new QComboBox(&dlg);
+#if defined(_WIN32) && defined(FPLAYER_WITH_SCREEN_DXGI)
+	cmbScreenBackend->addItem(tr("DXGI（默认）"), QStringLiteral("dxgi"));
+#endif
+	cmbScreenBackend->addItem(tr("FFmpeg（gdigrab）"), QStringLiteral("ffmpeg"));
+	{
+		const QString backend = (m_screenBackendType == fplayer::MediaBackendType::FFmpeg)
+			                        ? QStringLiteral("ffmpeg")
+			                        : QStringLiteral("dxgi");
+		const int idx = cmbScreenBackend->findData(backend);
+		cmbScreenBackend->setCurrentIndex(idx >= 0 ? idx : 0);
+	}
+	auto* lblHdrHint = new QLabel(
+		tr("提示：检测到系统开启 HDR 时，若遇到屏幕采集问题，可尝试切换至 FFmpeg 后端，但该后端可能造成鼠标光标闪烁。"),
+		&dlg);
+	lblHdrHint->setWordWrap(true);
+	auto* shotRow = new QWidget(&dlg);
+	auto* recRow = new QWidget(&dlg);
+	auto* shotLay = new QHBoxLayout(shotRow);
+	auto* recLay = new QHBoxLayout(recRow);
+	shotLay->setContentsMargins(0, 0, 0, 0);
+	recLay->setContentsMargins(0, 0, 0, 0);
+	shotLay->addWidget(shotPath, 1);
+	shotLay->addWidget(shotBrowse, 0);
+	recLay->addWidget(recPath, 1);
+	recLay->addWidget(recBrowse, 0);
+	layout->addRow(tr("截图保存目录"), shotRow);
+	layout->addRow(tr("录制保存目录"), recRow);
+	layout->addRow(tr("关闭行为"), chkCloseToTray);
+	layout->addRow(tr("屏幕采集后端"), cmbScreenBackend);
+	layout->addRow(lblHdrHint);
+	auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+	layout->addRow(buttons);
+	connect(shotBrowse, &QPushButton::clicked, &dlg, [shotPath, this]() {
+		const QString dir = QFileDialog::getExistingDirectory(this, tr("选择截图保存目录"), shotPath->text().trimmed());
+		if (!dir.isEmpty())
+		{
+			shotPath->setText(QDir::toNativeSeparators(dir));
+		}
+	});
+	connect(recBrowse, &QPushButton::clicked, &dlg, [recPath, this]() {
+		const QString dir = QFileDialog::getExistingDirectory(this, tr("选择录制保存目录"), recPath->text().trimmed());
+		if (!dir.isEmpty())
+		{
+			recPath->setText(QDir::toNativeSeparators(dir));
+		}
+	});
+	connect(buttons, &QDialogButtonBox::accepted, &dlg, [&dlg, shotPath, recPath, chkCloseToTray, cmbScreenBackend, this]() {
+		const QString shot = shotPath->text().trimmed();
+		const QString rec = recPath->text().trimmed();
+		if (shot.isEmpty() || rec.isEmpty())
+		{
+			QMessageBox::warning(&dlg, tr("配置无效"), tr("截图与录制目录不能为空。"));
+			return;
+		}
+		QDir shotDir(shot);
+		QDir recDir(rec);
+		if ((!shotDir.exists() && !shotDir.mkpath(QStringLiteral("."))) ||
+			(!recDir.exists() && !recDir.mkpath(QStringLiteral("."))))
+		{
+			QMessageBox::warning(&dlg, tr("配置无效"), tr("目录不存在且无法自动创建，请检查权限。"));
+			return;
+		}
+		m_screenshotSaveDir = shotDir.absolutePath();
+		m_recordSaveDir = recDir.absolutePath();
+		m_closeToTrayOnClose = chkCloseToTray->isChecked();
+		const QString backend = cmbScreenBackend->currentData().toString().trimmed().toLower();
+		fplayer::MediaBackendType selectedBackend = fplayer::MediaBackendType::FFmpeg;
+#if defined(_WIN32) && defined(FPLAYER_WITH_SCREEN_DXGI)
+		if (backend == QStringLiteral("dxgi"))
+		{
+			selectedBackend = fplayer::MediaBackendType::Dxgi;
+		}
+#endif
+		const bool backendChanged = (selectedBackend != m_screenBackendType);
+		struct ComposeScreenRuntimeState
+		{
+			int index = -1;
+			int deviceIndex = 0;
+			int fps = 30;
+			bool captureCursor = false;
+			bool wasActive = false;
+		};
+		const bool mainWasScreenActive = (m_captureMode == CaptureMode::Screen && m_service) ? m_service->screenIsActive() : false;
+		const int mainScreenIndex = (m_captureMode == CaptureMode::Screen && ui->cmbDevices) ? ui->cmbDevices->currentIndex() : -1;
+		QList<ComposeScreenRuntimeState> composeScreenStates;
+		if (backendChanged && m_isComposeMode)
+		{
+			for (int i = 0; i < m_composeSources.size(); ++i)
+			{
+				const auto& src = m_composeSources[i];
+				if (src.kind != ComposeSourceItem::SourceKind::Screen || !src.service)
+				{
+					continue;
+				}
+				ComposeScreenRuntimeState st;
+				st.index = i;
+				st.deviceIndex = src.deviceIndex;
+				st.fps = src.screenFps;
+				st.captureCursor = src.screenCaptureCursor;
+				st.wasActive = src.service->screenIsActive();
+				composeScreenStates.push_back(st);
+			}
+		}
+		m_screenBackendType = selectedBackend;
+		saveCapturePreferences();
+		if (backendChanged && m_service)
+		{
+			// 热切换：先停采集，再切后端，最后恢复原先状态。
+			if (m_captureMode == CaptureMode::Screen)
+			{
+				m_service->screenSetActive(false);
+			}
+			for (const auto& st : composeScreenStates)
+			{
+				if (st.index >= 0 && st.index < m_composeSources.size() && m_composeSources[st.index].service)
+				{
+					m_composeSources[st.index].service->screenSetActive(false);
+				}
+			}
+			m_service->initScreenCapture(m_screenBackendType);
+			if (m_captureMode == CaptureMode::Screen)
+			{
+				ui->wgtView->setBackendType(m_screenBackendType);
+				m_service->bindScreenPreview(ui->wgtView);
+				refreshScreenDeviceUi();
+				if (mainScreenIndex >= 0 && ui->cmbDevices && ui->cmbDevices->count() > 0)
+				{
+					const int idx = qBound(0, mainScreenIndex, ui->cmbDevices->count() - 1);
+					selectScreen(idx);
+				}
+				if (!mainWasScreenActive)
+				{
+					m_service->screenSetActive(false);
+					ui->btnPlay->setIcon(QIcon::fromTheme(QIcon::ThemeIcon::MediaPlaybackStart));
+				}
+			}
+			for (const auto& st : composeScreenStates)
+			{
+				if (st.index < 0 || st.index >= m_composeSources.size())
+				{
+					continue;
+				}
+				auto& src = m_composeSources[st.index];
+				if (src.kind != ComposeSourceItem::SourceKind::Screen || !src.service)
+				{
+					continue;
+				}
+				src.service->initScreenCapture(m_screenBackendType);
+				if (src.view)
+				{
+					src.view->setBackendType(m_screenBackendType);
+				}
+				src.service->bindScreenPreview(src.view);
+				src.service->selectScreen(st.deviceIndex);
+				src.service->screenSetFrameRate(qMax(1, st.fps));
+				src.service->screenSetCursorCaptureEnabled(st.captureCursor);
+				src.service->screenSetActive(st.wasActive);
+			}
+			if (m_isComposeMode)
+			{
+				refreshComposeScreenCaptureState(m_composeSelectedIndex);
+				updateComposePlaybackIcons();
+				forceRefreshComposePreview();
+			}
+		}
+		dlg.accept();
+	});
+	connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+	dlg.exec();
+}
+
+QString CaptureWindow::makeScreenshotFilePath(const QString& prefix) const
+{
+	const QString fileName = QStringLiteral("%1_%2.png")
+	                         .arg(prefix)
+	                         .arg(QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd_HHmmss_zzz")));
+	return QDir(m_screenshotSaveDir).filePath(fileName);
+}
+
+QString CaptureWindow::makeRecordingFilePath(const QString& prefix) const
+{
+	const QString fileName = QStringLiteral("%1_%2.mp4")
+	                         .arg(prefix)
+	                         .arg(QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd_HHmmss")));
+	return QDir(m_recordSaveDir).filePath(fileName);
+}
+
+QSize CaptureWindow::preferredComposeExportSize() const
+{
+	if (m_composeSizeCombo && m_composeSizeCombo->count() > 0)
+	{
+		QString sizeText = m_composeSizeCombo->currentData().toString().trimmed();
+		if (sizeText.isEmpty())
+		{
+			sizeText = m_composeSizeCombo->currentText().trimmed();
+		}
+		const QRegularExpression re(R"((\d+)\s*x\s*(\d+))", QRegularExpression::CaseInsensitiveOption);
+		const auto m = re.match(sizeText);
+		if (m.hasMatch())
+		{
+			const int w = m.captured(1).toInt();
+			const int h = m.captured(2).toInt();
+			if (w > 0 && h > 0)
+			{
+				return {w, h};
+			}
+		}
+	}
+	const int aw = qMax(1, m_composeAspectW);
+	const int ah = qMax(1, m_composeAspectH);
+	// 组合导出默认以 1080p 基准，保证小窗口下也有可用清晰度。
+	if (aw >= ah)
+	{
+		const int w = 1920;
+		const int h = qMax(2, ((w * ah) / aw) & ~1);
+		return {w, h};
+	}
+	const int h = 1920;
+	const int w = qMax(2, ((h * aw) / ah) & ~1);
+	return {w, h};
+}
+
+void CaptureWindow::refreshComposeOutputSizeOptions()
+{
+	if (!m_composeSizeCombo)
+	{
+		return;
+	}
+	const QString prev = m_composeSizeCombo->currentData().toString().trimmed();
+	m_composeSizeCombo->clear();
+	const int aw = qMax(1, m_composeAspectW);
+	const int ah = qMax(1, m_composeAspectH);
+	const QList<int> widths{3840, 2560, 1920, 1600, 1280, 960, 854, 640};
+	for (const int w : widths)
+	{
+		const int h = qMax(2, ((w * ah) / aw) & ~1);
+		const QString text = QStringLiteral("%1x%2").arg(w).arg(h);
+		m_composeSizeCombo->addItem(text, text);
+	}
+	int idx = -1;
+	if (!prev.isEmpty())
+	{
+		idx = m_composeSizeCombo->findData(prev);
+	}
+	if (idx < 0 && !m_composeOutputSize.trimmed().isEmpty())
+	{
+		idx = m_composeSizeCombo->findData(m_composeOutputSize.trimmed());
+	}
+	if (idx < 0)
+	{
+		idx = m_composeSizeCombo->findData(QStringLiteral("1920x%1").arg(qMax(2, ((1920 * ah) / aw) & ~1)));
+	}
+	m_composeSizeCombo->setCurrentIndex(idx >= 0 ? idx : 0);
+	m_composeOutputSize = m_composeSizeCombo->currentData().toString();
+}
+
+QImage CaptureWindow::buildComposeSnapshotImage(const QSize& outSize) const
+{
+	if (!m_composeMdiArea || !m_composePreviewHost || outSize.width() <= 0 || outSize.height() <= 0)
+	{
+		return {};
+	}
+	QImage canvas(outSize, QImage::Format_RGB888);
+	canvas.fill(Qt::black);
+	const QRect srcBounds = m_composeMdiArea->viewport()->rect();
+	if (srcBounds.width() <= 0 || srcBounds.height() <= 0)
+	{
+		return canvas;
+	}
+	QPainter painter(&canvas);
+	painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
+	for (const auto& src : m_composeSources)
+	{
+		if (!src.subWindow)
+		{
+			continue;
+		}
+		QImage srcImage;
+		if (src.kind == ComposeSourceItem::SourceKind::Camera)
+		{
+			const auto frame = fplayer::CameraFrameBus::instance().snapshot(src.sourceId);
+			if (frame.valid)
+			{
+				srcImage = i420ToImage(frame.y, frame.u, frame.v, frame.width, frame.height, frame.yStride, frame.uStride, frame.vStride);
+			}
+		}
+		else
+		{
+			const auto frame = fplayer::ScreenFrameBus::instance().snapshot(src.sourceId);
+			if (frame.valid)
+			{
+				srcImage = i420ToImage(frame.y, frame.u, frame.v, frame.width, frame.height, frame.yStride, frame.uStride, frame.vStride);
+			}
+		}
+		if (srcImage.isNull())
+		{
+			continue;
+		}
+		const QRect g = src.subWindow->geometry();
+		const QRect target(
+			qRound((static_cast<double>(g.x()) / srcBounds.width()) * outSize.width()),
+			qRound((static_cast<double>(g.y()) / srcBounds.height()) * outSize.height()),
+			qRound((static_cast<double>(g.width()) / srcBounds.width()) * outSize.width()),
+			qRound((static_cast<double>(g.height()) / srcBounds.height()) * outSize.height()));
+		if (target.width() <= 1 || target.height() <= 1)
+		{
+			continue;
+		}
+		painter.drawImage(target, srcImage);
+	}
+	painter.end();
+	return canvas;
+}
+
+void CaptureWindow::updateRecordButtonUi()
+{
+	const qint64 elapsed = m_mainRecording ? (QDateTime::currentMSecsSinceEpoch() - m_mainRecordStartMs) : 0;
+	this->ui->btnCast->setText(m_mainRecording ? formatTimeMs(elapsed) : QString());
+	this->ui->btnCast->setToolTip(m_mainRecording ? tr("结束录制") : tr("录制"));
+}
+
+void CaptureWindow::updatePullRecordButtonUi()
+{
+	if (!m_pullPreviewRecordButton || !m_pullPreviewRecordDurationLabel)
+	{
+		return;
+	}
+	const bool pullRunning = m_service && m_service->streamIsRunning();
+	const qint64 elapsed = (pullRunning && m_pullSessionStartMs > 0) ? (QDateTime::currentMSecsSinceEpoch() - m_pullSessionStartMs) : 0;
+	const qint64 recordElapsed = m_pullRecording ? (QDateTime::currentMSecsSinceEpoch() - m_pullRecordStartMs) : 0;
+	m_pullPreviewRecordButton->setText(m_pullRecording ? formatTimeMs(recordElapsed) : tr("开始录制"));
+	m_pullPreviewRecordButton->setToolTip(m_pullRecording ? tr("结束录制") : tr("开始录制"));
+	m_pullPreviewRecordDurationLabel->setText(tr("拉流时长：%1").arg(formatTimeMs(elapsed)));
+}
+
+void CaptureWindow::handleMainCaptureScreenshot()
+{
+	QImage sourceImage;
+	// 优先走原始帧截图（不受预览窗口缩放影响），无可用原帧时再回退窗口抓图。
+	if (m_isComposeMode)
+	{
+		sourceImage = buildComposeSnapshotImage(preferredComposeExportSize());
+	}
+	else if (m_captureMode == CaptureMode::Camera && m_service)
+	{
+		const auto frame = fplayer::CameraFrameBus::instance().snapshot(m_service->cameraFrameBusSourceId());
+		if (frame.valid)
+		{
+			sourceImage = i420ToImage(frame.y, frame.u, frame.v, frame.width, frame.height, frame.yStride, frame.uStride, frame.vStride);
+		}
+	}
+	else if (!m_isComposeMode && m_captureMode == CaptureMode::Screen && m_service)
+	{
+		const auto frame = fplayer::ScreenFrameBus::instance().snapshot(m_service->screenFrameBusSourceId());
+		if (frame.valid)
+		{
+			sourceImage = i420ToImage(frame.y, frame.u, frame.v, frame.width, frame.height, frame.yStride, frame.uStride, frame.vStride);
+		}
+	}
+	if (sourceImage.isNull())
+	{
+		const QPixmap fallbackShot = (m_isComposeMode && m_composePreviewHost)
+			                             ? m_composePreviewHost->grab()
+			                             : this->ui->wgtView->grab();
+		sourceImage = fallbackShot.toImage();
+	}
+	const QPixmap shot = QPixmap::fromImage(sourceImage);
+	if (shot.isNull())
+	{
+		QMessageBox::warning(this, tr("截图失败"), tr("当前画面为空，无法截图。"));
+		return;
+	}
+	QDir dir(m_screenshotSaveDir);
+	if (!dir.exists())
+	{
+		dir.mkpath(QStringLiteral("."));
+	}
+	const QString savePath = makeScreenshotFilePath(QStringLiteral("preview_shot"));
+	if (!shot.save(savePath))
+	{
+		QMessageBox::warning(this, tr("截图失败"), tr("图片保存失败：%1").arg(savePath));
+		return;
+	}
+	showNonBlockingHint(this, tr("截图已保存：%1").arg(QDir::toNativeSeparators(savePath)));
+}
+
+void CaptureWindow::handleMainCaptureRecordToggle()
+{
+	if (!m_service)
+	{
+		return;
+	}
+	if (m_mainRecording)
+	{
+		m_service->streamStop();
+		if (m_pullRecordService)
+		{
+			m_pullRecordService->streamStop();
+		}
+		m_mainRecording = false;
+		if (m_mainRecordTimer)
+		{
+			m_mainRecordTimer->stop();
+		}
+		updateRecordButtonUi();
+		// 录制停止后，恢复当前场景的本地预览状态，避免出现“停止录制即暂停预览”。
+		if (m_captureMode == CaptureMode::Camera)
+		{
+			if (!m_service->cameraIsPlaying())
+			{
+				m_service->cameraResume();
+			}
+			this->ui->btnPlay->setIcon(QIcon::fromTheme(QIcon::ThemeIcon::MediaPlaybackPause));
+		}
+		else if (m_captureMode == CaptureMode::Screen)
+		{
+			if (!m_service->screenIsActive())
+			{
+				m_service->screenSetActive(true);
+			}
+			this->ui->btnPlay->setIcon(QIcon::fromTheme(QIcon::ThemeIcon::MediaPlaybackPause));
+		}
+		else if (m_captureMode == CaptureMode::File)
+		{
+			if (!m_service->playerIsPlaying())
+			{
+				m_service->playerResume();
+			}
+			this->ui->btnPlay->setIcon(QIcon::fromTheme(QIcon::ThemeIcon::MediaPlaybackPause));
+		}
+		showNonBlockingHint(this, tr("录制已停止"));
+		return;
+	}
+	if (m_service->streamIsRunning())
+	{
+		QMessageBox::warning(this, tr("录制失败"), tr("当前已有推拉流任务在运行，请先停止后再开始主预览录制。"));
+		return;
+	}
+	QString outputPath = makeRecordingFilePath(QStringLiteral("preview_record"));
+	QDir outDir(m_recordSaveDir);
+	if (!outDir.exists())
+	{
+		outDir.mkpath(QStringLiteral("."));
+	}
+	bool started = false;
+	if (m_isComposeMode)
+	{
+		QString inputSpec;
+		const int fps = 30;
+		const QSize exportSize = preferredComposeExportSize();
+		const int outW = exportSize.width();
+		const int outH = exportSize.height();
+		if (!buildComposeScreenCaptureSpec(inputSpec, fps, outW, outH, 2500, QStringLiteral("auto"), QStringLiteral("off"),
+		                                   QStringLiteral("off")))
+		{
+			QMessageBox::warning(this, tr("录制失败"), tr("组合预览窗口不可用，请先进入组合模式并添加素材。"));
+			return;
+		}
+		started = m_service->streamStartPush(inputSpec, outputPath);
+	}
+	else if (m_captureMode == CaptureMode::Camera)
+	{
+		started = m_service->streamStartPushByScene(fplayer::Service::PushScene::Camera, outputPath);
+	}
+	else if (m_captureMode == CaptureMode::Screen)
+	{
+		started = m_service->streamStartPushByScene(fplayer::Service::PushScene::Screen, outputPath);
+	}
+	else if (m_captureMode == CaptureMode::File)
+	{
+		started = m_service->streamStartPushByScene(fplayer::Service::PushScene::File, outputPath, m_currentFilePath);
+	}
+	else
+	{
+		QMessageBox::warning(this, tr("录制失败"), tr("当前模式暂不支持一键录制。"));
+		return;
+	}
+	if (!started)
+	{
+		QMessageBox::warning(this, tr("录制失败"), m_service->streamLastError());
+		return;
+	}
+	m_mainRecording = true;
+	m_mainRecordStartMs = QDateTime::currentMSecsSinceEpoch();
+	if (m_mainRecordTimer)
+	{
+		m_mainRecordTimer->start();
+	}
+	updateRecordButtonUi();
+}
+
+void CaptureWindow::handleMainCaptureSettings()
+{
+	openCaptureSettingsDialog(this);
 }
 
 void CaptureWindow::togglePlayPause()
@@ -3097,6 +4159,12 @@ CaptureWindow::~CaptureWindow()
 		delete m_service;
 		m_service = nullptr;
 	}
+	if (m_pullRecordService)
+	{
+		m_pullRecordService->streamStop();
+		delete m_pullRecordService;
+		m_pullRecordService = nullptr;
+	}
 	delete ui;
 }
 
@@ -3116,6 +4184,7 @@ void CaptureWindow::ensureComposeWorkspace()
 	auto* titleLabel = new QLabel(tr("视频流来源"), leftPanel);
 	titleLabel->setStyleSheet(QStringLiteral("font-weight:600;"));
 	auto* aspectLabel = new QLabel(tr("画布比例"), leftPanel);
+	auto* sizeLabel = new QLabel(tr("尺寸"), leftPanel);
 	m_composeAspectCombo = new QComboBox(leftPanel);
 	m_composeAspectCombo->addItem(QStringLiteral("16:9 (横屏直播)"), QStringLiteral("16:9"));
 	m_composeAspectCombo->addItem(QStringLiteral("9:16 (手机竖屏)"), QStringLiteral("9:16"));
@@ -3123,6 +4192,7 @@ void CaptureWindow::ensureComposeWorkspace()
 	m_composeAspectCombo->addItem(QStringLiteral("3:4"), QStringLiteral("3:4"));
 	m_composeAspectCombo->addItem(QStringLiteral("1:1"), QStringLiteral("1:1"));
 	m_composeAspectCombo->setCurrentIndex(0);
+	m_composeSizeCombo = new QComboBox(leftPanel);
 	m_btnComposeAddFile = new QPushButton(tr("追加文件播放"), leftPanel);
 	m_btnComposeAddCamera = new QPushButton(tr("追加摄像头"), leftPanel);
 	m_btnComposeAddScreen = new QPushButton(tr("追加屏幕"), leftPanel);
@@ -3131,6 +4201,8 @@ void CaptureWindow::ensureComposeWorkspace()
 	leftLayout->addWidget(titleLabel);
 	leftLayout->addWidget(aspectLabel);
 	leftLayout->addWidget(m_composeAspectCombo);
+	leftLayout->addWidget(sizeLabel);
+	leftLayout->addWidget(m_composeSizeCombo);
 	leftLayout->addWidget(m_btnComposeAddFile);
 	leftLayout->addWidget(m_btnComposeAddCamera);
 	leftLayout->addWidget(m_btnComposeAddScreen);
@@ -3155,7 +4227,17 @@ void CaptureWindow::ensureComposeWorkspace()
 		m_composeMdiArea->viewport()->setAttribute(Qt::WA_OpaquePaintEvent, true);
 	}
 	static_cast<AspectRatioHostWidget*>(m_composePreviewHost)->attachContent(m_composeMdiArea);
-	static_cast<AspectRatioHostWidget*>(m_composePreviewHost)->setAspectRatio(m_composeAspectW, m_composeAspectH);
+	auto* hostWidget = static_cast<AspectRatioHostWidget*>(m_composePreviewHost);
+	hostWidget->onContentGeometryChanged = [this](const QRect& oldRect, const QRect& newRect) {
+		if (!m_isComposeMode)
+		{
+			return;
+		}
+		remapComposeSourcesToViewport(oldRect, newRect);
+		applyComposeZOrder();
+		forceRefreshComposePreview();
+	};
+	hostWidget->setAspectRatio(m_composeAspectW, m_composeAspectH);
 	m_composeSplitter->setStretchFactor(0, 0);
 	m_composeSplitter->setStretchFactor(1, 1);
 	m_composeSplitter->hide();
@@ -3181,10 +4263,20 @@ void CaptureWindow::ensureComposeWorkspace()
 			{
 				m_composeAspectW = w;
 				m_composeAspectH = h;
+				refreshComposeOutputSizeOptions();
 				applyComposeAspectRatio();
 			}
 		}
 	});
+	connect(m_composeSizeCombo, &QComboBox::currentIndexChanged, this, [this](const int index) {
+		if (!m_composeSizeCombo || index < 0)
+		{
+			return;
+		}
+		m_composeOutputSize = m_composeSizeCombo->itemData(index).toString();
+		saveCapturePreferences();
+	});
+	refreshComposeOutputSizeOptions();
 	connect(m_composeMdiArea, &QMdiArea::subWindowActivated, this, [this](QMdiSubWindow*) {
 		if (!m_isComposeMode)
 		{
@@ -3509,29 +4601,8 @@ void CaptureWindow::addComposeFileSource()
 			auto& src = m_composeSources[idx];
 			if (src.kind == ComposeSourceItem::SourceKind::Screen && src.service && src.view)
 			{
-				// 拖动/缩放后仅在该路原本处于播放态时才做一次完整重启（false->true），避免黑屏卡住。
-				if (composeSourceIsPlaying(idx))
-				{
-					QTimer::singleShot(80, this, [this, sub]() {
-						const int refreshIdx = std::distance(
-							m_composeSources.begin(),
-							std::find_if(m_composeSources.begin(), m_composeSources.end(), [sub](const ComposeSourceItem& i) {
-								return i.subWindow == sub;
-							}));
-						if (refreshIdx < 0 || refreshIdx >= m_composeSources.size())
-						{
-							return;
-						}
-						auto& refreshSrc = m_composeSources[refreshIdx];
-						if (refreshSrc.kind != ComposeSourceItem::SourceKind::Screen || !refreshSrc.service ||
-							!composeSourceIsPlaying(refreshIdx))
-						{
-							return;
-						}
-						refreshComposeScreenCaptureState(m_composeSelectedIndex, refreshIdx);
-						forceRefreshComposePreview();
-					});
-				}
+				// 拉伸后不做 stop/start，仅重绑预览目标，避免黑屏。
+				src.service->bindScreenPreview(src.view);
 			}
 		}
 		forceRefreshComposePreview();
@@ -3649,26 +4720,9 @@ void CaptureWindow::addComposeScreenSource()
 		if (isHdrEnabledForScreenIndex(0))
 		{
 			m_hdrPromptedScreenIndexes.insert(0);
-			const auto choice = QMessageBox::question(
-				this,
-				tr("屏幕捕获后端切换"),
-				tr("已检测到系统HDR打开，为确保稳定，将屏幕获取后端改为ffmepg。\n是否切换？"),
-				QMessageBox::Yes | QMessageBox::No,
-				QMessageBox::Yes);
-			if (choice == QMessageBox::Yes)
-			{
-				m_screenBackendType = fplayer::MediaBackendType::FFmpeg;
-				if (m_service)
-				{
-					m_service->initScreenCapture(m_screenBackendType);
-					if (m_captureMode == CaptureMode::Screen)
-					{
-						ui->wgtView->setBackendType(m_screenBackendType);
-						m_service->bindScreenPreview(ui->wgtView);
-						refreshScreenDeviceUi();
-					}
-				}
-			}
+			showNonBlockingHint(this,
+			                    tr("检测到当前系统开启了HDR，若遇到屏幕采集问题，可尝试切换至ffmepg后端，但该后端可能造成鼠标光标闪烁"),
+			                    4200);
 		}
 	}
 #endif
@@ -3771,33 +4825,7 @@ void CaptureWindow::addComposeScreenSource()
 		                                                                      }));
 		if (idx >= 0 && idx < m_composeSources.size())
 		{
-			auto& src = m_composeSources[idx];
-			if (src.kind == ComposeSourceItem::SourceKind::Screen && src.service && src.view)
-			{
-				// 拖动/缩放后仅在该路原本处于播放态时才做一次完整重启（false->true），避免黑屏卡住。
-				if (composeSourceIsPlaying(idx))
-				{
-					QTimer::singleShot(80, this, [this, sub]() {
-						const int refreshIdx = std::distance(
-							m_composeSources.begin(),
-							std::find_if(m_composeSources.begin(), m_composeSources.end(), [sub](const ComposeSourceItem& i) {
-								return i.subWindow == sub;
-							}));
-						if (refreshIdx < 0 || refreshIdx >= m_composeSources.size())
-						{
-							return;
-						}
-						auto& refreshSrc = m_composeSources[refreshIdx];
-						if (refreshSrc.kind != ComposeSourceItem::SourceKind::Screen || !refreshSrc.service ||
-							!composeSourceIsPlaying(refreshIdx))
-						{
-							return;
-						}
-						refreshComposeScreenCaptureState(m_composeSelectedIndex, refreshIdx);
-						forceRefreshComposePreview();
-					});
-				}
-			}
+			Q_UNUSED(sub);
 		}
 		forceRefreshComposePreview();
 	};
@@ -4355,6 +5383,7 @@ void CaptureWindow::requestComposeSourceContextMenu(const QPoint& globalPos, con
 	auto* actionBottom = menu.addAction(tr("置于底部"));
 	auto* actionUp = menu.addAction(tr("向上调整"));
 	auto* actionDown = menu.addAction(tr("向下调整"));
+	auto* actionFillCanvas = menu.addAction(tr("铺满画布"));
 	auto* actionKeepAspect = menu.addAction(m_composeSources[index].keepAspectResize ? tr("取消锁定缩放比例") : tr("锁定缩放比例"));
 	auto* actionCrop = menu.addAction(m_composeSources[index].cropMode ? tr("退出裁剪") : tr("裁剪"));
 	menu.addSeparator();
@@ -4382,6 +5411,15 @@ void CaptureWindow::requestComposeSourceContextMenu(const QPoint& globalPos, con
 	if (chosen == actionDown)
 	{
 		moveComposeSourceDown(index);
+		return;
+	}
+	if (chosen == actionFillCanvas)
+	{
+		if (m_composeSources[index].subWindow && m_composeMdiArea && m_composeMdiArea->viewport())
+		{
+			m_composeSources[index].subWindow->setGeometry(m_composeMdiArea->viewport()->rect());
+			forceRefreshComposePreview();
+		}
 		return;
 	}
 	if (chosen == actionCrop)
@@ -4571,12 +5609,18 @@ void CaptureWindow::relocateTitleWidget()
 
 void CaptureWindow::resizeEvent(QResizeEvent* event)
 {
+	const QRect oldBounds = (m_isComposeMode && m_composeMdiArea && m_composeMdiArea->viewport())
+		                        ? m_composeMdiArea->viewport()->rect()
+		                        : QRect();
 	QWidget::resizeEvent(event);
 	relocateTitleWidget();
 	if (m_isComposeMode && m_composePreviewHost && m_composeAspectW > 0 && m_composeAspectH > 0)
 	{
 		static_cast<AspectRatioHostWidget*>(m_composePreviewHost)->setAspectRatio(m_composeAspectW, m_composeAspectH);
+		const QRect newBounds = (m_composeMdiArea && m_composeMdiArea->viewport()) ? m_composeMdiArea->viewport()->rect() : QRect();
+		remapComposeSourcesToViewport(oldBounds, newBounds);
 		applyComposeZOrder();
+		forceRefreshComposePreview();
 	}
 }
 
@@ -4584,6 +5628,16 @@ void CaptureWindow::closeEvent(QCloseEvent* event)
 {
 	if (!event)
 	{
+		return;
+	}
+	if (m_closeToTrayOnClose && !m_quitFromTray && m_trayIcon && m_trayIcon->isVisible())
+	{
+		event->ignore();
+		hide();
+		m_trayIcon->showMessage(tr("FPlayer"),
+		                        tr("程序已最小化到系统托盘，双击托盘图标可恢复窗口。"),
+		                        QSystemTrayIcon::Information,
+		                        2000);
 		return;
 	}
 	if (m_service && m_service->streamIsRunning())
@@ -4595,10 +5649,23 @@ void CaptureWindow::closeEvent(QCloseEvent* event)
 		                                       QMessageBox::No);
 		if (ret != QMessageBox::Yes)
 		{
+			m_quitFromTray = false;
 			event->ignore();
 			return;
 		}
 		m_service->streamStop();
+		m_mainRecording = false;
+		m_pullRecording = false;
+		if (m_mainRecordTimer)
+		{
+			m_mainRecordTimer->stop();
+		}
+		if (m_pullRecordTimer)
+		{
+			m_pullRecordTimer->stop();
+		}
+		updateRecordButtonUi();
+		updatePullRecordButtonUi();
 		if (m_pullPreviewDialog)
 		{
 			m_pullPreviewDialog->close();
@@ -4609,6 +5676,47 @@ void CaptureWindow::closeEvent(QCloseEvent* event)
 		}
 	}
 	QWidget::closeEvent(event);
+}
+
+void CaptureWindow::setupTrayIcon()
+{
+	if (!QSystemTrayIcon::isSystemTrayAvailable() || m_trayIcon)
+	{
+		return;
+	}
+	m_trayIcon = new QSystemTrayIcon(this);
+	m_trayIcon->setIcon(windowIcon());
+	m_trayIcon->setToolTip(tr("FPlayer Desktop"));
+	m_trayMenu = new QMenu(this);
+	m_trayShowAction = m_trayMenu->addAction(tr("显示主窗口"));
+	m_trayQuitAction = m_trayMenu->addAction(tr("退出程序"));
+	connect(m_trayShowAction, &QAction::triggered, this, &CaptureWindow::showFromTray);
+	connect(m_trayQuitAction, &QAction::triggered, this, &CaptureWindow::quitFromTray);
+	connect(m_trayIcon, &QSystemTrayIcon::activated, this, [this](QSystemTrayIcon::ActivationReason reason) {
+		if (reason == QSystemTrayIcon::DoubleClick || reason == QSystemTrayIcon::Trigger)
+		{
+			showFromTray();
+		}
+	});
+	m_trayIcon->setContextMenu(m_trayMenu);
+	m_trayIcon->show();
+}
+
+void CaptureWindow::showFromTray()
+{
+	if (!isVisible())
+	{
+		show();
+	}
+	setWindowState((windowState() & ~Qt::WindowMinimized) | Qt::WindowActive);
+	raise();
+	activateWindow();
+}
+
+void CaptureWindow::quitFromTray()
+{
+	m_quitFromTray = true;
+	close();
 }
 
 void CaptureWindow::refreshCameraDeviceUi()
@@ -4769,16 +5877,9 @@ bool CaptureWindow::selectScreen(int index)
 		if (isHdrEnabledForScreenIndex(index))
 		{
 			m_hdrPromptedScreenIndexes.insert(index);
-			const auto choice = QMessageBox::question(
-				this,
-				tr("屏幕捕获后端切换"),
-				tr("已检测到系统HDR打开，为确保稳定，将屏幕获取后端改为ffmepg。\n是否切换？"),
-				QMessageBox::Yes | QMessageBox::No,
-				QMessageBox::Yes);
-			if (choice == QMessageBox::Yes)
-			{
-				return fallbackToFfmpeg();
-			}
+			showNonBlockingHint(this,
+			                    tr("检测到当前系统开启了HDR，若遇到屏幕采集问题，可尝试切换至ffmepg后端，但该后端可能造成鼠标光标闪烁"),
+			                    4200);
 		}
 	}
 #endif

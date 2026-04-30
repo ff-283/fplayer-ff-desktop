@@ -37,6 +37,9 @@ namespace fplayer
 		bool previewPaused() const override;
 		void setPreviewVolume(float volume) override;
 		float previewVolume() const override;
+		bool startPullRecording(const QString& outputPath) override;
+		void stopPullRecording() override;
+		bool isPullRecording() const override;
 
 	private:
 		/// 使用 libav* 转封装（流拷贝），\p outputShortName 非空时传给 avformat_alloc_output_context2。
@@ -80,6 +83,10 @@ namespace fplayer
 		std::atomic<bool> m_completedSession{false};
 		std::atomic<bool> m_previewPaused{false};
 		std::atomic<float> m_previewVolume{1.0f};
+		mutable QMutex m_pullRecordMutex;
+		QString m_pullRecordPath;
+		std::atomic<bool> m_pullRecordDesired{false};
+		std::atomic<bool> m_pullRecordActive{false};
 	};
 }
 

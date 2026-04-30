@@ -11,6 +11,7 @@
 #include <QString>
 #include <QtTypes>
 #include <fplayer/service/export.h>
+#include <fplayer/service/systemsettingsrepository.h>
 #include <fplayer/runtime/runtime.h>
 
 class QWidget;
@@ -122,6 +123,13 @@ namespace fplayer
 		bool streamPreviewPaused() const;
 		void streamSetPreviewVolume(float volume);
 		float streamPreviewVolume() const;
+		bool streamStartPullRecording(const QString& outputPath);
+		void streamStopPullRecording();
+		bool streamIsPullRecording() const;
+		SystemSettings loadSystemSettings() const;
+		bool saveSystemSettings(const SystemSettings& settings) const;
+		static void addRecentSetting(QStringList& list, const QString& value, int maxItems = 8);
+		QString systemSettingsPath() const;
 
 	private:
 		// void bindCameraPreviewQt6(QWidget* widget);
@@ -135,6 +143,8 @@ namespace fplayer
 		std::shared_ptr<fplayer::IStream> m_stream;
 		int m_cameraIndex;// 摄像头索引
 		QString m_streamInitErrorHint;
+		QString m_settingsPath;
+		SystemSettingsRepository m_settingsRepo{QString()};
 	};
 }
 

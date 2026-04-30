@@ -77,6 +77,9 @@
 
 # 自定义产物汇总目录
 .\scripts\package-windows.ps1 -OutputDir disk/release/windows
+
+# 指定安装包版本号（覆盖默认 0.1.0）
+.\scripts\package-windows.ps1 -Version 0.2.3
 ```
 
 ## 5. CPack 配置说明
@@ -106,3 +109,37 @@
   - 检查是否安装 WiX Toolset，且 `candle`/`wix` 在 PATH
 - 只有 `.msi` 没有 `.exe`
   - 检查是否安装 NSIS，且 `makensis` 在 PATH
+
+## 7. 如何更换产品图标（单一入口）
+
+现在图标链路已统一：**只改一个 PNG 入口**，打包脚本会自动同步和生成其余文件。
+
+单一入口参数：
+
+- `-BrandIconPng`（默认 `doc/img/icons/icon.png`）
+
+脚本会在打包前自动执行：
+
+1. 把入口 PNG 同步到 `widget/res/icon/icon.png`（Qt 运行时图标资源）
+2. 用 ImageMagick 生成 `app/res/icon/icon.ico`（exe / 安装包图标）
+3. 后续 CMake/CPack 按既有配置继续打包
+
+### 7.1 重新打包并验证
+
+```powershell
+.\scripts\package-windows.ps1 `
+  -Qt6Dir "D:/SoftWare/Qt/Qt6.10.2/6.10.2/msvc2022_64/lib/cmake/Qt6" `
+  -CMakePrefixPath "D:/SoftWare/Qt/Qt6.10.2/6.10.2/msvc2022_64" `
+  -BrandIconPng "doc/img/icons/icon.png" `
+  -Version 0.2.3
+```
+
+建议检查：
+
+- `FPlayer_App.exe` 文件图标是否已更新
+- 生成的 `setup.exe` / `.msi` 安装包图标是否已更新
+
+### 7.2 依赖说明
+
+- 需要安装 ImageMagick（命令 `magick` 可用）
+- 若未安装，脚本会在“Sync brand icon assets”阶段直接失败并给出提示

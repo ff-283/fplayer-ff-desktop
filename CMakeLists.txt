@@ -3,6 +3,7 @@ project(FPlayer_Desketop)
 
 set(CMAKE_CXX_STANDARD 17)
 include(GNUInstallDirs)
+set(FPLAYER_PACKAGE_VERSION "0.1.0" CACHE STRING "Package version for CPack")
 
 set(CMAKE_DEBUG_POSTFIX d)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
@@ -45,14 +46,14 @@ if (UNIX AND NOT APPLE)
     set(CPACK_PACKAGE_NAME "fplayer-desktop")
     set(CPACK_PACKAGE_VENDOR "fplayer")
     set(CPACK_PACKAGE_CONTACT "fplayer@local")
-    set(CPACK_PACKAGE_VERSION "0.1.0")
+    set(CPACK_PACKAGE_VERSION "${FPLAYER_PACKAGE_VERSION}")
     set(CPACK_DEBIAN_PACKAGE_MAINTAINER "fplayer")
     set(CPACK_DEBIAN_FILE_NAME DEB-DEFAULT)
     set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
 endif()
 
 if (WIN32 AND MSVC)
-    set(FPLAYER_WINDOWS_ICON "${CMAKE_SOURCE_DIR}/app/res/icon/LOGO_ICON_CUTED.ico")
+    set(FPLAYER_WINDOWS_ICON "${CMAKE_SOURCE_DIR}/app/res/icon/icon.ico")
 
     # Use both generators: NSIS for setup.exe and WIX for msi.
     set(CPACK_GENERATOR "NSIS;WIX")
@@ -60,7 +61,7 @@ if (WIN32 AND MSVC)
     set(CPACK_PACKAGE_NAME "FPlayer Desktop")
     set(CPACK_PACKAGE_VENDOR "fplayer")
     set(CPACK_PACKAGE_CONTACT "fplayer@local")
-    set(CPACK_PACKAGE_VERSION "0.1.0")
+    set(CPACK_PACKAGE_VERSION "${FPLAYER_PACKAGE_VERSION}")
     set(CPACK_PACKAGE_INSTALL_DIRECTORY "FPlayerDesktop")
 
     # NSIS metadata.

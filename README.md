@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <img src="./doc/img/icons/LOGO_ICON_CUTED.png" alt="LOGO_ICON_CUTED" width="200">
+  <img src="./doc/img/icons/icon.png" alt="icon" width="200">
 </p>
 
 ```
@@ -31,11 +31,29 @@
 
 ## 详细介绍
 
+## 核心功能
+
+### 本项目可独立提供的能力
+
+- **双运行模式（重点）**：desktop 既可**单独使用（P2P/直连模式）**完成局域网点对点推拉流，也可接入 service 进入“服务端编排模式”扩展能力。
+- **多输入源采集与播放**：支持本地视频、摄像头（含虚拟摄像头）、屏幕共享等输入源接入与预览。
+- **推流与拉流一体化**：支持局域网内推流和拉流，拉流侧提供监视窗口 + 独立预览窗口联动。
+- **组合模式推流**：支持多源画布布局、素材切换联动、后台 YUV 合成编码，以及组合链路音视频解耦。
+- **跨平台工程体系**：基于 Qt + CMake 组织多模块，可使用 MSVC/MinGW 工具链并打包为 Windows 安装包。
+
+### 与其他项目的联合功能
+
+- **与 `fplayer-ff-service` 联动（扩展模式）**：在保留 desktop 单机 P2P 能力的前提下，接入 service Gateway 以获得流地址解析、端口编排、统一分发与运维友好的增强能力。
+- **与 `fplayer-ff-mobile` 联动（协同播放）**：desktop 作为内容生产端推流，mobile 作为移动播放端按同一 `app/stream` 拉流，实现跨设备实时观看。
+- **三端协同链路**：desktop 采集并推流 -> service 中枢调度与发布 -> mobile/desktop 消费播放，形成完整的生产、调度、消费闭环。
+
 
 
 # 技术
 
 ## 技术栈
+
+桌面端为跨平台局域网流媒体应用：**C++17** 主体，**Qt 6** 负责 UI 与系统集成，**FFmpeg** 承担采集侧编码、推拉流与解码路径，**WebRTC** 提供低延迟实时链路能力；工程由 **CMake** 组织多模块（app / widget / service / runtime / backend / api 等），可选 MSVC 或 MinGW 工具链与 **CPack**（NSIS / WiX）产出 Windows 安装包。
 
 - C++17
 - Qt 6.10.2

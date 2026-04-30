@@ -217,6 +217,12 @@ bool fplayer::StreamFFmpeg::startPull(const QString& inputUrl, const QString& ou
 		setLastError(QStringLiteral("拉流输入地址为空"));
 		return false;
 	}
+	m_pullRecordDesired.store(false, std::memory_order_relaxed);
+	m_pullRecordActive.store(false, std::memory_order_relaxed);
+	{
+		QMutexLocker lock(&m_pullRecordMutex);
+		m_pullRecordPath.clear();
+	}
 	stop();
 	{
 		QMutexLocker locker(&m_mutex);
@@ -264,6 +270,7 @@ bool fplayer::StreamFFmpeg::startPullWorker(const QString& inputUrl, const QStri
 
 void fplayer::StreamFFmpeg::stop()
 {
+	m_pullRecordDesired.store(false, std::memory_order_relaxed);
 	m_stopRequest.store(true, std::memory_order_relaxed);
 	if (m_worker && m_worker->joinable())
 	{
@@ -349,6 +356,37 @@ float fplayer::StreamFFmpeg::previewVolume() const
 	return m_previewVolume.load(std::memory_order_relaxed);
 }
 
+bool fplayer::StreamFFmpeg::startPullRecording(const QString& outputPath)
+{
+	const QString out = outputPath.trimmed();
+	if (out.isEmpty())
+	{
+		setLastError(QStringLiteral("录制输出路径为空"));
+		return false;
+	}
+	if (!isRunning())
+	{
+		setLastError(QStringLiteral("拉流未运行，无法开始录制"));
+		return false;
+	}
+	{
+		QMutexLocker locker(&m_pullRecordMutex);
+		m_pullRecordPath = out;
+	}
+	m_pullRecordDesired.store(true, std::memory_order_relaxed);
+	return true;
+}
+
+void fplayer::StreamFFmpeg::stopPullRecording()
+{
+	m_pullRecordDesired.store(false, std::memory_order_relaxed);
+}
+
+bool fplayer::StreamFFmpeg::isPullRecording() const
+{
+	return m_pullRecordActive.load(std::memory_order_relaxed);
+}
+
 void fplayer::StreamFFmpeg::appendLogLine(const QString& line)
 {
 	QMutexLocker locker(&m_mutex);
@@ -374,6 +412,7 @@ void fplayer::StreamFFmpeg::remuxLoop(const QString& inputUrl, const QString& ou
 {
 	AVFormatContext* ifmt = nullptr;
 	AVFormatContext* ofmt = nullptr;
+	AVFormatContext* recOfmt = nullptr;
 	AVPacket* pkt = nullptr;
 	AVCodecContext* previewDecCtx = nullptr;
 	SwsContext* previewSws = nullptr;
@@ -397,6 +436,7 @@ void fplayer::StreamFFmpeg::remuxLoop(const QString& inputUrl, const QString& ou
 	int ret = 0;
 	int exitCode = 0;
 	bool wroteHeader = false;
+	bool recWroteHeader = false;
 	bool firstPacketArrived = false;
 	const QUrl inputParsedUrl(inputUrl);
 	const QString inputHost = inputParsedUrl.host().trimmed().toLower();
@@ -450,6 +490,95 @@ void fplayer::StreamFFmpeg::remuxLoop(const QString& inputUrl, const QString& ou
 			}
 		}
 	}
+
+	auto closePullRecordOutput = [&]() {
+		if (recWroteHeader && recOfmt)
+		{
+			const int tw = av_write_trailer(recOfmt);
+			if (tw < 0)
+			{
+				char errbuf[AV_ERROR_MAX_STRING_SIZE];
+				av_strerror(tw, errbuf, sizeof(errbuf));
+				appendLogLine(QStringLiteral("[拉流录制] 写入文件尾失败: %1").arg(QString::fromUtf8(errbuf)));
+			}
+		}
+		recWroteHeader = false;
+		if (recOfmt && !(recOfmt->oformat->flags & AVFMT_NOFILE) && recOfmt->pb)
+		{
+			avio_closep(&recOfmt->pb);
+		}
+		if (recOfmt)
+		{
+			avformat_free_context(recOfmt);
+			recOfmt = nullptr;
+		}
+		m_pullRecordActive.store(false, std::memory_order_relaxed);
+	};
+	auto openPullRecordOutput = [&](const QString& recordPath) -> bool {
+		if (recordPath.trimmed().isEmpty())
+		{
+			return false;
+		}
+		closePullRecordOutput();
+		const QByteArray recOutUtf8 = recordPath.toUtf8();
+		const char* recOutPath = recOutUtf8.constData();
+		int rr = avformat_alloc_output_context2(&recOfmt, nullptr, nullptr, recOutPath);
+		if (rr < 0 || !recOfmt)
+		{
+			char errbuf[AV_ERROR_MAX_STRING_SIZE];
+			av_strerror(rr, errbuf, sizeof(errbuf));
+			appendLogLine(QStringLiteral("[拉流录制] 创建输出封装器失败: %1").arg(QString::fromUtf8(errbuf)));
+			return false;
+		}
+		recOfmt->interrupt_callback.callback = &StreamFFmpeg::interruptCallback;
+		recOfmt->interrupt_callback.opaque = &m_stopRequest;
+		for (unsigned i = 0; i < ifmt->nb_streams; ++i)
+		{
+			AVStream* inStr = ifmt->streams[i];
+			AVStream* outStr = avformat_new_stream(recOfmt, nullptr);
+			if (!outStr)
+			{
+				appendLogLine(QStringLiteral("[拉流录制] 创建输出流失败"));
+				closePullRecordOutput();
+				return false;
+			}
+			rr = avcodec_parameters_copy(outStr->codecpar, inStr->codecpar);
+			if (rr < 0)
+			{
+				char errbuf[AV_ERROR_MAX_STRING_SIZE];
+				av_strerror(rr, errbuf, sizeof(errbuf));
+				appendLogLine(QStringLiteral("[拉流录制] 复制编解码参数失败: %1").arg(QString::fromUtf8(errbuf)));
+				closePullRecordOutput();
+				return false;
+			}
+			outStr->codecpar->codec_tag = 0;
+		}
+		if (!(recOfmt->oformat->flags & AVFMT_NOFILE))
+		{
+			rr = avio_open2(&recOfmt->pb, recOutPath, AVIO_FLAG_WRITE, nullptr, nullptr);
+			if (rr < 0)
+			{
+				char errbuf[AV_ERROR_MAX_STRING_SIZE];
+				av_strerror(rr, errbuf, sizeof(errbuf));
+				appendLogLine(QStringLiteral("[拉流录制] 打开输出失败: %1").arg(QString::fromUtf8(errbuf)));
+				closePullRecordOutput();
+				return false;
+			}
+		}
+		rr = avformat_write_header(recOfmt, nullptr);
+		if (rr < 0)
+		{
+			char errbuf[AV_ERROR_MAX_STRING_SIZE];
+			av_strerror(rr, errbuf, sizeof(errbuf));
+			appendLogLine(QStringLiteral("[拉流录制] 写入文件头失败: %1").arg(QString::fromUtf8(errbuf)));
+			closePullRecordOutput();
+			return false;
+		}
+		recWroteHeader = true;
+		m_pullRecordActive.store(true, std::memory_order_relaxed);
+		appendLogLine(QStringLiteral("[拉流录制] 已开始保存: %1").arg(recordPath));
+		return true;
+	};
 
 	pkt = av_packet_alloc();
 	if (!pkt)
@@ -679,6 +808,24 @@ void fplayer::StreamFFmpeg::remuxLoop(const QString& inputUrl, const QString& ou
 
 	while (!m_stopRequest.load(std::memory_order_relaxed))
 	{
+		QString desiredRecordPath;
+		if (m_pullRecordDesired.load(std::memory_order_relaxed))
+		{
+			QMutexLocker lock(&m_pullRecordMutex);
+			desiredRecordPath = m_pullRecordPath;
+		}
+		if (!desiredRecordPath.isEmpty())
+		{
+			if (!recOfmt)
+			{
+				openPullRecordOutput(desiredRecordPath);
+			}
+		}
+		else if (recOfmt)
+		{
+			appendLogLine(QStringLiteral("[拉流录制] 已停止保存"));
+			closePullRecordOutput();
+		}
 		ret = av_read_frame(ifmt, pkt);
 		if (ret < 0)
 		{
@@ -879,9 +1026,9 @@ void fplayer::StreamFFmpeg::remuxLoop(const QString& inputUrl, const QString& ou
 					}
 #endif
 					const auto audioStatNow = std::chrono::steady_clock::now();
-					if (std::chrono::duration_cast<std::chrono::milliseconds>(audioStatNow - previewAudioStatWindowStart).count() >= 1000)
+					if (std::chrono::duration_cast<std::chrono::milliseconds>(audioStatNow - previewAudioStatWindowStart).count() >= 5000)
 					{
-						appendLogLine(QStringLiteral("[拉流][音频] 1s: decFrames=%1 resampledSamples=%2 writtenBytes=%3")
+						appendLogLine(QStringLiteral("[拉流][音频] 5s: decFrames=%1 resampledSamples=%2 writtenBytes=%3")
 						              .arg(previewAudioDecodedFrames)
 						              .arg(previewAudioResampledSamples)
 						              .arg(previewAudioWrittenBytes));
@@ -894,6 +1041,11 @@ void fplayer::StreamFFmpeg::remuxLoop(const QString& inputUrl, const QString& ou
 			}
 		}
 		AVStream* inStr = ifmt->streams[pkt->stream_index];
+		AVPacket* recPkt = nullptr;
+		if (recOfmt)
+		{
+			recPkt = av_packet_clone(pkt);
+		}
 		AVStream* outStr = ofmt->streams[pkt->stream_index];
 		av_packet_rescale_ts(pkt, inStr->time_base, outStr->time_base);
 		pkt->pos = -1;
@@ -906,6 +1058,25 @@ void fplayer::StreamFFmpeg::remuxLoop(const QString& inputUrl, const QString& ou
 			av_strerror(ret, errbuf, sizeof(errbuf));
 			setLastError(QStringLiteral("写入数据包失败: %1").arg(QString::fromUtf8(errbuf)));
 			break;
+		}
+		if (recOfmt && recPkt && recPkt->stream_index < static_cast<int>(recOfmt->nb_streams))
+		{
+			AVStream* recOutStr = recOfmt->streams[recPkt->stream_index];
+			av_packet_rescale_ts(recPkt, inStr->time_base, recOutStr->time_base);
+			recPkt->pos = -1;
+			const int rw = av_interleaved_write_frame(recOfmt, recPkt);
+			if (rw < 0)
+			{
+				char errbuf[AV_ERROR_MAX_STRING_SIZE];
+				av_strerror(rw, errbuf, sizeof(errbuf));
+				appendLogLine(QStringLiteral("[拉流录制] 写入数据包失败，停止录制: %1").arg(QString::fromUtf8(errbuf)));
+				m_pullRecordDesired.store(false, std::memory_order_relaxed);
+				closePullRecordOutput();
+			}
+		}
+		if (recPkt)
+		{
+			av_packet_free(&recPkt);
 		}
 	}
 
@@ -924,6 +1095,7 @@ void fplayer::StreamFFmpeg::remuxLoop(const QString& inputUrl, const QString& ou
 			setLastError(QStringLiteral("写入文件尾失败: %1").arg(QString::fromUtf8(errbuf)));
 		}
 	}
+	closePullRecordOutput();
 
 cleanup:
 	if (m_stopRequest.load(std::memory_order_relaxed) && exitCode == AVERROR_EXIT)

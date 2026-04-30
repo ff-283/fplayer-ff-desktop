@@ -4,6 +4,7 @@
 #include <QDir>
 #include <QLibraryInfo>
 #include <QSurfaceFormat>
+#include <exception>
 
 #ifdef Q_OS_WIN
 #include <windows.h>
@@ -75,7 +76,7 @@ int main(int argc, char* argv[])
 	parser.process(app);
 
 	// 应用级图标（任务栏/Alt-Tab/托盘等更统一）
-	app.setWindowIcon(QIcon(":/icon/img.png"));
+	app.setWindowIcon(QIcon(":/icon/icon.png"));
 
 	// 在这里进行转换
 	int backendInt = parser.value("backend").toInt();
@@ -97,9 +98,20 @@ int main(int argc, char* argv[])
 	}
 
 	// 传递转换后的枚举类型
-	CaptureWindow main(nullptr, backendType);
-
-	main.show();
-	app.exec();
-	return 0;
+	try
+	{
+		CaptureWindow main(nullptr, backendType);
+		main.show();
+		app.exec();
+		return 0;
+	}
+	catch (const std::exception& e)
+	{
+		LOG_ERROR("[startup]", "CaptureWindow startup failed (std::exception): ", e.what());
+	}
+	catch (...)
+	{
+		LOG_ERROR("[startup]", "CaptureWindow startup failed (unknown exception)");
+	}
+	return 2;
 }

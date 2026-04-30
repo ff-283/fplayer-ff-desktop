@@ -14,6 +14,7 @@
 #include <QSet>
 #include <QStringList>
 #include <QList>
+#include <QSize>
 #include <fplayer/widget/export.h>
 #include <fplayer/api/media/mediabackendtype.h>
 
@@ -44,6 +45,7 @@ class QTextEdit;
 class QSlider;
 class QTcpServer;
 class QMdiSubWindow;
+class QSystemTrayIcon;
 class QPoint;
 class QRect;
 namespace fplayer
@@ -133,6 +135,22 @@ private:
 	void forceRefreshComposePreview();
 	bool buildComposeScreenCaptureSpec(QString& spec, int fps, int outW, int outH, int bitrateKbps, const QString& encoder,
 	                                   const QString& audioIn, const QString& audioOut) const;
+	void refreshComposeOutputSizeOptions();
+	void loadCapturePreferences();
+	void saveCapturePreferences() const;
+	void openCaptureSettingsDialog(QWidget* parent = nullptr);
+	QString makeScreenshotFilePath(const QString& prefix = QStringLiteral("capture")) const;
+	QString makeRecordingFilePath(const QString& prefix = QStringLiteral("record")) const;
+	QSize preferredComposeExportSize() const;
+	QImage buildComposeSnapshotImage(const QSize& outSize) const;
+	void updateRecordButtonUi();
+	void updatePullRecordButtonUi();
+	void handleMainCaptureScreenshot();
+	void handleMainCaptureRecordToggle();
+	void handleMainCaptureSettings();
+	void setupTrayIcon();
+	void showFromTray();
+	void quitFromTray();
 	bool m_isFileMode = false;
 	bool m_isComposeMode = false;
 	CaptureMode m_captureMode = CaptureMode::Camera;
@@ -165,12 +183,50 @@ private:
 	QPushButton* m_pullStopButton = nullptr;
 	QTextEdit* m_pullLogView = nullptr;
 	QSlider* m_pullVolumeSlider = nullptr;
+	QPushButton* m_pullPreviewShotButton = nullptr;
+	QPushButton* m_pullPreviewRecordButton = nullptr;
+	QPushButton* m_pullPreviewSettingsButton = nullptr;
+	QLabel* m_pullPreviewRecordDurationLabel = nullptr;
+	fplayer::Service* m_pullRecordService = nullptr;
 	fplayer::MediaBackendType m_screenBackendType = fplayer::MediaBackendType::Qt6;
+	QString m_capturePrefPath;
+	QString m_screenshotSaveDir;
+	QString m_recordSaveDir;
+	QString m_pushGateway;
+	QString m_pushServiceApp;
+	QString m_pushServiceStream;
+	QString m_pullGateway;
+	QString m_pullServiceApp;
+	QString m_pullServiceStream;
+	QString m_pushRouteMode;
+	QString m_pushServiceMode;
+	QString m_pushProtocolTemplate;
+	int m_pushFps = 0;
+	QString m_pushSize;
+	int m_pushBitrateKbps = 0;
+	QString m_pushEncoder;
+	QString m_pushAudioInput;
+	QString m_pushAudioOutput;
+	bool m_pushKeepAspect = true;
+	bool m_closeToTrayOnClose = true;
+	QString m_composeOutputSize;
+	bool m_mainRecording = false;
+	bool m_pullRecording = false;
+	bool m_pullRecordingViaMainService = false;
+	QString m_pullCurrentInputUrl;
+	QString m_pullRecordInputUrl;
+	QString m_pullRecordOutputPath;
+	QTimer* m_mainRecordTimer = nullptr;
+	QTimer* m_pullRecordTimer = nullptr;
+	qint64 m_mainRecordStartMs = 0;
+	qint64 m_pullRecordStartMs = 0;
+	qint64 m_pullSessionStartMs = 0;
 	QSplitter* m_composeSplitter = nullptr;
 	QMdiArea* m_composeMdiArea = nullptr;
 	QWidget* m_composePreviewHost = nullptr;
 	QListWidget* m_composeSourceList = nullptr;
 	QComboBox* m_composeAspectCombo = nullptr;
+	QComboBox* m_composeSizeCombo = nullptr;
 	QPushButton* m_btnComposeAddFile = nullptr;
 	QPushButton* m_btnComposeAddCamera = nullptr;
 	QPushButton* m_btnComposeAddScreen = nullptr;
@@ -202,6 +258,11 @@ private:
 	};
 	QList<ComposeSourceItem> m_composeSources;
 	int m_composeSelectedIndex = -1;
+	QSystemTrayIcon* m_trayIcon = nullptr;
+	QMenu* m_trayMenu = nullptr;
+	QAction* m_trayShowAction = nullptr;
+	QAction* m_trayQuitAction = nullptr;
+	bool m_quitFromTray = false;
 };
 
 

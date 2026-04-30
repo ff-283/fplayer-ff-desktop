@@ -12,6 +12,21 @@ CPMAddPackage(
         GIT_TAG v1.1.4
 )
 
+# yaml-tool
+set(FPLAYER_YAML_TOOL_REPO "git@github.com:chunyujin295/yaml-tool.git")
+if (UNIX AND NOT APPLE)
+    # Linux CI/构建机上通常没有 SSH key，优先走 HTTPS 拉取依赖。
+    set(FPLAYER_YAML_TOOL_REPO "https://github.com/chunyujin295/yaml-tool.git")
+endif ()
+CPMAddPackage(
+        NAME yaml-tool
+        GIT_REPOSITORY ${FPLAYER_YAML_TOOL_REPO}
+        GIT_TAG v1.0.2
+        OPTIONS
+        "YAML_TOOL_BUILD_SHARED_LIBS ON"
+        "YAML_TOOL_INSTALL OFF"
+)
+
 # ffmpeg
 set(THIRD_PART_ROOT "${CMAKE_SOURCE_DIR}/3rd")
 set(FFMPEG_DIR "${THIRD_PART_ROOT}/ffmpeg_v8.1")

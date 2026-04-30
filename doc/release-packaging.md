@@ -70,6 +70,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\package-windows.ps1 -Qt6Dir "
 - `-CPackPath <path>`：显式指定 `cpack.exe`
 - `-Qt6Dir <path>`：Qt6 CMake 包目录（通常到 `.../lib/cmake/Qt6`）
 - `-CMakePrefixPath <path>`：Qt 安装前缀（通常到 `.../msvc2022_64`）
+- `-Version <x.y.z>`：覆盖安装包版本号（传入 CMake 变量 `FPLAYER_PACKAGE_VERSION`）
 
 ## 5. 推荐发布流程
 
@@ -104,4 +105,28 @@ powershell -ExecutionPolicy Bypass -File .\scripts\package-windows.ps1 -Qt6Dir "
 
 # 指定 CMake/CPack 路径
 powershell -ExecutionPolicy Bypass -File .\scripts\package-windows.ps1 -Qt6Dir "D:/SoftWare/Qt/Qt6.10.2/6.10.2/msvc2022_64/lib/cmake/Qt6" -CMakePrefixPath "D:/SoftWare/Qt/Qt6.10.2/6.10.2/msvc2022_64" -CMakePath "D:/SoftWare/CMake/bin/cmake.exe" -CPackPath "D:/SoftWare/CMake/bin/cpack.exe"
+
+# 指定版本号
+powershell -ExecutionPolicy Bypass -File .\scripts\package-windows.ps1 -Qt6Dir "D:/SoftWare/Qt/Qt6.10.2/6.10.2/msvc2022_64/lib/cmake/Qt6" -CMakePrefixPath "D:/SoftWare/Qt/Qt6.10.2/6.10.2/msvc2022_64" -Version 0.2.3
 ```
+
+## 7. 产品图标配置约定
+
+Windows 下图标分两层，发布前建议一起检查：
+
+- 应用本体图标（exe）：`app/app_icon.rc`
+- 安装包图标（NSIS/WiX）：根 `CMakeLists.txt` 中的 `FPLAYER_WINDOWS_ICON` / `CPACK_*_ICON`
+
+推荐规则：
+
+1. `.ico` 统一放在 `app/res/icon/`
+2. `app/app_icon.rc` 与 `CMakeLists.txt` 都引用同一个 `.ico`
+3. 变更图标后执行一次完整打包，验证 `exe`、`setup.exe`、`msi` 三处外观
+
+统一入口约定：
+
+- 打包脚本提供 `-BrandIconPng` 参数（默认 `doc/img/icons/icon.png`）
+- 脚本会在打包前自动：
+  - 同步 `widget/res/icon/icon.png`
+  - 生成 `app/res/icon/icon.ico`
+- 因此日常只需要替换入口 PNG（或传入新的 `-BrandIconPng`），不再手动逐个改资源文件

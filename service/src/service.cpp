@@ -4,6 +4,9 @@
 #include <QRegularExpression>
 #include <fplayer/common/maplist/maplist.hpp>
 #include <logger/logger.h>
+#include <QDir>
+#include <QStandardPaths>
+#include <QCoreApplication>
 
 namespace
 {
@@ -24,6 +27,8 @@ namespace
 
 fplayer::Service::Service() : m_runtime(new RunTime()), m_cameraIndex(0)
 {
+	m_settingsPath = QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("system_settings.yaml"));
+	m_settingsRepo = SystemSettingsRepository(m_settingsPath);
 };
 
 fplayer::Service::~Service() = default;
@@ -633,6 +638,46 @@ void fplayer::Service::streamSetPreviewVolume(const float volume)
 float fplayer::Service::streamPreviewVolume() const
 {
 	return m_stream ? m_stream->previewVolume() : 1.0f;
+}
+
+bool fplayer::Service::streamStartPullRecording(const QString& outputPath)
+{
+	return m_stream && m_stream->startPullRecording(outputPath);
+}
+
+void fplayer::Service::streamStopPullRecording()
+{
+	if (m_stream)
+	{
+		m_stream->stopPullRecording();
+	}
+}
+
+bool fplayer::Service::streamIsPullRecording() const
+{
+	return m_stream && m_stream->isPullRecording();
+}
+
+fplayer::SystemSettings fplayer::Service::loadSystemSettings() const
+{
+	SystemSettings settings;
+	m_settingsRepo.load(settings);
+	return settings;
+}
+
+bool fplayer::Service::saveSystemSettings(const fplayer::SystemSettings& settings) const
+{
+	return m_settingsRepo.save(settings);
+}
+
+void fplayer::Service::addRecentSetting(QStringList& list, const QString& value, const int maxItems)
+{
+	SystemSettingsRepository::addRecent(list, value, maxItems);
+}
+
+QString fplayer::Service::systemSettingsPath() const
+{
+	return m_settingsPath;
 }
 
 // void fplayer::Service::bindCameraPreviewQt6(QWidget* widget)

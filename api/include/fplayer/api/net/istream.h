@@ -32,6 +32,13 @@ namespace fplayer
 		virtual bool previewPaused() const { return false; }
 		virtual void setPreviewVolume(float volume) { (void)volume; }
 		virtual float previewVolume() const { return 1.0f; } // 1.0=100%, 2.0=200%
+		virtual bool startPullRecording(const QString& outputPath)
+		{
+			(void)outputPath;
+			return false;
+		}
+		virtual void stopPullRecording() {}
+		virtual bool isPullRecording() const { return false; }
 	};
 }
 
