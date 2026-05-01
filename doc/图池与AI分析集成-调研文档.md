@@ -1,6 +1,6 @@
 # 图池（Image Pool）与 AI 分析集成 — 实现文档
 
-> 版本：v1.1 | 日期：2026-05-01 | 状态：已实现
+> 版本：v1.2 | 日期：2026-05-02 | 状态：已实现
 
 ---
 
@@ -24,6 +24,25 @@
 | R8 | AI 配置：API Endpoint、API Key、Model 可配置，持久化到 YAML | 已实现 |
 | R9 | 主窗口和拉流预览截图均触发图池刷新 | 已实现 |
 | R10 | 图池按钮：已打开时置顶聚焦，最小化时还原 | 已实现 |
+| R11 | AI 流式响应：SSE 逐字输出 + 闪烁光标 + 输入中指示 | 已实现 |
+| R12 | 自动发送：打开 AI 对话窗自动发送分析请求 | 已实现 |
+| R13 | AI 配色自定义：气泡、背景、工具栏颜色（色块预览+取色器） | 已实现 |
+| R14 | 拉流预览窗口共享图池按钮 | 已实现 |
+
+---
+
+## 二点五、AI 对话配色自定义
+
+在系统设置的「AI 识别配置」区域新增 4 个颜色配置项，每项旁有 32×22 色块实时预览，点击弹出系统取色器（QColorDialog）。
+
+| 配置项 | YAML Key | 默认值 | 说明 |
+|--------|---------|--------|------|
+| 用户气泡颜色 | `ai_user_bubble_color` | `#0078d4` | 右侧蓝色气泡 |
+| AI 气泡颜色 | `ai_ai_bubble_color` | `#ffffff` | 左侧白色气泡 |
+| 聊天背景颜色 | `ai_chat_bg_color` | `#000000` | 对话区底色 |
+| 图池工具栏颜色 | `image_pool_toolbar_color` | `#000000` | 图池窗口工具栏背景 |
+
+颜色通过 `AiConfig` 传递至 `AiChatDialog`，`bubbleHtml()` 动态渲染。工具栏颜色通过 `ImagePoolSidebar::setToolbarColor()` 注入。
 
 ---
 
@@ -44,6 +63,7 @@ CaptureWindow (主窗口)
   ├── wgtView (视频预览区)
   ├── wgtDown (底部栏)
   │   └── btnImagePool → toggle ImagePoolSidebar
+  ├── 拉流预览窗口 → btnImagePool（共享同一实例）
   ├── 菜单栏 → "视图 → 图池" → toggle
   │
   └── ImagePoolSidebar (独立 Qt::Window, 无父子吸附)
@@ -106,7 +126,7 @@ service 层:
 
 ### 5.1 API 协议
 
-采用 **OpenAI Chat Completions 兼容接口**，发送多模态消息（图片 base64 + 用户文本）。
+采用 **OpenAI Chat Completions 兼容接口**，启用 `"stream": true` SSE 流式输出。
 
 ```
 POST {endpoint}
@@ -128,9 +148,12 @@ Content-Type: application/json
       ]
     }
   ],
-  "max_tokens": 1000
+  "max_tokens": 1000,
+  "stream": true
 }
 ```
+
+`AiService::onReadyRead()` 逐行解析 SSE `data:` 行，提取 `delta.content`，emit `responseChunk(chunk)`；流结束 emit `responseFinished()`。
 
 ### 5.2 错误处理
 
@@ -469,6 +492,7 @@ API Key 以明文存储于 YAML，建议用户妥善保管配置文件。
 | DeepSeek | — | — | ❌ 不支持 |
 
 > 每个服务商需单独申请 API Key，填入设置页面对应字段。Ollama 本地无需 Key，留空即可。
+> 打开 AI 对话窗后会自动发送"请分析一下图片内容"，后续问题可手动输入。
 
 **第二步：使用**
 
@@ -505,10 +529,15 @@ API Key 以明文存储于 YAML，建议用户妥善保管配置文件。
 
 修改文件:
   widget/uis/capturewindow.ui                       ← 新增 btnImagePool
-  widget/include/fplayer/widget/capturewindow.h      ← 新增成员/信号
-  widget/src/capturewindow.cpp                       ← 图池创建、信号连接、菜单、AI 对话框
-  service/include/fplayer/service/systemsettingsrepository.h ← AI 配置字段
-  service/src/systemsettingsrepository.cpp           ← AI 字段读写
+  widget/include/fplayer/widget/capturewindow.h      ← 新增成员/信号 + 配色成员
+  widget/src/capturewindow.cpp                       ← 图池、菜单、AI 对话框、拉流预览图池按钮、配色 UI
+  widget/include/fplayer/widget/imagepoolsidebar.h   ← setToolbarColor、closeEvent
+  widget/src/imagepoolsidebar.cpp                    ← 等比缩略图、工具栏配色
+  widget/include/fplayer/widget/imageviewerdialog.h  ← showEvent、fitToWindow
+  widget/src/imageviewerdialog.cpp                   ← 等比缩放显示
+  service/include/fplayer/service/systemsettingsrepository.h ← AI + 配色字段
+  service/src/systemsettingsrepository.cpp           ← AI + 配色字段读写
+  service/include/fplayer/service/aiservice.h        ← AiConfig 配色字段
   service/CMakeLists.txt                             ← 新增 Qt6::Network 依赖
 ```
 

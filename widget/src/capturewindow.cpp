@@ -5900,6 +5900,10 @@ void CaptureWindow::showFromTray()
 void CaptureWindow::quitFromTray()
 {
 	m_quitFromTray = true;
+	if (!isVisible())
+	{
+		show();
+	}
 	close();
 }
 
