@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -n 'replace.*\\\\\\\\\\\\\\\\n\\\\|replace.*<br>\\\\|autoSend\\\\|onResponseChunk\\\\|onResponseFinished\\\\|beginAiMessage\\\\|appendToAiMessage\\\\|finishAiMessage\\\\|setInputEnabled\\\\|m_aiStreaming' \"D:/Code/fplayer-ff-desktop/widget/src/aichatdialog.cpp\")"
+    ]
+  }
+}

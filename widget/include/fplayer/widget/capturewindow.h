@@ -48,6 +48,7 @@ class QMdiSubWindow;
 class QSystemTrayIcon;
 class QPoint;
 class QRect;
+class ImagePoolSidebar;
 namespace fplayer
 {
 	class FVideoView;
@@ -210,6 +211,13 @@ private:
 	bool m_pushKeepAspect = true;
 	bool m_closeToTrayOnClose = true;
 	QString m_composeOutputSize;
+	QString m_aiEndpoint;
+	QString m_aiApiKey;
+	QString m_aiModel;
+	QString m_aiUserBubbleColor;
+	QString m_aiAiBubbleColor;
+	QString m_aiChatBgColor;
+	QString m_imagePoolToolbarColor;
 	bool m_mainRecording = false;
 	bool m_pullRecording = false;
 	bool m_pullRecordingViaMainService = false;
@@ -263,6 +271,12 @@ private:
 	QAction* m_trayShowAction = nullptr;
 	QAction* m_trayQuitAction = nullptr;
 	bool m_quitFromTray = false;
+	// Image pool
+	QPushButton* m_btnImagePool = nullptr;
+	ImagePoolSidebar* m_imagePoolSidebar = nullptr;
+
+signals:
+	void screenshotSaved(const QString& filePath);
 };
 
 

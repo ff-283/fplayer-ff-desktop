@@ -1,6 +1,8 @@
 #include "ui_capturewindow.h"
 
 #include <fplayer/widget/capturewindow.h>
+#include <fplayer/widget/imagepoolsidebar.h>
+#include <fplayer/widget/aichatdialog.h>
 #include <fplayer/service/service.h>
 #include <fplayer/widget/fvideoview.h>
 #include <fplayer/common/fglwidget/fglwidget.h>
@@ -67,6 +69,7 @@
 #include <QEasingCurve>
 #include <QUuid>
 #include <QClipboard>
+#include <QColorDialog>
 #include <QImage>
 #include <QTcpServer>
 #include <QHostAddress>
@@ -1441,6 +1444,7 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 	this->ui->btnCast->setFocusPolicy(Qt::NoFocus);
 	this->ui->btnSettings->setFocusPolicy(Qt::NoFocus);
 	this->ui->btnFullscreen->setFocusPolicy(Qt::NoFocus);
+	this->ui->btnImagePool->setFocusPolicy(Qt::NoFocus);
 	this->ui->chkCaptureCursor->setVisible(false);
 	this->ui->cmbScreenFps->setVisible(false);
 	m_mainRecordTimer = new QTimer(this);
@@ -1715,7 +1719,53 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 	connect(this->ui->btnCast, &QPushButton::clicked, this, &CaptureWindow::handleMainCaptureRecordToggle);
 	connect(this->ui->btnSettings, &QPushButton::clicked, this, &CaptureWindow::handleMainCaptureSettings);
 
-	auto switchToCameraMode = [this]() {
+
+		// 图池独立窗体
+		m_imagePoolSidebar = new ImagePoolSidebar(nullptr);
+		m_imagePoolSidebar->setScreenshotDir(m_screenshotSaveDir);
+		m_imagePoolSidebar->setWindowTitle(tr("图池"));
+		m_imagePoolSidebar->setToolbarColor(m_imagePoolToolbarColor);
+		connect(this->ui->btnImagePool, &QPushButton::clicked, [this]() {
+			if (m_imagePoolSidebar->isVisible())
+			{
+				if (m_imagePoolSidebar->isMinimized())
+					m_imagePoolSidebar->showNormal();
+				m_imagePoolSidebar->raise();
+				m_imagePoolSidebar->activateWindow();
+			}
+			else
+			{
+				m_imagePoolSidebar->show();
+			}
+		});
+		connect(this, &CaptureWindow::screenshotSaved,
+		        m_imagePoolSidebar, &ImagePoolSidebar::onScreenshotSaved);
+		// 菜单栏"视图 → 图池"同步
+		auto* viewMenu = m_modeMenuBar->addMenu(tr("视图"));
+		auto* actionImagePool = viewMenu->addAction(tr("图池"));
+		actionImagePool->setCheckable(true);
+		connect(actionImagePool, &QAction::toggled, [this](bool checked) {
+			if (checked)
+				m_imagePoolSidebar->show();
+			else
+				m_imagePoolSidebar->hide();
+		});
+		connect(m_imagePoolSidebar, &ImagePoolSidebar::visibilityChanged,
+		        actionImagePool, &QAction::setChecked);
+		connect(m_imagePoolSidebar, &ImagePoolSidebar::analyzeRequested, [this](const QString& path) {
+			auto* dlg = new AiChatDialog(this);
+			dlg->setAttribute(Qt::WA_DeleteOnClose);
+			fplayer::AiConfig cfg;
+			cfg.endpoint = m_aiEndpoint;
+			cfg.apiKey = m_aiApiKey;
+			cfg.model = m_aiModel;
+		cfg.userBubbleColor = m_aiUserBubbleColor;
+		cfg.aiBubbleColor = m_aiAiBubbleColor;
+		cfg.chatBgColor = m_aiChatBgColor;
+			dlg->startChat(path, cfg);
+		});
+
+		auto switchToCameraMode = [this]() {
 		setComposeMode(false);
 		m_isFileMode = false;
 		m_captureMode = CaptureMode::Camera;
@@ -2953,6 +3003,7 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 				auto* btnRecord = new QPushButton(ctrlRow);
 				auto* btnSettings = new QPushButton(ctrlRow);
 				auto* btnFullscreen = new QPushButton(ctrlRow);
+				auto* btnImagePool = new QPushButton(ctrlRow);
 				auto* lblRecordDuration = new QLabel(tr("拉流时长：00:00"), ctrlRow);
 				auto* sldVolume = new QSlider(Qt::Horizontal, ctrlRow);
 				auto* lblVolume = new QLabel(tr("音量"), ctrlRow);
@@ -2963,7 +3014,7 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 				sldVolume->setTickPosition(QSlider::TicksBelow);
 				sldVolume->setTickInterval(20);
 				sldVolume->setToolTip(tr("音量：%1%").arg(sldVolume->value()));
-				for (auto* b : {btnPause, btnRefresh, btnSettings, btnFullscreen})
+				for (auto* b : {btnPause, btnRefresh, btnSettings, btnFullscreen, btnImagePool})
 				{
 					b->setMinimumSize(40, 40);
 					b->setMaximumSize(40, 40);
@@ -2992,6 +3043,8 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 				btnRecord->setIcon(QIcon::fromTheme(QIcon::ThemeIcon::CameraVideo));
 				btnSettings->setIcon(QIcon::fromTheme(QStringLiteral("document-properties")));
 				btnFullscreen->setIcon(QIcon::fromTheme(QIcon::ThemeIcon::ViewFullscreen));
+				btnImagePool->setToolTip(tr("图池"));
+				btnImagePool->setIcon(QIcon(QStringLiteral(":/icon/picture.svg")));
 				lblRecordDuration->setMinimumWidth(140);
 				lblVolume->setMinimumWidth(34);
 				lblVolumeValue->setMinimumWidth(46);
@@ -3001,6 +3054,7 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 				ctrlLayout->addWidget(btnRefresh, 0);
 				ctrlLayout->addWidget(btnShot, 0);
 				ctrlLayout->addWidget(btnRecord, 0);
+				ctrlLayout->addWidget(btnImagePool, 0);
 				ctrlLayout->addWidget(btnSettings, 0);
 				ctrlLayout->addWidget(btnFullscreen, 0);
 				ctrlLayout->addWidget(lblRecordDuration, 0);
@@ -3017,6 +3071,22 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 				m_pullPreviewRecordButton = btnRecord;
 				m_pullPreviewSettingsButton = btnSettings;
 				m_pullPreviewRecordDurationLabel = lblRecordDuration;
+				connect(btnImagePool, &QPushButton::clicked, [this]() {
+					if (m_imagePoolSidebar)
+					{
+						if (m_imagePoolSidebar->isVisible())
+						{
+							if (m_imagePoolSidebar->isMinimized())
+								m_imagePoolSidebar->showNormal();
+							m_imagePoolSidebar->raise();
+							m_imagePoolSidebar->activateWindow();
+						}
+						else
+						{
+							m_imagePoolSidebar->show();
+						}
+					}
+				});
 				connect(preview, &QObject::destroyed, this, [this, requestStopPullAsync]() {
 					m_pullPreviewDialog = nullptr;
 					m_pullPreviewView = nullptr;
@@ -3097,6 +3167,7 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 						return;
 					}
 					showNonBlockingHint(preview, tr("截图已保存：%1").arg(QDir::toNativeSeparators(savePath)));
+						emit screenshotSaved(savePath);
 				});
 				connect(btnSettings, &QPushButton::clicked, preview, [this, preview]() {
 					openCaptureSettingsDialog(preview);
@@ -3499,6 +3570,13 @@ void CaptureWindow::loadCapturePreferences()
 	m_pushKeepAspect = data.pushKeepAspect;
 	m_closeToTrayOnClose = data.closeToTrayOnClose;
 	if (!data.composeOutputSize.trimmed().isEmpty()) m_composeOutputSize = data.composeOutputSize;
+	if (!data.aiEndpoint.trimmed().isEmpty()) m_aiEndpoint = data.aiEndpoint;
+	if (!data.aiApiKey.trimmed().isEmpty()) m_aiApiKey = data.aiApiKey;
+	if (!data.aiModel.trimmed().isEmpty()) m_aiModel = data.aiModel;
+	if (!data.aiUserBubbleColor.trimmed().isEmpty()) m_aiUserBubbleColor = data.aiUserBubbleColor;
+	if (!data.aiAiBubbleColor.trimmed().isEmpty()) m_aiAiBubbleColor = data.aiAiBubbleColor;
+	if (!data.aiChatBgColor.trimmed().isEmpty()) m_aiChatBgColor = data.aiChatBgColor;
+	if (!data.imagePoolToolbarColor.trimmed().isEmpty()) m_imagePoolToolbarColor = data.imagePoolToolbarColor;
 	{
 		const QString backend = data.screenCaptureBackend.trimmed().toLower();
 		if (backend == QStringLiteral("ffmpeg"))
@@ -3539,6 +3617,13 @@ void CaptureWindow::saveCapturePreferences() const
 	data.pushKeepAspect = m_pushKeepAspect;
 	data.closeToTrayOnClose = m_closeToTrayOnClose;
 	data.composeOutputSize = m_composeOutputSize;
+	data.aiEndpoint = m_aiEndpoint;
+	data.aiApiKey = m_aiApiKey;
+	data.aiModel = m_aiModel;
+	data.aiUserBubbleColor = m_aiUserBubbleColor;
+	data.aiAiBubbleColor = m_aiAiBubbleColor;
+	data.aiChatBgColor = m_aiChatBgColor;
+	data.imagePoolToolbarColor = m_imagePoolToolbarColor;
 	data.screenCaptureBackend = (m_screenBackendType == fplayer::MediaBackendType::FFmpeg)
 		                            ? QStringLiteral("ffmpeg")
 		                            : QStringLiteral("dxgi");
@@ -3592,6 +3677,96 @@ void CaptureWindow::openCaptureSettingsDialog(QWidget* parent)
 	layout->addRow(tr("关闭行为"), chkCloseToTray);
 	layout->addRow(tr("屏幕采集后端"), cmbScreenBackend);
 	layout->addRow(lblHdrHint);
+
+	auto* lblAiSection = new QLabel(tr("── AI 识别配置 ──"), &dlg);
+	lblAiSection->setStyleSheet(QStringLiteral("font-weight: bold; color: #6b5ba0; margin-top: 8px;"));
+	auto* aiEndpointEdit = new QLineEdit(m_aiEndpoint, &dlg);
+	auto* aiApiKeyEdit = new QLineEdit(m_aiApiKey, &dlg);
+	aiApiKeyEdit->setEchoMode(QLineEdit::Password);
+	aiApiKeyEdit->setPlaceholderText(tr("sk-..."));
+	auto* aiModelEdit = new QLineEdit(m_aiModel, &dlg);
+	aiModelEdit->setPlaceholderText(tr("gpt-4o / gpt-4-vision-preview / claude-3-opus"));
+	layout->addRow(lblAiSection);
+	layout->addRow(tr("API 地址"), aiEndpointEdit);
+	layout->addRow(tr("API Key"), aiApiKeyEdit);
+	layout->addRow(tr("模型"), aiModelEdit);
+
+	// AI chat color configuration
+	auto makeColorSwatch = [&dlg](const QString& color) {
+		QPushButton* btn = new QPushButton(&dlg);
+		btn->setFixedSize(32, 22);
+		btn->setCursor(Qt::PointingHandCursor);
+		btn->setToolTip(tr("点击选择颜色"));
+		auto updateSwatch = [btn](const QString& c) {
+			btn->setStyleSheet(QStringLiteral("QPushButton{background-color:%1;border:1px solid #999;border-radius:2px;}QPushButton:hover{border-color:#0078d4;}").arg(c));
+		};
+		updateSwatch(color);
+		return std::make_pair(btn, updateSwatch);
+	};
+
+	auto [btnUserColor, updateUserSwatch] = makeColorSwatch(m_aiUserBubbleColor);
+	auto userColorRow = new QWidget(&dlg);
+	auto* userColorLay = new QHBoxLayout(userColorRow);
+	userColorLay->setContentsMargins(0, 0, 0, 0);
+	auto* userColorLabel = new QLabel(m_aiUserBubbleColor, &dlg);
+	userColorLabel->setStyleSheet(QStringLiteral("font-family: monospace; font-size: 12px;"));
+	userColorLay->addWidget(btnUserColor);
+	userColorLay->addWidget(userColorLabel);
+	userColorLay->addStretch();
+	layout->addRow(tr("用户气泡颜色"), userColorRow);
+
+	auto [btnAiColor, updateAiSwatch] = makeColorSwatch(m_aiAiBubbleColor);
+	auto aiColorRow = new QWidget(&dlg);
+	auto* aiColorLay = new QHBoxLayout(aiColorRow);
+	aiColorLay->setContentsMargins(0, 0, 0, 0);
+	auto* aiColorLabel = new QLabel(m_aiAiBubbleColor, &dlg);
+	aiColorLabel->setStyleSheet(QStringLiteral("font-family: monospace; font-size: 12px;"));
+	aiColorLay->addWidget(btnAiColor);
+	aiColorLay->addWidget(aiColorLabel);
+	aiColorLay->addStretch();
+	layout->addRow(tr("AI 气泡颜色"), aiColorRow);
+
+	auto [btnBgColor, updateBgSwatch] = makeColorSwatch(m_aiChatBgColor);
+	auto bgColorRow = new QWidget(&dlg);
+	auto* bgColorLay = new QHBoxLayout(bgColorRow);
+	bgColorLay->setContentsMargins(0, 0, 0, 0);
+	auto* bgColorLabel = new QLabel(m_aiChatBgColor, &dlg);
+	bgColorLabel->setStyleSheet(QStringLiteral("font-family: monospace; font-size: 12px;"));
+	bgColorLay->addWidget(btnBgColor);
+	bgColorLay->addWidget(bgColorLabel);
+	bgColorLay->addStretch();
+	layout->addRow(tr("聊天背景颜色"), bgColorRow);
+
+	auto [btnTbColor, updateTbSwatch] = makeColorSwatch(m_imagePoolToolbarColor);
+	auto tbColorRow = new QWidget(&dlg);
+	auto* tbColorLay = new QHBoxLayout(tbColorRow);
+	tbColorLay->setContentsMargins(0, 0, 0, 0);
+	auto* tbColorLabel = new QLabel(m_imagePoolToolbarColor, &dlg);
+	tbColorLabel->setStyleSheet(QStringLiteral("font-family: monospace; font-size: 12px;"));
+	tbColorLay->addWidget(btnTbColor);
+	tbColorLay->addWidget(tbColorLabel);
+	tbColorLay->addStretch();
+	layout->addRow(tr("图池工具栏颜色"), tbColorRow);
+
+	connect(btnTbColor, &QPushButton::clicked, &dlg, [updateTbSwatch, tbColorLabel, &dlg]() {
+		QColor c = QColorDialog::getColor(QColor(tbColorLabel->text()), &dlg, tr("选择工具栏背景颜色"));
+		if (c.isValid()) { updateTbSwatch(c.name()); tbColorLabel->setText(c.name()); }
+	});
+
+	// Color picker connections
+	connect(btnUserColor, &QPushButton::clicked, &dlg, [updateUserSwatch, userColorLabel, &dlg]() {
+		QColor c = QColorDialog::getColor(QColor(userColorLabel->text()), &dlg, tr("选择用户气泡颜色"));
+		if (c.isValid()) { updateUserSwatch(c.name()); userColorLabel->setText(c.name()); }
+	});
+	connect(btnAiColor, &QPushButton::clicked, &dlg, [updateAiSwatch, aiColorLabel, &dlg]() {
+		QColor c = QColorDialog::getColor(QColor(aiColorLabel->text()), &dlg, tr("选择 AI 气泡颜色"));
+		if (c.isValid()) { updateAiSwatch(c.name()); aiColorLabel->setText(c.name()); }
+	});
+	connect(btnBgColor, &QPushButton::clicked, &dlg, [updateBgSwatch, bgColorLabel, &dlg]() {
+		QColor c = QColorDialog::getColor(QColor(bgColorLabel->text()), &dlg, tr("选择聊天背景颜色"));
+		if (c.isValid()) { updateBgSwatch(c.name()); bgColorLabel->setText(c.name()); }
+	});
+
 	auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
 	layout->addRow(buttons);
 	connect(shotBrowse, &QPushButton::clicked, &dlg, [shotPath, this]() {
@@ -3608,7 +3783,7 @@ void CaptureWindow::openCaptureSettingsDialog(QWidget* parent)
 			recPath->setText(QDir::toNativeSeparators(dir));
 		}
 	});
-	connect(buttons, &QDialogButtonBox::accepted, &dlg, [&dlg, shotPath, recPath, chkCloseToTray, cmbScreenBackend, this]() {
+	connect(buttons, &QDialogButtonBox::accepted, &dlg, [&dlg, shotPath, recPath, chkCloseToTray, cmbScreenBackend, aiEndpointEdit, aiApiKeyEdit, aiModelEdit, userColorLabel, aiColorLabel, bgColorLabel, tbColorLabel, this]() {
 		const QString shot = shotPath->text().trimmed();
 		const QString rec = recPath->text().trimmed();
 		if (shot.isEmpty() || rec.isEmpty())
@@ -3727,6 +3902,14 @@ void CaptureWindow::openCaptureSettingsDialog(QWidget* parent)
 				forceRefreshComposePreview();
 			}
 		}
+		m_aiEndpoint = aiEndpointEdit->text().trimmed();
+		m_aiApiKey = aiApiKeyEdit->text().trimmed();
+		m_aiModel = aiModelEdit->text().trimmed();
+		m_aiUserBubbleColor = userColorLabel->text();
+		m_aiAiBubbleColor = aiColorLabel->text();
+		m_aiChatBgColor = bgColorLabel->text();
+		m_imagePoolToolbarColor = tbColorLabel->text();
+		saveCapturePreferences();
 		dlg.accept();
 	});
 	connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
@@ -3946,6 +4129,7 @@ void CaptureWindow::handleMainCaptureScreenshot()
 		return;
 	}
 	showNonBlockingHint(this, tr("截图已保存：%1").arg(QDir::toNativeSeparators(savePath)));
+		emit screenshotSaved(savePath);
 }
 
 void CaptureWindow::handleMainCaptureRecordToggle()

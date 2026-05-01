@@ -88,6 +88,9 @@ bool fplayer::SystemSettingsRepository::load(fplayer::SystemSettings& data) cons
 		data.composeOutputSize = loadString("compose_output_size", data.composeOutputSize);
 		data.screenCaptureBackend = loadString("screen_capture_backend", data.screenCaptureBackend);
 		data.closeToTrayOnClose = YamlTool::YamlTool::getDef<int>(root, "close_to_tray_on_close", data.closeToTrayOnClose ? 1 : 0) != 0;
+		data.aiEndpoint = loadString("ai_endpoint", data.aiEndpoint);
+		data.aiApiKey = loadString("ai_api_key", data.aiApiKey);
+		data.aiModel = loadString("ai_model", data.aiModel);
 		data.recentPushInputs = loadStringList(root, "recent_push_inputs");
 		data.recentPushOutputs = loadStringList(root, "recent_push_outputs");
 		data.recentPullInputs = loadStringList(root, "recent_pull_inputs");
@@ -134,6 +137,13 @@ bool fplayer::SystemSettingsRepository::save(const fplayer::SystemSettings& data
 	YamlTool::YamlTool::set<std::string>(root, "compose_output_size", data.composeOutputSize.toStdString());
 	YamlTool::YamlTool::set<std::string>(root, "screen_capture_backend", data.screenCaptureBackend.toStdString());
 	YamlTool::YamlTool::set<int>(root, "close_to_tray_on_close", data.closeToTrayOnClose ? 1 : 0);
+	YamlTool::YamlTool::set<std::string>(root, "ai_endpoint", data.aiEndpoint.toStdString());
+	YamlTool::YamlTool::set<std::string>(root, "ai_api_key", data.aiApiKey.toStdString());
+	YamlTool::YamlTool::set<std::string>(root, "ai_model", data.aiModel.toStdString());
+	YamlTool::YamlTool::set<std::string>(root, "ai_user_bubble_color", data.aiUserBubbleColor.toStdString());
+	YamlTool::YamlTool::set<std::string>(root, "ai_ai_bubble_color", data.aiAiBubbleColor.toStdString());
+	YamlTool::YamlTool::set<std::string>(root, "ai_chat_bg_color", data.aiChatBgColor.toStdString());
+	YamlTool::YamlTool::set<std::string>(root, "image_pool_toolbar_color", data.imagePoolToolbarColor.toStdString());
 	saveStringList(root, "recent_push_inputs", data.recentPushInputs);
 	saveStringList(root, "recent_push_outputs", data.recentPushOutputs);
 	saveStringList(root, "recent_pull_inputs", data.recentPullInputs);

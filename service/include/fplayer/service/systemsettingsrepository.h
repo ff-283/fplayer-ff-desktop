@@ -33,6 +33,15 @@ namespace fplayer
 		QString composeOutputSize;
 		QString screenCaptureBackend;
 		bool closeToTrayOnClose = true;
+		// AI configuration
+		QString aiEndpoint = QStringLiteral("https://api.openai.com/v1/chat/completions");
+		QString aiApiKey;
+		QString aiModel = QStringLiteral("gpt-4o");
+		// AI chat appearance
+		QString aiUserBubbleColor = QStringLiteral("#0078d4");
+		QString aiAiBubbleColor = QStringLiteral("#ffffff");
+		QString aiChatBgColor = QStringLiteral("#000000");
+		QString imagePoolToolbarColor = QStringLiteral("#000000");
 	};
 
 	class SystemSettingsRepository

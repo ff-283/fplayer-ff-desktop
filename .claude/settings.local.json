@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(sed -i '3123s/^\\\\tt\\\\t\\\\t\\\\t\\\\temit/\\\\t\\\\t\\\\t\\\\temit/' \"D:/Code/fplayer-ff-desktop/widget/src/capturewindow.cpp\")",
+      "Bash(sed -i '3973s/^\\\\tt\\\\temit/\\\\t\\\\temit/' \"D:/Code/fplayer-ff-desktop/widget/src/capturewindow.cpp\")",
+      "Bash(python3 *)",
+      "Bash(grep -n 'relocateTitleWidget\\\\|QWidget::resizeEvent\\\\|forceRefreshComposePreview\\\\|^}$' \"D:/Code/fplayer-ff-desktop/widget/src/capturewindow.cpp\")",
+      "Bash(where cmake *)",
+      "Read(//c//**)",
+      "Bash(\"D:/SoftWare/CLion 2025.2.4/bin/cmake/win/x64/bin/cmake.exe\" -S . -B build/msvc/release -DCMAKE_PREFIX_PATH=D:/SoftWare/Qt/Qt6.10.2/6.10.2/msvc2022_64 -DQt6_DIR=D:/SoftWare/Qt/Qt6.10.2/6.10.2/msvc2022_64/lib/cmake/Qt6 -DCMAKE_INSTALL_PREFIX:PATH=D:/Code/LIB/FPlayer-desketop/release-msvc2022)",
+      "Bash(\"D:/SoftWare/CLion 2025.2.4/bin/cmake/win/x64/bin/cmake.exe\" --build build/msvc/release --config Release)",
+      "Read(//d/Code/fplayer-ff-desktop/**)"
+    ]
+  }
+}
