@@ -49,6 +49,8 @@
 #include <QSystemTrayIcon>
 #include <QTextEdit>
 #include <QSpinBox>
+#include <QFontComboBox>
+#include <QFontDatabase>
 #include <QRegularExpression>
 #include <QStandardItemModel>
 #include <QSplitter>
@@ -1762,6 +1764,10 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		cfg.userBubbleColor = m_aiUserBubbleColor;
 		cfg.aiBubbleColor = m_aiAiBubbleColor;
 		cfg.chatBgColor = m_aiChatBgColor;
+				cfg.aiTextColor = m_aiTextColor;
+				cfg.userTextColor = m_userTextColor;
+		cfg.fontFamily = m_aiFontFamily;
+		cfg.fontSize = m_aiFontSize;
 			dlg->startChat(path, cfg);
 		});
 
@@ -3573,10 +3579,22 @@ void CaptureWindow::loadCapturePreferences()
 	if (!data.aiEndpoint.trimmed().isEmpty()) m_aiEndpoint = data.aiEndpoint;
 	if (!data.aiApiKey.trimmed().isEmpty()) m_aiApiKey = data.aiApiKey;
 	if (!data.aiModel.trimmed().isEmpty()) m_aiModel = data.aiModel;
-	if (!data.aiUserBubbleColor.trimmed().isEmpty()) m_aiUserBubbleColor = data.aiUserBubbleColor;
-	if (!data.aiAiBubbleColor.trimmed().isEmpty()) m_aiAiBubbleColor = data.aiAiBubbleColor;
-	if (!data.aiChatBgColor.trimmed().isEmpty()) m_aiChatBgColor = data.aiChatBgColor;
-	if (!data.imagePoolToolbarColor.trimmed().isEmpty()) m_imagePoolToolbarColor = data.imagePoolToolbarColor;
+	m_aiUserBubbleColor = data.aiUserBubbleColor;
+	m_aiAiBubbleColor = data.aiAiBubbleColor;
+	m_aiChatBgColor = data.aiChatBgColor;
+	m_imagePoolToolbarColor = data.imagePoolToolbarColor;
+	m_aiTextColor = data.aiTextColor;
+	m_userTextColor = data.userTextColor;
+	m_aiSystemBubbleColor = data.aiSystemBubbleColor;
+	m_aiSystemTextColor = data.aiSystemTextColor;
+	m_aiSenderColor = data.aiSenderColor;
+	m_aiSystemSenderColor = data.aiSystemSenderColor;
+	m_aiSystemBubbleColor = data.aiSystemBubbleColor;
+	m_aiSystemTextColor = data.aiSystemTextColor;
+	m_aiSenderColor = data.aiSenderColor;
+	m_aiSystemSenderColor = data.aiSystemSenderColor;
+	if (!data.aiFontFamily.trimmed().isEmpty()) m_aiFontFamily = data.aiFontFamily;
+	m_aiFontSize = (data.aiFontSize >= 8 && data.aiFontSize <= 32) ? data.aiFontSize : 13;
 	{
 		const QString backend = data.screenCaptureBackend.trimmed().toLower();
 		if (backend == QStringLiteral("ffmpeg"))
@@ -3623,7 +3641,15 @@ void CaptureWindow::saveCapturePreferences() const
 	data.aiUserBubbleColor = m_aiUserBubbleColor;
 	data.aiAiBubbleColor = m_aiAiBubbleColor;
 	data.aiChatBgColor = m_aiChatBgColor;
+	data.userTextColor = m_userTextColor;
+	data.aiTextColor = m_aiTextColor;
+	data.aiSystemBubbleColor = m_aiSystemBubbleColor;
+	data.aiSystemTextColor = m_aiSystemTextColor;
+	data.aiSenderColor = m_aiSenderColor;
+	data.aiSystemSenderColor = m_aiSystemSenderColor;
 	data.imagePoolToolbarColor = m_imagePoolToolbarColor;
+	data.aiFontFamily = m_aiFontFamily;
+	data.aiFontSize = m_aiFontSize;
 	data.screenCaptureBackend = (m_screenBackendType == fplayer::MediaBackendType::FFmpeg)
 		                            ? QStringLiteral("ffmpeg")
 		                            : QStringLiteral("dxgi");
@@ -3736,6 +3762,71 @@ void CaptureWindow::openCaptureSettingsDialog(QWidget* parent)
 	bgColorLay->addWidget(bgColorLabel);
 	bgColorLay->addStretch();
 	layout->addRow(tr("聊天背景颜色"), bgColorRow);
+		auto [btnTextColor, updateTextSwatch] = makeColorSwatch(m_aiTextColor);
+		auto textColorRow = new QWidget(&dlg);
+		auto* textColorLay = new QHBoxLayout(textColorRow);
+		textColorLay->setContentsMargins(0, 0, 0, 0);
+		auto* textColorLabel = new QLabel(m_aiTextColor, &dlg);
+		textColorLabel->setStyleSheet(QStringLiteral("font-family: monospace; font-size: 12px;"));
+		textColorLay->addWidget(btnTextColor);
+		textColorLay->addWidget(textColorLabel);
+		textColorLay->addStretch();
+		layout->addRow(tr("AI 文字颜色"), textColorRow);
+		auto [btnUserTextColor, updateUserTextSwatch] = makeColorSwatch(m_userTextColor);
+		auto userTextColorRow = new QWidget(&dlg);
+		auto* userTextColorLay = new QHBoxLayout(userTextColorRow);
+		userTextColorLay->setContentsMargins(0, 0, 0, 0);
+		auto* userTextColorLabel = new QLabel(m_userTextColor, &dlg);
+		userTextColorLabel->setStyleSheet(QStringLiteral("font-family: monospace; font-size: 12px;"));
+		userTextColorLay->addWidget(btnUserTextColor);
+		userTextColorLay->addWidget(userTextColorLabel);
+
+	userTextColorLay->addStretch();
+		layout->addRow(tr("用户文字颜色"), userTextColorRow);
+
+	auto [btnSysBubbleColor, updateSysBubbleSwatch] = makeColorSwatch(m_aiSystemBubbleColor);
+	auto sysBubbleColorRow = new QWidget(&dlg);
+	auto* sysBubbleColorLay = new QHBoxLayout(sysBubbleColorRow);
+	sysBubbleColorLay->setContentsMargins(0, 0, 0, 0);
+	auto* sysBubbleColorLabel = new QLabel(m_aiSystemBubbleColor, &dlg);
+	sysBubbleColorLabel->setStyleSheet(QStringLiteral("font-family: monospace; font-size: 12px;"));
+	sysBubbleColorLay->addWidget(btnSysBubbleColor);
+	sysBubbleColorLay->addWidget(sysBubbleColorLabel);
+	sysBubbleColorLay->addStretch();
+	layout->addRow(tr("系统气泡颜色"), sysBubbleColorRow);
+
+	auto [btnSysTextColor, updateSysTextSwatch] = makeColorSwatch(m_aiSystemTextColor);
+	auto sysTextColorRow = new QWidget(&dlg);
+	auto* sysTextColorLay = new QHBoxLayout(sysTextColorRow);
+	sysTextColorLay->setContentsMargins(0, 0, 0, 0);
+	auto* sysTextColorLabel = new QLabel(m_aiSystemTextColor, &dlg);
+	sysTextColorLabel->setStyleSheet(QStringLiteral("font-family: monospace; font-size: 12px;"));
+	sysTextColorLay->addWidget(btnSysTextColor);
+	sysTextColorLay->addWidget(sysTextColorLabel);
+	sysTextColorLay->addStretch();
+	layout->addRow(tr("系统文字颜色"), sysTextColorRow);
+
+	auto [btnSenderColor, updateSenderSwatch] = makeColorSwatch(m_aiSenderColor);
+	auto senderColorRow = new QWidget(&dlg);
+	auto* senderColorLay = new QHBoxLayout(senderColorRow);
+	senderColorLay->setContentsMargins(0, 0, 0, 0);
+	auto* senderColorLabel = new QLabel(m_aiSenderColor, &dlg);
+	senderColorLabel->setStyleSheet(QStringLiteral("font-family: monospace; font-size: 12px;"));
+	senderColorLay->addWidget(btnSenderColor);
+	senderColorLay->addWidget(senderColorLabel);
+	senderColorLay->addStretch();
+	layout->addRow(tr("发送者名称颜色"), senderColorRow);
+
+	auto [btnSysSenderColor, updateSysSenderSwatch] = makeColorSwatch(m_aiSystemSenderColor);
+	auto sysSenderColorRow = new QWidget(&dlg);
+	auto* sysSenderColorLay = new QHBoxLayout(sysSenderColorRow);
+	sysSenderColorLay->setContentsMargins(0, 0, 0, 0);
+	auto* sysSenderColorLabel = new QLabel(m_aiSystemSenderColor, &dlg);
+	sysSenderColorLabel->setStyleSheet(QStringLiteral("font-family: monospace; font-size: 12px;"));
+	sysSenderColorLay->addWidget(btnSysSenderColor);
+	sysSenderColorLay->addWidget(sysSenderColorLabel);
+	sysSenderColorLay->addStretch();
+	layout->addRow(tr("系统发送者颜色"), sysSenderColorRow);
 
 	auto [btnTbColor, updateTbSwatch] = makeColorSwatch(m_imagePoolToolbarColor);
 	auto tbColorRow = new QWidget(&dlg);
@@ -3767,6 +3858,45 @@ void CaptureWindow::openCaptureSettingsDialog(QWidget* parent)
 		if (c.isValid()) { updateBgSwatch(c.name()); bgColorLabel->setText(c.name()); }
 	});
 
+	connect(btnTextColor, &QPushButton::clicked, &dlg, [updateTextSwatch, textColorLabel, &dlg]() {
+		QColor c = QColorDialog::getColor(QColor(textColorLabel->text()), &dlg, tr("选择 AI 文字颜色"));
+		if (c.isValid()) { updateTextSwatch(c.name()); textColorLabel->setText(c.name()); }
+	});
+	connect(btnUserTextColor, &QPushButton::clicked, &dlg, [updateUserTextSwatch, userTextColorLabel, &dlg]() {
+		QColor c = QColorDialog::getColor(QColor(userTextColorLabel->text()), &dlg, tr("选择用户文字颜色"));
+		if (c.isValid()) { updateUserTextSwatch(c.name()); userTextColorLabel->setText(c.name()); }
+	});
+	connect(btnSysBubbleColor, &QPushButton::clicked, &dlg, [updateSysBubbleSwatch, sysBubbleColorLabel, &dlg]() {
+		QColor c = QColorDialog::getColor(QColor(sysBubbleColorLabel->text()), &dlg, tr("选择系统气泡颜色"));
+		if (c.isValid()) { updateSysBubbleSwatch(c.name()); sysBubbleColorLabel->setText(c.name()); }
+	});
+	connect(btnSysTextColor, &QPushButton::clicked, &dlg, [updateSysTextSwatch, sysTextColorLabel, &dlg]() {
+		QColor c = QColorDialog::getColor(QColor(sysTextColorLabel->text()), &dlg, tr("选择系统文字颜色"));
+		if (c.isValid()) { updateSysTextSwatch(c.name()); sysTextColorLabel->setText(c.name()); }
+	});
+	connect(btnSenderColor, &QPushButton::clicked, &dlg, [updateSenderSwatch, senderColorLabel, &dlg]() {
+		QColor c = QColorDialog::getColor(QColor(senderColorLabel->text()), &dlg, tr("选择发送者名称颜色"));
+		if (c.isValid()) { updateSenderSwatch(c.name()); senderColorLabel->setText(c.name()); }
+	});
+	connect(btnSysSenderColor, &QPushButton::clicked, &dlg, [updateSysSenderSwatch, sysSenderColorLabel, &dlg]() {
+		QColor c = QColorDialog::getColor(QColor(sysSenderColorLabel->text()), &dlg, tr("选择系统发送者颜色"));
+		if (c.isValid()) { updateSysSenderSwatch(c.name()); sysSenderColorLabel->setText(c.name()); }
+	});
+	auto* lblFontSection = new QLabel(tr("── AI 聊天字体 ──"), &dlg);
+	lblFontSection->setStyleSheet(QStringLiteral("font-weight: bold; color: #6b5ba0; margin-top: 8px;"));
+	layout->addRow(lblFontSection);
+
+	auto* fontCombo = new QFontComboBox(&dlg);
+	fontCombo->setCurrentFont(QFont(m_aiFontFamily.isEmpty() ? QFont().family() : m_aiFontFamily));
+	fontCombo->setWritingSystem(QFontDatabase::SimplifiedChinese);
+	layout->addRow(tr("字体"), fontCombo);
+
+	auto* fontSizeSpin = new QSpinBox(&dlg);
+	fontSizeSpin->setRange(8, 32);
+	fontSizeSpin->setValue(m_aiFontSize);
+	fontSizeSpin->setSuffix(tr(" px"));
+	layout->addRow(tr("字号"), fontSizeSpin);
+
 	auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
 	layout->addRow(buttons);
 	connect(shotBrowse, &QPushButton::clicked, &dlg, [shotPath, this]() {
@@ -3783,7 +3913,7 @@ void CaptureWindow::openCaptureSettingsDialog(QWidget* parent)
 			recPath->setText(QDir::toNativeSeparators(dir));
 		}
 	});
-	connect(buttons, &QDialogButtonBox::accepted, &dlg, [&dlg, shotPath, recPath, chkCloseToTray, cmbScreenBackend, aiEndpointEdit, aiApiKeyEdit, aiModelEdit, userColorLabel, aiColorLabel, bgColorLabel, tbColorLabel, this]() {
+	connect(buttons, &QDialogButtonBox::accepted, &dlg, [&dlg, shotPath, recPath, chkCloseToTray, cmbScreenBackend, aiEndpointEdit, aiApiKeyEdit, aiModelEdit, userColorLabel, aiColorLabel, bgColorLabel, textColorLabel, userTextColorLabel, sysBubbleColorLabel, sysTextColorLabel, senderColorLabel, sysSenderColorLabel, tbColorLabel, fontCombo, fontSizeSpin, this]() {
 		const QString shot = shotPath->text().trimmed();
 		const QString rec = recPath->text().trimmed();
 		if (shot.isEmpty() || rec.isEmpty())
@@ -3907,9 +4037,39 @@ void CaptureWindow::openCaptureSettingsDialog(QWidget* parent)
 		m_aiModel = aiModelEdit->text().trimmed();
 		m_aiUserBubbleColor = userColorLabel->text();
 		m_aiAiBubbleColor = aiColorLabel->text();
+			m_userTextColor = userTextColorLabel->text();
+		m_aiSystemBubbleColor = sysBubbleColorLabel->text();
+		m_aiSystemTextColor = sysTextColorLabel->text();
+		m_aiSenderColor = senderColorLabel->text();
+		m_aiSystemSenderColor = sysSenderColorLabel->text();
 		m_aiChatBgColor = bgColorLabel->text();
+			m_aiTextColor = textColorLabel->text();
 		m_imagePoolToolbarColor = tbColorLabel->text();
+		m_aiFontFamily = fontCombo->currentFont().family();
+		m_aiFontSize = fontSizeSpin->value();
 		saveCapturePreferences();
+		m_imagePoolSidebar->setScreenshotDir(m_screenshotSaveDir);
+		m_imagePoolSidebar->setToolbarColor(m_imagePoolToolbarColor);
+		const auto dialogs = findChildren<AiChatDialog*>();
+		for (auto* dlg : dialogs)
+		{
+			fplayer::AiConfig cfg;
+			cfg.endpoint = m_aiEndpoint;
+			cfg.apiKey = m_aiApiKey;
+			cfg.model = m_aiModel;
+			cfg.userBubbleColor = m_aiUserBubbleColor;
+			cfg.aiBubbleColor = m_aiAiBubbleColor;
+			cfg.chatBgColor = m_aiChatBgColor;
+				cfg.aiTextColor = m_aiTextColor;
+				cfg.userTextColor = m_userTextColor;
+			cfg.systemBubbleColor = m_aiSystemBubbleColor;
+			cfg.systemTextColor = m_aiSystemTextColor;
+			cfg.senderColor = m_aiSenderColor;
+			cfg.systemSenderColor = m_aiSystemSenderColor;
+			cfg.fontFamily = m_aiFontFamily;
+			cfg.fontSize = m_aiFontSize;
+			dlg->reconfigure(cfg);
+		}
 		dlg.accept();
 	});
 	connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);

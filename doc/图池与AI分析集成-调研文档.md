@@ -186,6 +186,8 @@ Content-Type: application/json
 
 所有配置在「系统设置 → AI 识别配置」中填写。
 
+![image-20260503224439510](https://map--depot.oss-cn-hangzhou.aliyuncs.com/image/image-20260503224439510.png)
+
 ### 6.1 模型能力速查
 
 | 服务商 | 模型 | 图片识别 | 国内直连 | 付费 | 推荐场景 |

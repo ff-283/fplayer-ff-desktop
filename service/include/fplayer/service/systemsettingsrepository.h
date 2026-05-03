@@ -38,10 +38,18 @@ namespace fplayer
 		QString aiApiKey;
 		QString aiModel = QStringLiteral("gpt-4o");
 		// AI chat appearance
-		QString aiUserBubbleColor = QStringLiteral("#0078d4");
+		QString aiUserBubbleColor = QStringLiteral("#2563eb");
 		QString aiAiBubbleColor = QStringLiteral("#ffffff");
-		QString aiChatBgColor = QStringLiteral("#000000");
+		QString aiChatBgColor = QStringLiteral("#f3f4f6");
 		QString imagePoolToolbarColor = QStringLiteral("#000000");
+		QString aiFontFamily;
+		int aiFontSize = 13;
+		QString aiTextColor = QStringLiteral("#374151");
+		QString userTextColor = QStringLiteral("#ffffff");
+		QString aiSystemBubbleColor = QStringLiteral("#fef3c7");
+		QString aiSystemTextColor = QStringLiteral("#92400e");
+		QString aiSenderColor = QStringLiteral("#9ca3af");
+		QString aiSystemSenderColor = QStringLiteral("#d97706");
 	};
 
 	class SystemSettingsRepository

@@ -320,6 +320,13 @@ void ImagePoolSidebar::loadImages()
 
 void ImagePoolSidebar::addImageToList(const QString& path)
 {
+	for (int i = 0; i < m_listWidget->count(); ++i)
+	{
+		if (m_listWidget->item(i)->data(Qt::UserRole).toString() == path)
+		{
+			return;
+		}
+	}
 	QFileInfo info(path);
 	if (!info.exists())
 	{
