@@ -1,3 +1,4 @@
+$env:Path = "C:\Windows\System32"
 .\package-windows.ps1 `
   -Qt6Dir "D:/Code/Qt6.10/6.10.2/msvc2022_64/lib/cmake/Qt6" `
   -CMakePrefixPath "D:/Code/Qt6.10/6.10.2/msvc2022_64" `
