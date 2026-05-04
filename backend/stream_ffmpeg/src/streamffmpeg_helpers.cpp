@@ -248,24 +248,38 @@ namespace fplayer::streamffmpeg_helpers
 		if (pref == QStringLiteral("nvenc"))
 		{
 			appendNamedEncoder(list, "h264_nvenc", true, QStringLiteral("h264_nvenc"));
-			return list;
+			if (!list.isEmpty())
+			{
+				return list;
+			}
+			// NVENC 不可用，回退到自动选择
 		}
 		if (pref == QStringLiteral("amf"))
 		{
 			appendNamedEncoder(list, "h264_amf", true, QStringLiteral("h264_amf"));
-			return list;
+			if (!list.isEmpty())
+			{
+				return list;
+			}
+			// AMF 不可用，回退到自动选择
 		}
 		if (pref == QStringLiteral("cpu"))
 		{
+			appendNamedEncoder(list, "h264_mf", false, QStringLiteral("h264_mf"));
 			appendNamedEncoder(list, "libx264", false, QStringLiteral("libx264"));
 			if (list.isEmpty())
 			{
 				appendNamedEncoder(list, "libopenh264", false, QStringLiteral("libopenh264"));
 			}
-			return list;
+			if (!list.isEmpty())
+			{
+				return list;
+			}
+			// CPU 编码器不可用，回退到自动选择（优先硬编）
 		}
 		appendNamedEncoder(list, "h264_nvenc", true, QStringLiteral("h264_nvenc"));
 		appendNamedEncoder(list, "h264_amf", true, QStringLiteral("h264_amf"));
+		appendNamedEncoder(list, "h264_mf", false, QStringLiteral("h264_mf"));
 		appendNamedEncoder(list, "libx264", false, QStringLiteral("libx264"));
 		if (!list.isEmpty())
 		{

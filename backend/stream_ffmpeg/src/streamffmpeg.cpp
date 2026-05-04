@@ -1517,7 +1517,7 @@ void fplayer::StreamFFmpeg::pushComposeSceneLoop(const QString& outputUrl, const
 					av_opt_set(encCtx->priv_data, "rc", "cbr", 0);
 					av_opt_set(encCtx->priv_data, "zerolatency", "1", 0);
 				}
-				else if (codecName == QStringLiteral("h264_amf"))
+				else if (codecName == QStringLiteral("h264_amf") || codecName == QStringLiteral("h264_mf"))
 				{
 					// AMF 不接受 x264 preset/tune 文本，保持默认参数避免选项解析失败。
 				}
@@ -3259,7 +3259,7 @@ audio_init_done:
 					av_opt_set(encCtx->priv_data, "rc", "cbr", 0);
 					av_opt_set(encCtx->priv_data, "zerolatency", "1", 0);
 				}
-				else if (codecName == QStringLiteral("h264_amf"))
+				else if (codecName == QStringLiteral("h264_amf") || codecName == QStringLiteral("h264_mf"))
 				{
 					// AMF 不接受 x264 preset/tune 文本，保持默认参数避免选项解析失败。
 				}
@@ -4322,7 +4322,7 @@ audio_preview_init_done:
 					av_opt_set(encCtx->priv_data, "rc", "cbr", 0);
 					av_opt_set(encCtx->priv_data, "zerolatency", "1", 0);
 				}
-				else if (codecName == QStringLiteral("h264_amf"))
+				else if (codecName == QStringLiteral("h264_amf") || codecName == QStringLiteral("h264_mf"))
 				{
 					// AMF 不接受 x264 preset/tune 文本，保持默认参数避免选项解析失败。
 				}
@@ -5749,7 +5749,7 @@ void fplayer::StreamFFmpeg::pushCameraPreviewLoop(const QString& outputUrl, cons
 					av_opt_set(encCtx->priv_data, "rc", "cbr", 0);
 					av_opt_set(encCtx->priv_data, "zerolatency", "1", 0);
 				}
-				else if (codecName == QStringLiteral("h264_amf"))
+				else if (codecName == QStringLiteral("h264_amf") || codecName == QStringLiteral("h264_mf"))
 				{
 					// AMF 不接受 x264 preset/tune 文本，保持默认参数避免选项解析失败。
 				}

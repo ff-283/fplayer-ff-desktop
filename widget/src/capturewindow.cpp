@@ -2029,7 +2029,7 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		spBitrate->setSuffix(tr(" kbps"));
 		auto* cmbEncoder = new QComboBox(&dlg);
 		cmbEncoder->addItem(tr("自动（优先NVENC/AMF）"), QStringLiteral("auto"));
-		cmbEncoder->addItem(tr("CPU（x264）"), QStringLiteral("cpu"));
+		cmbEncoder->addItem(tr("CPU（h264_mf/libx264/libopenh264）"), QStringLiteral("cpu"));
 		cmbEncoder->addItem(tr("NVIDIA NVENC"), QStringLiteral("nvenc"));
 		cmbEncoder->addItem(tr("AMD AMF"), QStringLiteral("amf"));
 		{
