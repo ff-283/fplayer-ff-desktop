@@ -1600,6 +1600,8 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		this->ui->cmbFormats->clear();
 		this->ui->cmbFormats->addItems(formats);
 		this->ui->cmbFormats->setCurrentIndex(0);
+		this->ui->btnPlay->setIcon(QIcon::fromTheme(
+			this->m_service->cameraIsPlaying() ? QIcon::ThemeIcon::MediaPlaybackPause : QIcon::ThemeIcon::MediaPlaybackStart));
 
 	});
 	connect(this->ui->chkCaptureCursor, &QCheckBox::toggled, this, [this](const bool checked) {
@@ -1713,6 +1715,8 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		this->ui->cmbFormats->setCurrentIndex(0);
 		this->m_service->selectCameraFormat(0);
 	}
+	this->ui->btnPlay->setIcon(QIcon::fromTheme(
+		this->m_service->cameraIsPlaying() ? QIcon::ThemeIcon::MediaPlaybackPause : QIcon::ThemeIcon::MediaPlaybackStart));
 
 	connect(this->ui->btnPlay, &QPushButton::clicked, [this]() {
 		this->togglePlayPause();

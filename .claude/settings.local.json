@@ -44,7 +44,12 @@
       "Bash(ninja FPlayer_Widget)",
       "Bash(D:/SoftWare/VS/vs2022/VC/Tools/MSVC/14.42.34433/bin/Hostx64/x64/cl.exe /nologo /TP /std:c++17 /fsyntax-only /I\"d:/Code/fplayer-ff-desktop/widget/include\" /I\"d:/Code/fplayer-ff-desktop/service/include\" /I\"d:/Code/fplayer-ff-desktop/common/include\" /I\"D:/SoftWare/Qt/6.10.1/msvc2022_64/include\" /I\"D:/SoftWare/Qt/6.10.1/msvc2022_64/include/QtCore\" /I\"D:/SoftWare/Qt/6.10.1/msvc2022_64/include/QtWidgets\" /I\"D:/SoftWare/Qt/6.10.1/msvc2022_64/include/QtGui\" /c \"d:/Code/fplayer-ff-desktop/widget/src/aichatdialog.cpp\")",
       "Bash(ninja FPlayer_Service)",
-      "Bash(ninja FPlayer_Widget FPlayer_Service)"
+      "Bash(ninja FPlayer_Widget FPlayer_Service)",
+      "Bash(xxd)",
+      "Bash(git checkout *)",
+      "Bash(awk -F: '$1 >= 5442 && $1 <= 6415 {print}')",
+      "Bash(awk -F: '$1 >= 5490 && $1 <= 6415 {print}')",
+      "Bash(python do_all_changes.py)"
     ]
   }
 }

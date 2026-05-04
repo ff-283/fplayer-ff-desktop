@@ -242,6 +242,9 @@ namespace fplayer
 		m_impl->stopCapture();
 		m_impl->cleanup();
 
+		// 尚未确认设备可用，先标记为暂停；后续成功打开再置为播放
+		m_isPlaying = false;
+
 		// 打开摄像头
 		// const Impl::CameraDeviceInfo& deviceInfo = m_impl->cameraDevices[index];
 		const auto deviceInfo = m_descriptions[index];
