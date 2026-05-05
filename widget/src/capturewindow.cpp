@@ -4325,8 +4325,14 @@ void CaptureWindow::updatePullRecordButtonUi()
 		return;
 	}
 	const bool pullRunning = m_service && m_service->streamIsRunning();
+	const qint64 recordElapsed = m_pullRecording ? (QDateTime::currentMSecsSinceEpoch() - m_pullRecordStartMs) : 0;
 	const qint64 elapsed = (pullRunning && m_pullSessionStartMs > 0) ? (QDateTime::currentMSecsSinceEpoch() - m_pullSessionStartMs) : 0;
-	m_pullPreviewRecordDurationLabel->setText(tr("拉流时长：%1").arg(formatTimeMs(elapsed)));
+	QString text = tr("拉流时长：%1").arg(formatTimeMs(elapsed));
+	if (m_pullRecording)
+	{
+		text += tr("  录制：%1").arg(formatTimeMs(recordElapsed));
+	}
+	m_pullPreviewRecordDurationLabel->setText(text);
 	if (m_pullPreviewRecordButton)
 	{
 		m_pullPreviewRecordButton->setToolTip(m_pullRecording ? tr("结束录制") : tr("开始录制"));

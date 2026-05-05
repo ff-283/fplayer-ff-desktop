@@ -156,7 +156,7 @@ inline QString globalStyleSheet(const ThemeColors& c, const QString& customPrima
         "QComboBox:focus{background:%13;}"
         "QComboBox:disabled{color:%12;}"
         "QComboBox::drop-down{background:transparent;border:none;width:20px;subcontrol-position:center right;subcontrol-origin:padding;border-top-right-radius:%9px;border-bottom-right-radius:%9px;}"
-        "QComboBox::drop-down:hover,QComboBox:focus::drop-down{background:transparent;}"
+        "QComboBox::drop-down:hover,QComboBox::drop-down:focus{background:transparent;}"
         "QComboBox::down-arrow{image:url(:/icon/chevron-down.svg);width:12px;height:8px;}"
         "QComboBox::down-arrow:disabled{image:url(:/icon/chevron-down.svg);}"
         "QComboBox QAbstractItemView{"
