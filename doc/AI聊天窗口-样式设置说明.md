@@ -25,17 +25,17 @@ struct AiConfig {
     QString endpoint;          // API 地址
     QString apiKey;            // API 密钥
     QString model;             // 模型名称，默认 "gpt-4o"
-    QString userBubbleColor;   // 用户气泡背景色，默认 "#2563eb"（蓝色）
-    QString aiBubbleColor;     // AI 气泡背景色，默认 "#ffffff"（白色）
-    QString chatBgColor;       // 聊天区背景色，默认 "#f3f4f6"（浅灰）
+    QString userBubbleColor;   // 用户气泡背景色，默认 "#2997ff"（Apple Sky Blue）
+    QString aiBubbleColor;     // AI 气泡背景色，默认 "#1c1c1e"（深色表面）
+    QString chatBgColor;       // 聊天区背景色，默认 "#0d0d0f"（深色画布）
     QString fontFamily;        // 字体，空字符串表示使用系统默认
-    int     fontSize;          // 字号，默认 13
-    QString aiTextColor;       // AI 气泡文字颜色，默认 "#374151"（深灰）
+    int     fontSize;          // 字号，默认 14
+    QString aiTextColor;       // AI 气泡文字颜色，默认 "#f5f5f7"（浅色文字）
     QString userTextColor;     // 用户气泡文字颜色，默认 "#ffffff"（白色）
-    QString systemBubbleColor; // 系统气泡背景色，默认 "#fef3c7"（淡黄）
-    QString systemTextColor;   // 系统气泡文字颜色，默认 "#92400e"（深棕）
-    QString senderColor;       // 发送者名称颜色（用户/AI），默认 "#9ca3af"（灰）
-    QString systemSenderColor; // 系统发送者名称颜色，默认 "#d97706"（橙）
+    QString systemBubbleColor; // 系统气泡背景色，默认 "#1a1a1c"（一级深色表面）
+    QString systemTextColor;   // 系统气泡文字颜色，默认 "#a1a1a6"（次要文字）
+    QString senderColor;       // 发送者名称颜色（用户/AI），默认 "#6e6e73"（禁用态文字色）
+    QString systemSenderColor; // 系统发送者名称颜色，默认 "#ff9f0a"（Apple 系统橙）
 };
 ```
 
@@ -48,14 +48,14 @@ struct AiConfig {
 **构造时初始样式** — [aichatdialog.cpp:38-40](../widget/src/aichatdialog.cpp#L38-L40)
 ```cpp
 m_chatScroll->setStyleSheet(
-    "QScrollArea { border: 1px solid #d1d5db; border-radius: 4px; "
-    "background-color: #f3f4f6; }");
+    "QScrollArea { border: 1px solid #2a2a2c; border-radius: 8px; "
+    "background-color: %1; }")  // %1 = chatBgColor
 ```
 
 **`startChat()` / `reconfigure()` 中按配置覆写** — [aichatdialog.cpp:91-93](../widget/src/aichatdialog.cpp#L91-L93)
 ```cpp
 m_chatScroll->setStyleSheet(
-    "QScrollArea { border: 1px solid #d1d5db; border-radius: 4px; "
+    "QScrollArea { border: 1px solid #2a2a2c; border-radius: 8px; "
     "background-color: %1; }")
     .arg(m_colors.chatBgColor);
 ```

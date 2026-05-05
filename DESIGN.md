@@ -560,3 +560,75 @@ The structural breakpoints that matter for agents: 1440px (content lock), 1068px
 - Dark-mode counterparts for store and accessories utility cards were not surfaced on the analyzed pages; the system documented is the daytime/light-dominant variant Apple ships by default.
 - Atmospheric photography (environment page mountain vista) is a content asset, not a design token; the documented `{component.environment-quote-card}` describes the structural surface only.
 - The exact backdrop-filter blur radius on `{component.sub-nav-frosted}` and `{component.floating-sticky-bar}` is platform-dependent; production CSS uses `saturate(180%) blur(20px)` as a typical baseline but the value isn't formalized as a token.
+
+---
+
+## Dark Theme (FPlayer Adaptation)
+
+The project ships a **dark-first** adaptation of this design language, tuned for a video/streaming desktop environment. Dark surfaces, bright accent, and the same single-blue-interactive philosophy.
+
+### Dark Palette
+
+| Token | Color | Role |
+|---|---|---|
+| `primary` | `#2997ff` | Accent (Sky Link Blue — bright enough for dark surfaces) |
+| `primary-focus` | `#47a8ff` | Keyboard focus ring |
+| `canvas` | `#0d0d0f` | Root background |
+| `canvas-elevated` | `#141416` | Micro-elevated panels, input backgrounds |
+| `surface-tile-1` | `#1a1a1c` | Menu backgrounds, alternating panels |
+| `surface-tile-2` | `#1c1c1e` | AI chat bubble background |
+| `surface-tile-3` | `#1e1e20` | Bottom-of-stack panels |
+| `surface-black` | `#000000` | Video player, menubar (true void) |
+| `ink` | `#f5f5f7` | Primary text |
+| `ink-muted` | `#a1a1a6` | Secondary text |
+| `ink-disabled` | `#6e6e73` | Disabled / placeholder text |
+| `hairline` | `#2a2a2c` | 1px borders |
+| `hairline-soft` | `rgba(255,255,255,0.08)` | Subtle card borders |
+| `system-orange` | `#ff9f0a` | System message accent |
+| `error-red` | `#ff453a` | Error states |
+
+### Light vs Dark Differences From Reference YAML
+
+- **Accent moves to `#2997ff`** on dark surfaces (Action Blue `#0066cc` would disappear against near-black backgrounds). Light theme uses Action Blue `#0066cc` as in canonical Apple.
+- **Canvas becomes near-black** (`#0d0d0f`) instead of white. The micro-step tile alternation preserves depth without shadows.
+- **Surface tile hex values tighten** — the three dark tiles are separated by only ~2 lightness points (`#1a1a1c` -> `#1c1c1e` -> `#1e1e20`) to create perceptual depth without visible borders.
+- **Text flips to light-on-dark** — `ink` becomes `#f5f5f7` (not `#1d1d1f`); secondary/muted follow proportionally.
+- **The single product shadow remains**, but its application is to video preview panels rather than product photography.
+
+### C++ Implementation
+
+Design tokens live in `common/include/fplayer/common/designtokens.h`:
+
+```cpp
+enum class Theme { Dark = 0, Light = 1 };
+
+struct ThemeColors {
+    const char* primary; const char* canvas; const char* ink; /* ... 15 fields */
+};
+
+ThemeColors darkColors();   // Returns the dark palette above
+ThemeColors lightColors();  // Returns the canonical Apple light palette
+```
+
+`fplayer::tokens::globalStyleSheet(Theme)` generates the QSS stylesheet from the selected palette. The QSS template string is shared between themes — only color values differ.
+
+### User-Customizable Colors (Theme-Exempt)
+
+The following 10 settings are **user-configurable per-element colors** and are **never overridden by theme switching**:
+
+1. User bubble background
+2. AI bubble background
+3. Chat background
+4. AI text color
+5. User text color
+6. System bubble background
+7. System text color
+8. Sender name color
+9. System sender name color
+10. Image pool toolbar color
+
+These are stored in `SystemSettings` / `AiConfig` and applied after the global theme QSS via `CaptureWindow::applyTheme()`.
+
+### Theme Selection
+
+Users select Dark or Light via a dropdown at the bottom of the System Settings dialog. The choice persists in `system_settings.yaml` as `theme: 0` (dark) or `theme: 1` (light). On change, `applyTheme()` re-applies the global QSS then re-injects user-customized colors/fonts, ensuring no loss of per-element settings.
