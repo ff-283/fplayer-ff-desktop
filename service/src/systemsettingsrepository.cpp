@@ -99,6 +99,11 @@ bool fplayer::SystemSettingsRepository::load(fplayer::SystemSettings& data) cons
 		data.aiFontSize = YamlTool::YamlTool::getDef<int>(root, "ai_font_size", data.aiFontSize);
 		data.aiTextColor = loadString("ai_text_color", data.aiTextColor);
 		data.userTextColor = loadString("user_text_color", data.userTextColor);
+			data.aiSystemBubbleColor = loadString("ai_system_bubble_color", data.aiSystemBubbleColor);
+			data.aiSystemTextColor = loadString("ai_system_text_color", data.aiSystemTextColor);
+			data.aiSenderColor = loadString("ai_sender_color", data.aiSenderColor);
+			data.aiSystemSenderColor = loadString("ai_system_sender_color", data.aiSystemSenderColor);
+			data.theme = YamlTool::YamlTool::getDef<int>(root, "theme", data.theme);
 		data.recentPushInputs = loadStringList(root, "recent_push_inputs");
 		data.recentPushOutputs = loadStringList(root, "recent_push_outputs");
 		data.recentPullInputs = loadStringList(root, "recent_pull_inputs");
@@ -155,6 +160,11 @@ bool fplayer::SystemSettingsRepository::save(const fplayer::SystemSettings& data
 	YamlTool::YamlTool::set<std::string>(root, "ai_font_family", data.aiFontFamily.toStdString());
 	YamlTool::YamlTool::set<int>(root, "ai_font_size", data.aiFontSize);
 		YamlTool::YamlTool::set<std::string>(root, "user_text_color", data.userTextColor.toStdString());
+		YamlTool::YamlTool::set<std::string>(root, "ai_system_bubble_color", data.aiSystemBubbleColor.toStdString());
+		YamlTool::YamlTool::set<std::string>(root, "ai_system_text_color", data.aiSystemTextColor.toStdString());
+		YamlTool::YamlTool::set<std::string>(root, "ai_sender_color", data.aiSenderColor.toStdString());
+		YamlTool::YamlTool::set<std::string>(root, "ai_system_sender_color", data.aiSystemSenderColor.toStdString());
+		YamlTool::YamlTool::set<int>(root, "theme", data.theme);
 		YamlTool::YamlTool::set<std::string>(root, "ai_text_color", data.aiTextColor.toStdString());
 	saveStringList(root, "recent_push_inputs", data.recentPushInputs);
 	saveStringList(root, "recent_push_outputs", data.recentPushOutputs);

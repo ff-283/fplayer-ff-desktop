@@ -25,18 +25,18 @@ ImageViewerDialog::ImageViewerDialog(QWidget* parent)
 	m_scrollArea = new QScrollArea(this);
 	m_scrollArea->setWidgetResizable(false);
 	m_scrollArea->setAlignment(Qt::AlignCenter);
-	m_scrollArea->setStyleSheet(QStringLiteral("QScrollArea { background-color: #1a1a1a; border: none; }"));
+	m_scrollArea->setStyleSheet(QStringLiteral("QScrollArea { background-color: #000000; border: none; }"));
 
 	m_imageLabel = new QLabel;
 	m_imageLabel->setAlignment(Qt::AlignCenter);
 	m_imageLabel->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Ignored);
-	m_imageLabel->setStyleSheet(QStringLiteral("QLabel { background-color: #1a1a1a; }"));
+	m_imageLabel->setStyleSheet(QStringLiteral("QLabel { background-color: #000000; }"));
 	m_scrollArea->setWidget(m_imageLabel);
 
 	// Navigation bar
 	auto* navBar = new QWidget(this);
 	navBar->setFixedHeight(48);
-	navBar->setStyleSheet(QStringLiteral("QWidget { background-color: #2d2d2d; }"));
+	navBar->setStyleSheet(QStringLiteral("QWidget { background-color: #1a1a1c; }"));
 	auto* navLayout = new QHBoxLayout(navBar);
 	navLayout->setContentsMargins(12, 4, 12, 4);
 
@@ -46,7 +46,7 @@ ImageViewerDialog::ImageViewerDialog(QWidget* parent)
 	m_btnNext->setFixedSize(90, 32);
 	m_indexLabel = new QLabel(navBar);
 	m_indexLabel->setAlignment(Qt::AlignCenter);
-	m_indexLabel->setStyleSheet(QStringLiteral("color: #cccccc; font-size: 13px;"));
+	m_indexLabel->setStyleSheet(QStringLiteral("color: #a1a1a6; font-size: 14px;"));
 
 	navLayout->addWidget(m_btnPrev);
 	navLayout->addStretch(1);
@@ -151,10 +151,10 @@ void ImageViewerDialog::updateImage()
 	if (m_currentPixmap.isNull())
 	{
 		m_imageLabel->setText(tr("无法加载图片"));
-		m_imageLabel->setStyleSheet(QStringLiteral("color: #ff4444; font-size: 16px; background-color: #1a1a1a;"));
+		m_imageLabel->setStyleSheet(QStringLiteral("color: #ff453a; font-size: 16px; background-color: #000000;"));
 		return;
 	}
-	m_imageLabel->setStyleSheet(QStringLiteral("QLabel { background-color: #1a1a1a; }"));
+	m_imageLabel->setStyleSheet(QStringLiteral("QLabel { background-color: #000000; }"));
 	m_imageLabel->setPixmap(m_currentPixmap);
 	m_imageLabel->resize(m_currentPixmap.size());
 	updateTitle();

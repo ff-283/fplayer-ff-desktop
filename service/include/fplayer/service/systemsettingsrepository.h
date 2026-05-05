@@ -38,18 +38,19 @@ namespace fplayer
 		QString aiApiKey;
 		QString aiModel = QStringLiteral("gpt-4o");
 		// AI chat appearance
-		QString aiUserBubbleColor = QStringLiteral("#2563eb");
-		QString aiAiBubbleColor = QStringLiteral("#ffffff");
-		QString aiChatBgColor = QStringLiteral("#f3f4f6");
-		QString imagePoolToolbarColor = QStringLiteral("#000000");
+		QString aiUserBubbleColor = QStringLiteral("#2997ff");
+		QString aiAiBubbleColor = QStringLiteral("#1c1c1e");
+		QString aiChatBgColor = QStringLiteral("#0d0d0f");
+		QString imagePoolToolbarColor = QStringLiteral("#141416");
 		QString aiFontFamily;
-		int aiFontSize = 13;
-		QString aiTextColor = QStringLiteral("#374151");
+		int aiFontSize = 14;
+		QString aiTextColor = QStringLiteral("#f5f5f7");
 		QString userTextColor = QStringLiteral("#ffffff");
-		QString aiSystemBubbleColor = QStringLiteral("#fef3c7");
-		QString aiSystemTextColor = QStringLiteral("#92400e");
-		QString aiSenderColor = QStringLiteral("#9ca3af");
-		QString aiSystemSenderColor = QStringLiteral("#d97706");
+		QString aiSystemBubbleColor = QStringLiteral("#1a1a1c");
+		QString aiSystemTextColor = QStringLiteral("#a1a1a6");
+		QString aiSenderColor = QStringLiteral("#6e6e73");
+		QString aiSystemSenderColor = QStringLiteral("#ff9f0a");
+		int theme = 0;   // 0=dark, 1=light
 	};
 
 	class SystemSettingsRepository

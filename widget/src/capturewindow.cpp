@@ -1,5 +1,6 @@
 #include "ui_capturewindow.h"
 
+#include <fplayer/common/designtokens.h>
 #include <fplayer/widget/capturewindow.h>
 #include <fplayer/widget/imagepoolsidebar.h>
 #include <fplayer/widget/aichatdialog.h>
@@ -232,7 +233,7 @@ void showNonBlockingHint(QWidget* anchor, const QString& text, int durationMs = 
 	toast->setWordWrap(true);
 	toast->setMargin(10);
 	toast->setStyleSheet(QStringLiteral(
-		"QLabel{background:rgba(23,28,44,235);color:#f7fbff;border:1px solid #6f86c6;border-radius:8px;font-weight:600;}"));
+		"QLabel{background:rgba(30,30,32,0.95);color:#f5f5f7;border:1px solid #2a2a2c;border-radius:12px;font-weight:600;}"));
 	toast->setMinimumWidth(320);
 	toast->setMaximumWidth(560);
 	toast->adjustSize();
@@ -581,7 +582,7 @@ public:
 	explicit AspectRatioHostWidget(QWidget* parent = nullptr) : QWidget(parent)
 	{
 		setAttribute(Qt::WA_StyledBackground, true);
-		setStyleSheet(QStringLiteral("background:#0b1018;border:1px solid #243145;border-radius:8px;"));
+		setStyleSheet(QStringLiteral("background:#0d0d0f;border:1px solid #2a2a2c;border-radius:8px;"));
 	}
 
 	void setAspectRatio(const int w, const int h)
@@ -675,7 +676,7 @@ public:
 	{
 		setMouseTracking(true);
 		setAttribute(Qt::WA_StyledBackground, true);
-		setStyleSheet(QStringLiteral("background:#0a0f16;border:1px solid #31435b;border-radius:6px;"));
+		setStyleSheet(QStringLiteral("background:#101013;border:1px solid #2a2a2c;border-radius:6px;"));
 		auto* layout = new QHBoxLayout(this);
 		layout->setContentsMargins(2, 2, 2, 2);
 		layout->setSpacing(0);
@@ -779,12 +780,12 @@ protected:
 				if (!m_vGuideBand)
 				{
 					m_vGuideBand = new QRubberBand(QRubberBand::Rectangle, sub->parentWidget());
-					m_vGuideBand->setStyleSheet(QStringLiteral("background:rgba(171,120,255,0.40);border:none;"));
+					m_vGuideBand->setStyleSheet(QStringLiteral("background:rgba(41,151,255,0.25);border:none;"));
 				}
 				if (!m_hGuideBand)
 				{
 					m_hGuideBand = new QRubberBand(QRubberBand::Rectangle, sub->parentWidget());
-					m_hGuideBand->setStyleSheet(QStringLiteral("background:rgba(171,120,255,0.40);border:none;"));
+					m_hGuideBand->setStyleSheet(QStringLiteral("background:rgba(41,151,255,0.25);border:none;"));
 				}
 				m_vGuideBand->hide();
 				m_hGuideBand->hide();
@@ -1224,7 +1225,7 @@ private:
 		{
 			border = QStringLiteral("#b388ff");
 		}
-		setStyleSheet(QStringLiteral("background:#0a0f16;border:2px solid %1;border-radius:6px;").arg(border));
+		setStyleSheet(QStringLiteral("background:#101013;border:2px solid %1;border-radius:6px;").arg(border));
 	}
 
 	fplayer::FVideoView* m_view = nullptr;
@@ -1359,47 +1360,11 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 {
 	ui->setupUi(this);
 	setAttribute(Qt::WA_StyledBackground, true);
-	setStyleSheet(QStringLiteral(
-		"QWidget#CaptureWindow{background:#090d14;color:#d6e2f1;}"
-		"QLabel{color:#dfe8f6;}"
-		"QCheckBox{color:#dfe8f6;spacing:6px;}"
-		"QCheckBox::indicator{width:14px;height:14px;}"
-		"QCheckBox::indicator:unchecked{border:1px solid #7d8da5;background:#0d1320;border-radius:3px;}"
-		"QCheckBox::indicator:checked{border:1px solid #9f84d6;background:#6f49b5;border-radius:3px;}"
-		"QMenuBar{background:#0d1320;color:#e7defc;border:none;padding:4px 6px;}"
-		"QMenuBar::item{background:transparent;padding:6px 10px;border-radius:5px;}"
-		"QMenuBar::item:selected{background:#241c3c;}"
-		"QMenu{background:#121127;color:#e8e1ff;border:none;}"
-		"QMenu::item:selected{background:#2d1f4d;}"
-		"QPushButton{background:#201938;border:1px solid #6e4ea5;color:#f3ebff;border-radius:6px;padding:4px 8px;}"
-		"QPushButton:hover{background:#2a2148;border-color:#8c69c8;}"
-		"QPushButton:pressed{background:#18142c;border-color:#5d448d;padding-top:5px;padding-bottom:3px;}"
-		"QPushButton[role=\"primary\"]{background:#6f49b5;border:1px solid #a786e4;color:#fff7ff;font-weight:600;}"
-		"QPushButton[role=\"primary\"]:hover{background:#7f56cc;border-color:#c1a5f1;}"
-		"QPushButton[role=\"primary\"]:pressed{background:#603fa0;border-color:#9f84d6;}"
-		"QPushButton[role=\"primary\"]:disabled{background:#31274c;border-color:#4a3a70;color:#bbaed7;}"
-		"QToolButton{color:#eadfff;border-radius:5px;padding:2px 6px;}"
-		"QToolButton:hover{background:#241c3d;}"
-		"QComboBox,QLineEdit,QSpinBox,QAbstractSpinBox,QListWidget,QTextEdit{"
-		"background:#0d0b1d;border:1px solid #4f3b79;border-radius:6px;color:#e2d9f7;padding:3px 4px;}"
-		"QLineEdit::placeholder{color:#95a2b8;}"
-		"QComboBox:disabled,QLineEdit:disabled,QSpinBox:disabled,QAbstractSpinBox:disabled,QTextEdit:disabled,QPushButton:disabled{color:#a8b4c9;}"
-		"QComboBox:focus,QLineEdit:focus,QSpinBox:focus,QAbstractSpinBox:focus,QTextEdit:focus{background:#15122a;border-color:#8b67c7;}"
-		"QComboBox::drop-down{border-left:1px solid #5f478f;width:22px;}"
-		"QComboBox::down-arrow{image:none;width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:6px solid #ccb8f2;}"
-		"QComboBox QAbstractItemView{background:#131128;color:#e6deff;border:1px solid #4f3b79;selection-background-color:#3b2964;selection-color:#ffffff;}"
-		"QSlider::groove:horizontal{background:#2a2340;height:6px;border-radius:3px;}"
-		"QSlider::handle:horizontal{background:#bc8cff;border:1px solid #dfc4ff;width:14px;margin:-5px 0;border-radius:7px;}"
-		"QListWidget::item{padding:6px;border-radius:5px;}"
-		"QListWidget::item:hover{background:#201938;}"
-		"QListWidget::item:selected{background:#322453;color:#f4eeff;}"
-		"#wgtDown{background:#111025;border:none;}"
-		"#wgtOperate{background:transparent;}"
-		"#wgtDevices{background:transparent;}"
-	));
+	setStyleSheet(fplayer::tokens::globalStyleSheet(fplayer::tokens::Theme::Dark));
 	m_service = new fplayer::Service();
 	m_capturePrefPath = m_service ? m_service->systemSettingsPath() : QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("system_settings.yaml"));
 	loadCapturePreferences();
+		applyTheme();
 	m_pullReservedPort = choosePullListenPort(m_pullReservedPort);
 	m_modeMenuBar = new QMenuBar(this);
 	ui->verticalLayout->setMenuBar(m_modeMenuBar);
@@ -1433,8 +1398,8 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 	m_fileTitleButton->show();
 	m_fileTitleButton->raise();
 	m_fileTitleButton->setStyleSheet(QStringLiteral(
-		"QToolButton{font-weight:600;color:#efe3ff;background:transparent;border:none;border-radius:6px;}"
-		"QToolButton:hover{background:#241c3d;}"
+		"QToolButton{font-weight:600;color:#f5f5f7;background:transparent;border:none;border-radius:6px;}"
+		"QToolButton:hover{background:#1a1a1c;}"
 	));
 
 	m_titleMarqueeTimer = new QTimer(this);
@@ -1910,6 +1875,7 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		auto addRecent = [this](QStringList& list, const QString& value) {
 			fplayer::Service::addRecentSetting(list, value, 8);
 			saveCapturePreferences();
+		applyTheme();
 		};
 		auto* cmbProtocol = new QComboBox(&dlg);
 		cmbProtocol->addItem(tr("RTMP"), QStringLiteral("rtmp://127.0.0.1:1935/live/stream"));
@@ -1972,7 +1938,7 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 			tr("注意：分辨率和帧率请勿设置过高，防止服务端负载过大影响拉流稳定性，建议不要超过 1920x1080 & 60fps。"),
 			&dlg);
 		lblServiceLoadWarning->setWordWrap(true);
-		lblServiceLoadWarning->setStyleSheet(QStringLiteral("color:#d32f2f; font-weight:600;"));
+		lblServiceLoadWarning->setStyleSheet(QStringLiteral("color:#ff453a; font-weight:600;"));
 		auto* spFps = new QSpinBox(&dlg);
 		spFps->setRange(0, 240);
 		spFps->setSpecialValueText(tr("跟随当前"));
@@ -2418,6 +2384,7 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 			m_pushAudioOutput = cmbAudioOutput->currentData().toString();
 			m_pushKeepAspect = chkKeepAspect->isChecked();
 			saveCapturePreferences();
+		applyTheme();
 			if (viaService)
 			{
 				QString publishRtmp;
@@ -2575,6 +2542,7 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		auto addRecent = [this](QStringList& list, const QString& value) {
 			fplayer::Service::addRecentSetting(list, value, 8);
 			saveCapturePreferences();
+		applyTheme();
 		};
 		auto* dlg = new QDialog(this);
 		dlg->setAttribute(Qt::WA_DeleteOnClose, true);
@@ -2878,6 +2846,7 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 			m_pullServiceApp = edtPullServiceApp->text().trimmed();
 			m_pullServiceStream = edtPullServiceStream->text().trimmed();
 			saveCapturePreferences();
+		applyTheme();
 			QString resolvedHttpFlv;
 			QString resolvedRtmp;
 			if (viaService)
@@ -3599,6 +3568,7 @@ void CaptureWindow::loadCapturePreferences()
 	m_aiSystemSenderColor = data.aiSystemSenderColor;
 	if (!data.aiFontFamily.trimmed().isEmpty()) m_aiFontFamily = data.aiFontFamily;
 	m_aiFontSize = (data.aiFontSize >= 8 && data.aiFontSize <= 32) ? data.aiFontSize : 13;
+	m_theme = data.theme;
 	{
 		const QString backend = data.screenCaptureBackend.trimmed().toLower();
 		if (backend == QStringLiteral("ffmpeg"))
@@ -3654,12 +3624,41 @@ void CaptureWindow::saveCapturePreferences() const
 	data.imagePoolToolbarColor = m_imagePoolToolbarColor;
 	data.aiFontFamily = m_aiFontFamily;
 	data.aiFontSize = m_aiFontSize;
+	data.theme = m_theme;
 	data.screenCaptureBackend = (m_screenBackendType == fplayer::MediaBackendType::FFmpeg)
 		                            ? QStringLiteral("ffmpeg")
 		                            : QStringLiteral("dxgi");
 	if (m_service)
 	{
 		m_service->saveSystemSettings(data);
+	}
+}
+
+void CaptureWindow::applyTheme()
+{
+	auto theme = static_cast<fplayer::tokens::Theme>(m_theme);
+	setStyleSheet(fplayer::tokens::globalStyleSheet(theme));
+	if (m_imagePoolSidebar) {
+		m_imagePoolSidebar->setToolbarColor(m_imagePoolToolbarColor);
+	}
+	const auto dialogs = findChildren<AiChatDialog*>();
+	fplayer::AiConfig cfg;
+	cfg.endpoint = m_aiEndpoint;
+	cfg.apiKey = m_aiApiKey;
+	cfg.model = m_aiModel;
+	cfg.userBubbleColor = m_aiUserBubbleColor;
+	cfg.aiBubbleColor = m_aiAiBubbleColor;
+	cfg.chatBgColor = m_aiChatBgColor;
+	cfg.aiTextColor = m_aiTextColor;
+	cfg.userTextColor = m_userTextColor;
+	cfg.systemBubbleColor = m_aiSystemBubbleColor;
+	cfg.systemTextColor = m_aiSystemTextColor;
+	cfg.senderColor = m_aiSenderColor;
+	cfg.systemSenderColor = m_aiSystemSenderColor;
+	cfg.fontFamily = m_aiFontFamily;
+	cfg.fontSize = m_aiFontSize;
+	for (auto* dlg : dialogs) {
+		dlg->reconfigure(cfg);
 	}
 }
 
@@ -3728,7 +3727,7 @@ void CaptureWindow::openCaptureSettingsDialog(QWidget* parent)
 		btn->setCursor(Qt::PointingHandCursor);
 		btn->setToolTip(tr("点击选择颜色"));
 		auto updateSwatch = [btn](const QString& c) {
-			btn->setStyleSheet(QStringLiteral("QPushButton{background-color:%1;border:1px solid #999;border-radius:2px;}QPushButton:hover{border-color:#0078d4;}").arg(c));
+			btn->setStyleSheet(QStringLiteral("QPushButton{background-color:%1;border:1px solid #3a3a3c;border-radius:4px;}QPushButton:hover{border-color:#2997ff;}").arg(c));
 		};
 		updateSwatch(color);
 		return std::make_pair(btn, updateSwatch);
@@ -3901,6 +3900,15 @@ void CaptureWindow::openCaptureSettingsDialog(QWidget* parent)
 	fontSizeSpin->setSuffix(tr(" px"));
 	layout->addRow(tr("字号"), fontSizeSpin);
 
+	auto* lblTheme = new QLabel(tr("── 主题 ──"), &dlg);
+	lblTheme->setStyleSheet(QStringLiteral("font-weight: bold; color: #6e6e73; margin-top: 8px;"));
+	layout->addRow(lblTheme);
+	auto* themeCombo = new QComboBox(&dlg);
+	themeCombo->addItem(tr("深色"), 0);
+	themeCombo->addItem(tr("浅色"), 1);
+	themeCombo->setCurrentIndex(m_theme);
+	layout->addRow(tr("主题"), themeCombo);
+
 	auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
 	layout->addRow(buttons);
 	connect(shotBrowse, &QPushButton::clicked, &dlg, [shotPath, this]() {
@@ -3917,7 +3925,7 @@ void CaptureWindow::openCaptureSettingsDialog(QWidget* parent)
 			recPath->setText(QDir::toNativeSeparators(dir));
 		}
 	});
-	connect(buttons, &QDialogButtonBox::accepted, &dlg, [&dlg, shotPath, recPath, chkCloseToTray, cmbScreenBackend, aiEndpointEdit, aiApiKeyEdit, aiModelEdit, userColorLabel, aiColorLabel, bgColorLabel, textColorLabel, userTextColorLabel, sysBubbleColorLabel, sysTextColorLabel, senderColorLabel, sysSenderColorLabel, tbColorLabel, fontCombo, fontSizeSpin, this]() {
+	connect(buttons, &QDialogButtonBox::accepted, &dlg, [&dlg, shotPath, recPath, chkCloseToTray, cmbScreenBackend, aiEndpointEdit, aiApiKeyEdit, aiModelEdit, userColorLabel, aiColorLabel, bgColorLabel, textColorLabel, userTextColorLabel, sysBubbleColorLabel, sysTextColorLabel, senderColorLabel, sysSenderColorLabel, tbColorLabel, fontCombo, fontSizeSpin, themeCombo, this]() {
 		const QString shot = shotPath->text().trimmed();
 		const QString rec = recPath->text().trimmed();
 		if (shot.isEmpty() || rec.isEmpty())
@@ -3976,6 +3984,7 @@ void CaptureWindow::openCaptureSettingsDialog(QWidget* parent)
 		}
 		m_screenBackendType = selectedBackend;
 		saveCapturePreferences();
+		applyTheme();
 		if (backendChanged && m_service)
 		{
 			// 热切换：先停采集，再切后端，最后恢复原先状态。
@@ -4051,7 +4060,9 @@ void CaptureWindow::openCaptureSettingsDialog(QWidget* parent)
 		m_imagePoolToolbarColor = tbColorLabel->text();
 		m_aiFontFamily = fontCombo->currentFont().family();
 		m_aiFontSize = fontSizeSpin->value();
+		m_theme = themeCombo->currentData().toInt();
 		saveCapturePreferences();
+		applyTheme();
 		m_imagePoolSidebar->setScreenshotDir(m_screenshotSaveDir);
 		m_imagePoolSidebar->setToolbarColor(m_imagePoolToolbarColor);
 		const auto dialogs = findChildren<AiChatDialog*>();
@@ -4556,14 +4567,14 @@ void CaptureWindow::ensureComposeWorkspace()
 	leftLayout->addWidget(m_btnComposeAddScreen);
 	leftLayout->addWidget(m_composeSourceList, 1);
 	leftPanel->setStyleSheet(QStringLiteral(
-		"#composeLeftPanel{background:#100f23;border:none;border-radius:8px;}"
-		"QLabel{color:#ebdeff;}"
+		"#composeLeftPanel{background:#141416;border:none;border-radius:8px;}"
+		"QLabel{color:#f5f5f7;}"
 	));
 
 	m_composePreviewHost = new AspectRatioHostWidget(m_composeSplitter);
 	m_composeMdiArea = new QMdiArea(m_composePreviewHost);
 	m_composeMdiArea->setBackground(QBrush(QColor(0, 0, 0)));
-	m_composeMdiArea->setStyleSheet(QStringLiteral("QMdiArea{border:none;background:#04030a;}"));
+	m_composeMdiArea->setStyleSheet(QStringLiteral("QMdiArea{border:none;background:#000000;}"));
 	m_composeMdiArea->setViewMode(QMdiArea::SubWindowView);
 	m_composeMdiArea->setOption(QMdiArea::DontMaximizeSubWindowOnActivation, true);
 	m_composeMdiArea->setOption(QMdiArea::DontMaximizeSubWindowOnActivation, true);
@@ -4623,6 +4634,7 @@ void CaptureWindow::ensureComposeWorkspace()
 		}
 		m_composeOutputSize = m_composeSizeCombo->itemData(index).toString();
 		saveCapturePreferences();
+		applyTheme();
 	});
 	refreshComposeOutputSizeOptions();
 	connect(m_composeMdiArea, &QMdiArea::subWindowActivated, this, [this](QMdiSubWindow*) {

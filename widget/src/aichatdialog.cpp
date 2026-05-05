@@ -26,7 +26,7 @@ AiChatDialog::AiChatDialog(QWidget* parent)
 	imgLayout->setContentsMargins(8, 8, 8, 8);
 	m_imageLabel = new QLabel(imgPanel);
 	m_imageLabel->setAlignment(Qt::AlignTop | Qt::AlignHCenter);
-	m_imageLabel->setStyleSheet(QStringLiteral("QLabel { background-color: #e5e7eb; border-radius: 4px; }"));
+	m_imageLabel->setStyleSheet(QStringLiteral("QLabel { background-color: #1a1a1c; border-radius: 8px; }"));
 	imgLayout->addWidget(m_imageLabel);
 	imgLayout->addStretch();
 
@@ -38,7 +38,7 @@ AiChatDialog::AiChatDialog(QWidget* parent)
 	m_chatScroll->setWidgetResizable(false);
 	m_chatScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
 	m_chatScroll->setStyleSheet(QStringLiteral(
-		"QScrollArea { border: 1px solid #d1d5db; border-radius: 4px; background-color: #f3f4f6; }"));
+		"QScrollArea { border: 1px solid #2a2a2c; border-radius: 8px; background-color: #f3f4f6; }"));
 	m_chatContent = new QWidget();
 	m_chatLayout = new QVBoxLayout(m_chatContent);
 	m_chatLayout->setContentsMargins(8, 8, 8, 8);
@@ -57,7 +57,7 @@ AiChatDialog::AiChatDialog(QWidget* parent)
 	m_input = new QLineEdit(inputRow);
 	m_input->setPlaceholderText(tr("输入你的问题..."));
 	m_input->setStyleSheet(QStringLiteral(
-		"QLineEdit { border: 1px solid #ccc; border-radius: 4px; padding: 6px; font-size: 13px; }"));
+		"QLineEdit { border: 1px solid #2a2a2c; border-radius: 8px; padding: 8px 10px; font-size: 13px; }"));
 	m_btnSend = new QPushButton(tr("发送"), inputRow);
 	m_btnSend->setFixedSize(60, 32);
 
@@ -98,7 +98,7 @@ void AiChatDialog::startChat(const QString& imagePath, const fplayer::AiConfig& 
 		? QString() : QStringLiteral("font-family: %1;").arg(m_colors.fontFamily);
 
 	m_chatScroll->setStyleSheet(QStringLiteral(
-		"QScrollArea { border: 1px solid #d1d5db; border-radius: 4px; background-color: %1; }")
+		"QScrollArea { border: 1px solid #2a2a2c; border-radius: 8px; background-color: %1; }")
 		.arg(m_colors.chatBgColor));
 	m_chatContent->setAutoFillBackground(true);
 	{
@@ -107,7 +107,7 @@ void AiChatDialog::startChat(const QString& imagePath, const fplayer::AiConfig& 
 		m_chatContent->setPalette(pal);
 	}
 	m_input->setStyleSheet(QStringLiteral(
-		"QLineEdit { border: 1px solid #ccc; border-radius: 4px; padding: 6px; font-size: %1px; %2 }")
+		"QLineEdit { border: 1px solid #2a2a2c; border-radius: 8px; padding: 8px 10px; font-size: %1px; %2 }")
 		.arg(m_colors.fontSize).arg(fontFamilyCss));
 
 	QPixmap pix(imagePath);
@@ -141,7 +141,7 @@ void AiChatDialog::reconfigure(const fplayer::AiConfig& config)
 		? QString() : QStringLiteral("font-family: %1;").arg(m_colors.fontFamily);
 
 	m_chatScroll->setStyleSheet(QStringLiteral(
-		"QScrollArea { border: 1px solid #d1d5db; border-radius: 4px; background-color: %1; }")
+		"QScrollArea { border: 1px solid #2a2a2c; border-radius: 8px; background-color: %1; }")
 		.arg(m_colors.chatBgColor));
 	m_chatContent->setAutoFillBackground(true);
 	{
@@ -150,7 +150,7 @@ void AiChatDialog::reconfigure(const fplayer::AiConfig& config)
 		m_chatContent->setPalette(pal);
 	}
 	m_input->setStyleSheet(QStringLiteral(
-		"QLineEdit { border: 1px solid #ccc; border-radius: 4px; padding: 6px; font-size: %1px; %2 }")
+		"QLineEdit { border: 1px solid #2a2a2c; border-radius: 8px; padding: 8px 10px; font-size: %1px; %2 }")
 		.arg(m_colors.fontSize).arg(fontFamilyCss));
 
 	for (auto* b : m_bubbles)
