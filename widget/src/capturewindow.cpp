@@ -581,8 +581,8 @@ class AspectRatioHostWidget final : public QWidget
 public:
 	explicit AspectRatioHostWidget(QWidget* parent = nullptr) : QWidget(parent)
 	{
+		setObjectName(QStringLiteral("composePreviewHost"));
 		setAttribute(Qt::WA_StyledBackground, true);
-		setStyleSheet(QStringLiteral("background:#0d0d0f;border:1px solid #2a2a2c;border-radius:8px;"));
 	}
 
 	void setAspectRatio(const int w, const int h)
@@ -674,9 +674,10 @@ public:
 
 	explicit ComposeSourceWidget(QWidget* parent = nullptr) : QWidget(parent)
 	{
+		setObjectName(QStringLiteral("composeSourceItem"));
 		setMouseTracking(true);
 		setAttribute(Qt::WA_StyledBackground, true);
-		setStyleSheet(QStringLiteral("background:#101013;border:1px solid #2a2a2c;border-radius:6px;"));
+		setProperty("composeState", QStringLiteral("normal"));
 		auto* layout = new QHBoxLayout(this);
 		layout->setContentsMargins(2, 2, 2, 2);
 		layout->setSpacing(0);
@@ -1216,16 +1217,18 @@ private:
 
 	void applyVisualStyle()
 	{
-		QString border = QStringLiteral("#3a506a");
+		QString state = QStringLiteral("normal");
 		if (m_cropMode)
 		{
-			border = QStringLiteral("#ffd166");
+			state = QStringLiteral("crop");
 		}
 		else if (m_selected)
 		{
-			border = QStringLiteral("#b388ff");
+			state = QStringLiteral("selected");
 		}
-		setStyleSheet(QStringLiteral("background:#101013;border:2px solid %1;border-radius:6px;").arg(border));
+		setProperty("composeState", state);
+		style()->unpolish(this);
+		style()->polish(this);
 	}
 
 	fplayer::FVideoView* m_view = nullptr;
@@ -1361,6 +1364,7 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 	ui->setupUi(this);
 	setAttribute(Qt::WA_StyledBackground, true);
 	setStyleSheet(fplayer::tokens::globalStyleSheet(fplayer::tokens::Theme::Dark));
+	qApp->setStyleSheet(fplayer::tokens::globalStyleSheet(fplayer::tokens::Theme::Dark));
 	m_service = new fplayer::Service();
 	m_capturePrefPath = m_service ? m_service->systemSettingsPath() : QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("system_settings.yaml"));
 	loadCapturePreferences();
@@ -1397,10 +1401,11 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 	m_fileTitleButton->setFixedHeight(24);
 	m_fileTitleButton->show();
 	m_fileTitleButton->raise();
-	m_fileTitleButton->setStyleSheet(QStringLiteral(
-		"QToolButton{font-weight:600;color:#f5f5f7;background:transparent;border:none;border-radius:6px;}"
-		"QToolButton:hover{background:#1a1a1c;}"
-	));
+	{
+		QFont f = m_fileTitleButton->font();
+		f.setWeight(QFont::DemiBold);
+		m_fileTitleButton->setFont(f);
+	}
 
 	m_titleMarqueeTimer = new QTimer(this);
 	m_titleMarqueeTimer->setInterval(180);
@@ -3638,6 +3643,7 @@ void CaptureWindow::applyTheme()
 {
 	auto theme = static_cast<fplayer::tokens::Theme>(m_theme);
 	setStyleSheet(fplayer::tokens::globalStyleSheet(theme));
+	qApp->setStyleSheet(fplayer::tokens::globalStyleSheet(theme));
 	if (m_imagePoolSidebar) {
 		m_imagePoolSidebar->setToolbarColor(m_imagePoolToolbarColor);
 	}
@@ -3721,13 +3727,15 @@ void CaptureWindow::openCaptureSettingsDialog(QWidget* parent)
 	layout->addRow(tr("模型"), aiModelEdit);
 
 	// AI chat color configuration
-	auto makeColorSwatch = [&dlg](const QString& color) {
+	auto makeColorSwatch = [&dlg, this](const QString& color) {
+		const auto tc = fplayer::tokens::colorsForTheme(static_cast<fplayer::tokens::Theme>(m_theme));
 		QPushButton* btn = new QPushButton(&dlg);
 		btn->setFixedSize(32, 22);
 		btn->setCursor(Qt::PointingHandCursor);
 		btn->setToolTip(tr("点击选择颜色"));
-		auto updateSwatch = [btn](const QString& c) {
-			btn->setStyleSheet(QStringLiteral("QPushButton{background-color:%1;border:1px solid #3a3a3c;border-radius:4px;}QPushButton:hover{border-color:#2997ff;}").arg(c));
+		auto updateSwatch = [btn, tc](const QString& c) {
+			btn->setStyleSheet(QStringLiteral("QPushButton{background-color:%1;border:1px solid %2;border-radius:4px;}QPushButton:hover{border-color:%3;}")
+				.arg(c, tc.hairline, tc.primary));
 		};
 		updateSwatch(color);
 		return std::make_pair(btn, updateSwatch);
@@ -4566,15 +4574,10 @@ void CaptureWindow::ensureComposeWorkspace()
 	leftLayout->addWidget(m_btnComposeAddCamera);
 	leftLayout->addWidget(m_btnComposeAddScreen);
 	leftLayout->addWidget(m_composeSourceList, 1);
-	leftPanel->setStyleSheet(QStringLiteral(
-		"#composeLeftPanel{background:#141416;border:none;border-radius:8px;}"
-		"QLabel{color:#f5f5f7;}"
-	));
 
 	m_composePreviewHost = new AspectRatioHostWidget(m_composeSplitter);
 	m_composeMdiArea = new QMdiArea(m_composePreviewHost);
-	m_composeMdiArea->setBackground(QBrush(QColor(0, 0, 0)));
-	m_composeMdiArea->setStyleSheet(QStringLiteral("QMdiArea{border:none;background:#000000;}"));
+	m_composeMdiArea->setObjectName(QStringLiteral("composeMdiArea"));
 	m_composeMdiArea->setViewMode(QMdiArea::SubWindowView);
 	m_composeMdiArea->setOption(QMdiArea::DontMaximizeSubWindowOnActivation, true);
 	m_composeMdiArea->setOption(QMdiArea::DontMaximizeSubWindowOnActivation, true);

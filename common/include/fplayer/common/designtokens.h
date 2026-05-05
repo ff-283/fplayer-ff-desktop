@@ -58,7 +58,7 @@ inline ThemeColors lightColors()
         "#fafafc",                    // surfaceTile1 (pearl)
         "#f0f0f0",                    // surfaceTile2
         "#e8e8ea",                    // surfaceTile3
-        "#000000",                    // surfaceBlack
+        "#d1d1d6",                    // surfaceBlack
         "#1d1d1f",                    // ink (near-black)
         "#6e6e73",                    // inkMuted
         "#a1a1a6",                    // inkDisabled
@@ -111,8 +111,9 @@ inline constexpr int display    = 17;
 inline QString globalStyleSheet(const ThemeColors& c)
 {
     return QStringLiteral(
-        // ── Root widget ──
+        // ── Root / Dialogs ──
         "QWidget#CaptureWindow{background:%1;color:%2;}"
+        "QDialog{background:%1;color:%3;}"
         // ── Labels ──
         "QLabel{color:%3;}"
         // ── CheckBox ──
@@ -161,6 +162,14 @@ inline QString globalStyleSheet(const ThemeColors& c)
         "#wgtDown{background:%8;border:none;}"
         "#wgtOperate{background:transparent;}"
         "#wgtDevices{background:transparent;}"
+        // ── Compose Mode ──
+        "#composeLeftPanel{background:%5;border:none;border-radius:8px;}"
+        "#composePreviewHost{background:%1;border:1px solid %4;border-radius:8px;}"
+        "#composeMdiArea{border:none;background:%7;}"
+        "#composeSourceItem{background:%8;border-radius:6px;}"
+        "#composeSourceItem[composeState=\"normal\"]{border:1px solid %4;}"
+        "#composeSourceItem[composeState=\"selected\"]{border:2px solid #b388ff;}"
+        "#composeSourceItem[composeState=\"crop\"]{border:2px solid #ffd166;}"
     )
         .arg(
             c.canvas,                              // %1  root bg

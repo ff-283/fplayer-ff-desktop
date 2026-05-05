@@ -2,5 +2,11 @@
     <qresource prefix="/">
         <file>icon/icon.png</file>
         <file>icon/picture.svg</file>
+        <file>icon/play.png</file>
+        <file>icon/pause.png</file>
+        <file>icon/camera.png</file>
+        <file>icon/capture.png</file>
+        <file>icon/settings.png</file>
+        <file>icon/refresh.png</file>
     </qresource>
 </RCC>
