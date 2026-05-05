@@ -13,9 +13,17 @@ namespace fplayer
 		QString endpoint = QStringLiteral("https://api.openai.com/v1/chat/completions");
 		QString apiKey;
 		QString model = QStringLiteral("gpt-4o");
-		QString userBubbleColor = QStringLiteral("#0078d4");
-		QString aiBubbleColor = QStringLiteral("#ffffff");
-		QString chatBgColor = QStringLiteral("#000000");
+		QString userBubbleColor = QStringLiteral("#2997ff");
+		QString aiBubbleColor = QStringLiteral("#1c1c1e");
+		QString chatBgColor = QStringLiteral("#0d0d0f");
+		QString fontFamily;
+		int fontSize = 14;
+		QString aiTextColor = QStringLiteral("#f5f5f7");
+		QString userTextColor = QStringLiteral("#ffffff");
+	QString systemBubbleColor = QStringLiteral("#1a1a1c");
+	QString systemTextColor = QStringLiteral("#a1a1a6");
+	QString senderColor = QStringLiteral("#6e6e73");
+	QString systemSenderColor = QStringLiteral("#ff9f0a");
 	};
 
 	class FPLAYER_SERVICE_EXPORT AiService : public QObject
@@ -24,6 +32,7 @@ namespace fplayer
 
 	public:
 		explicit AiService(QObject* parent = nullptr);
+	~AiService() override;
 
 		void setConfig(const AiConfig& config);
 		AiConfig config() const;

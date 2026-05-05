@@ -447,6 +447,7 @@ bool fplayer::Service::streamStartPushByScene(PushScene scene, const QString& ou
 		{
 			screenSpec += QStringLiteral(";audio_out=%1").arg(options.audioOutputSource.trimmed());
 		}
+		LOG_INFO("[推流] Screen: spec=%s", screenSpec.toUtf8().constData());
 		return m_stream->startPush(screenSpec, outputUrl);
 	}
 	case PushScene::File:
@@ -455,6 +456,7 @@ bool fplayer::Service::streamStartPushByScene(PushScene scene, const QString& ou
 		const bool needTranscode = options.bitrateKbps > 0 || options.fps > 0 || (options.width > 0 && options.height > 0);
 		if (!needTranscode)
 		{
+			LOG_INFO("[推流] File(remux): input=%s", sceneInput.toUtf8().constData());
 			return m_stream->startPush(sceneInput, outputUrl);
 		}
 		QStringList parts;
@@ -471,7 +473,9 @@ bool fplayer::Service::streamStartPushByScene(PushScene scene, const QString& ou
 		{
 			parts << QStringLiteral("bitrate=%1").arg(options.bitrateKbps);
 		}
-		return m_stream->startPush(QStringLiteral("__file_transcode__:") + parts.join(';'), outputUrl);
+		const QString transcodeSpec = QStringLiteral("__file_transcode__:") + parts.join(';');
+		LOG_INFO("[推流] File(transcode): spec=%s", transcodeSpec.toUtf8().constData());
+		return m_stream->startPush(transcodeSpec, outputUrl);
 	}
 	case PushScene::Camera:
 	{
@@ -496,6 +500,7 @@ bool fplayer::Service::streamStartPushByScene(PushScene scene, const QString& ou
 				fallbackParams << QStringLiteral("audio_out=%1").arg(options.audioOutputSource.trimmed());
 			}
 			const QString tail = fallbackParams.isEmpty() ? QString() : fallbackParams.join(';');
+			LOG_INFO("[推流] Camera(capture): 无摄像头设备，使用直接采集模式");
 			return m_stream->startPush(QStringLiteral("__camera_capture__:") + tail, outputUrl);
 		}
 		if (!cameraSpec.startsWith(QStringLiteral("video=")))
@@ -538,6 +543,10 @@ bool fplayer::Service::streamStartPushByScene(PushScene scene, const QString& ou
 		{
 			params << QStringLiteral("bitrate=%1").arg(options.bitrateKbps);
 		}
+		if (!options.videoEncoder.trimmed().isEmpty())
+		{
+			params << QStringLiteral("encoder=%1").arg(options.videoEncoder.trimmed());
+		}
 		if (!options.audioInputSource.trimmed().isEmpty())
 		{
 			params << QStringLiteral("audio_in=%1").arg(options.audioInputSource.trimmed());
@@ -546,7 +555,12 @@ bool fplayer::Service::streamStartPushByScene(PushScene scene, const QString& ou
 		{
 			params << QStringLiteral("audio_out=%1").arg(options.audioOutputSource.trimmed());
 		}
-		return m_stream->startPush(QStringLiteral("__camera_preview__:") + params.join(';'), outputUrl);
+		const QString cameraPreviewSpec = QStringLiteral("__camera_preview__:") + params.join(';');
+		LOG_INFO("[推流] Camera(preview): device=%s fps=%d size=%dx%d",
+		         cameraSpec.toUtf8().constData(),
+		         options.fps > 0 ? options.fps : fps,
+		         outW, outH);
+		return m_stream->startPush(cameraPreviewSpec, outputUrl);
 	}
 	default:
 		return false;

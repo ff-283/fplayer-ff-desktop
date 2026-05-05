@@ -136,6 +136,10 @@ bool fplayer::StreamFFmpeg::startPush(const QString& inputUrl, const QString& ou
 		              .arg(d3d11vaReady ? QStringLiteral("yes") : QStringLiteral("no")));
 	}
 	const PushInputRoute route = parsePushInputRoute(inputUrl);
+	appendLogLine(QStringLiteral("[推流路由] kind=%1 input=%2 output=%3")
+	              .arg(static_cast<int>(route.kind))
+	              .arg(inputUrl.length() > 120 ? inputUrl.left(120) + QStringLiteral("...") : inputUrl)
+	              .arg(outputUrl));
 	if (route.kind == PushInputKind::CameraCapture)
 	{
 		const CaptureParams cameraParams = parseCaptureParams(route.spec);
@@ -158,6 +162,9 @@ bool fplayer::StreamFFmpeg::startPushWorkerByRoute(const PushInputRoute& route, 
 {
 	try
 	{
+		appendLogLine(QStringLiteral("[推流启动] 路由=%1 spec=%2")
+		              .arg(static_cast<int>(route.kind))
+		              .arg(route.spec.isEmpty() ? QStringLiteral("(none)") : route.spec));
 		if (route.kind == PushInputKind::ScreenCapture)
 		{
 			m_worker = std::make_unique<std::thread>([this, outputUrl, route]() {
@@ -1510,7 +1517,7 @@ void fplayer::StreamFFmpeg::pushComposeSceneLoop(const QString& outputUrl, const
 					av_opt_set(encCtx->priv_data, "rc", "cbr", 0);
 					av_opt_set(encCtx->priv_data, "zerolatency", "1", 0);
 				}
-				else if (codecName == QStringLiteral("h264_amf"))
+				else if (codecName == QStringLiteral("h264_amf") || codecName == QStringLiteral("h264_mf"))
 				{
 					// AMF 不接受 x264 preset/tune 文本，保持默认参数避免选项解析失败。
 				}
@@ -3252,7 +3259,7 @@ audio_init_done:
 					av_opt_set(encCtx->priv_data, "rc", "cbr", 0);
 					av_opt_set(encCtx->priv_data, "zerolatency", "1", 0);
 				}
-				else if (codecName == QStringLiteral("h264_amf"))
+				else if (codecName == QStringLiteral("h264_amf") || codecName == QStringLiteral("h264_mf"))
 				{
 					// AMF 不接受 x264 preset/tune 文本，保持默认参数避免选项解析失败。
 				}
@@ -4315,7 +4322,7 @@ audio_preview_init_done:
 					av_opt_set(encCtx->priv_data, "rc", "cbr", 0);
 					av_opt_set(encCtx->priv_data, "zerolatency", "1", 0);
 				}
-				else if (codecName == QStringLiteral("h264_amf"))
+				else if (codecName == QStringLiteral("h264_amf") || codecName == QStringLiteral("h264_mf"))
 				{
 					// AMF 不接受 x264 preset/tune 文本，保持默认参数避免选项解析失败。
 				}
@@ -5665,6 +5672,7 @@ void fplayer::StreamFFmpeg::pushCameraPreviewLoop(const QString& outputUrl, cons
 	}
 	ofmt->interrupt_callback.callback = &StreamFFmpeg::interruptCallback;
 	ofmt->interrupt_callback.opaque = &m_stopRequest;
+	appendLogLine(QStringLiteral("[摄像头预览推流] FLV输出上下文创建成功，目标=%1").arg(QString::fromUtf8(outPath)));
 
 	// 等待当前摄像头预览帧可用，避免推流线程空跑。
 	frame = fplayer::CameraFrameBus::instance().snapshot();
@@ -5680,62 +5688,109 @@ void fplayer::StreamFFmpeg::pushCameraPreviewLoop(const QString& outputUrl, cons
 		goto cleanup;
 	}
 	lastSerial = frame.serial;
+	appendLogLine(QStringLiteral("[摄像头预览推流] 首帧就绪: %1x%2 serial=%3")
+	              .arg(frame.width).arg(frame.height).arg(frame.serial));
 
-	{
-		const AVCodec* enc = avcodec_find_encoder(AV_CODEC_ID_H264);
-		if (!enc)
 		{
-			enc = avcodec_find_encoder(AV_CODEC_ID_MPEG4);
-		}
-		if (!enc)
+		const QList<VideoEncoderChoice> candidates = pickVideoEncoderCandidates(params.videoEncoder);
+		if (candidates.isEmpty())
 		{
 			exitCode = AVERROR_ENCODER_NOT_FOUND;
-			setLastError(QStringLiteral("未找到可用视频编码器(H264/MPEG4)"));
+			setLastError(QStringLiteral("未找到可用视频编码器（当前请求=%1）。CPU 模式需要 libx264（或 libopenh264）。").arg(params.videoEncoder));
 			goto cleanup;
 		}
-		encCtx = avcodec_alloc_context3(enc);
-		if (!encCtx)
+		VideoEncoderChoice encChoice;
+		QString lastOpenErrDetail;
+		int lastOpenRet = AVERROR_UNKNOWN;
+		bool opened = false;
+		for (const VideoEncoderChoice& cand : candidates)
 		{
-			exitCode = AVERROR(ENOMEM);
-			setLastError(QStringLiteral("创建编码器上下文失败"));
+			if (!cand.codec)
+			{
+				continue;
+			}
+			if (encCtx)
+			{
+				avcodec_free_context(&encCtx);
+				encCtx = nullptr;
+			}
+			encCtx = avcodec_alloc_context3(cand.codec);
+			if (!encCtx)
+			{
+				exitCode = AVERROR(ENOMEM);
+				setLastError(QStringLiteral("创建编码器上下文失败"));
+				goto cleanup;
+			}
+			const AVCodec* enc = cand.codec;
+			encCtx->width = frame.width;
+			encCtx->height = frame.height;
+			encCtx->pix_fmt = AV_PIX_FMT_YUV420P;
+			encCtx->time_base = AVRational{1, targetFps};
+			encCtx->framerate = AVRational{targetFps, 1};
+			encCtx->gop_size = targetFps * 2;
+			encCtx->max_b_frames = 0;
+			const int bitrateKbps = params.bitrateKbps > 0
+				? params.bitrateKbps
+				: estimateBitrateKbps(encCtx->width, encCtx->height, targetFps);
+			encCtx->bit_rate = static_cast<int64_t>(bitrateKbps) * 1000;
+			encCtx->rc_max_rate = encCtx->bit_rate;
+			encCtx->rc_buffer_size = encCtx->bit_rate * 2;
+			if (ofmt->oformat->flags & AVFMT_GLOBALHEADER)
+			{
+				encCtx->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
+			}
+			if (encCtx->priv_data)
+			{
+				const QString codecName = QString::fromLatin1(enc->name ? enc->name : "").toLower();
+				if (codecName == QStringLiteral("h264_nvenc"))
+				{
+					av_opt_set(encCtx->priv_data, "preset", "p1", 0);
+					av_opt_set(encCtx->priv_data, "tune", "ll", 0);
+					av_opt_set(encCtx->priv_data, "rc", "cbr", 0);
+					av_opt_set(encCtx->priv_data, "zerolatency", "1", 0);
+				}
+				else if (codecName == QStringLiteral("h264_amf") || codecName == QStringLiteral("h264_mf"))
+				{
+					// AMF 不接受 x264 preset/tune 文本，保持默认参数避免选项解析失败。
+				}
+				else if (enc->id == AV_CODEC_ID_H264)
+				{
+					av_opt_set(encCtx->priv_data, "preset", "superfast", 0);
+					av_opt_set(encCtx->priv_data, "tune", "zerolatency", 0);
+				}
+			}
+			appendLogLine(QStringLiteral("[摄像头预览推流] 编码器选择: %1").arg(QString::fromUtf8(enc->name ? enc->name : "unknown")));
+			appendLogLine(QStringLiteral("[摄像头预览推流] 输入=%1x%2 输出=%3x%4 FPS=%5 码率=%6kbps")
+			              .arg(frame.width)
+			              .arg(frame.height)
+			              .arg(encCtx->width)
+			              .arg(encCtx->height)
+			              .arg(targetFps)
+			              .arg(bitrateKbps));
+			ret = avcodec_open2(encCtx, enc, nullptr);
+			if (ret < 0)
+			{
+				char errbuf[AV_ERROR_MAX_STRING_SIZE];
+				av_strerror(ret, errbuf, sizeof(errbuf));
+				lastOpenRet = ret;
+				lastOpenErrDetail = QStringLiteral("%1: %2")
+					.arg(cand.name.isEmpty() ? QString::fromLatin1(enc->name ? enc->name : "?") : cand.name)
+					.arg(QString::fromUtf8(errbuf));
+				appendLogLine(QStringLiteral("[摄像头预览推流] 编码器打开失败，%1").arg(lastOpenErrDetail));
+				continue;
+			}
+			encChoice = cand;
+			opened = true;
+			break;
+		}
+		if (!opened)
+		{
+			exitCode = lastOpenRet;
+			setLastError(QStringLiteral("所有备选编码器均无法打开（最后: %1）").arg(lastOpenErrDetail));
 			goto cleanup;
 		}
-		encCtx->width = frame.width;
-		encCtx->height = frame.height;
-		encCtx->pix_fmt = AV_PIX_FMT_YUV420P;
-		encCtx->time_base = AVRational{1, targetFps};
-		encCtx->framerate = AVRational{targetFps, 1};
-		encCtx->gop_size = targetFps * 2;
-		encCtx->max_b_frames = 0;
-		const int bitrateKbps = params.bitrateKbps > 0
-			                        ? params.bitrateKbps
-			                        : estimateBitrateKbps(encCtx->width, encCtx->height, targetFps);
-		encCtx->bit_rate = static_cast<int64_t>(bitrateKbps) * 1000;
-		encCtx->rc_max_rate = encCtx->bit_rate;
-		encCtx->rc_buffer_size = encCtx->bit_rate * 2;
-		if (ofmt->oformat->flags & AVFMT_GLOBALHEADER)
-		{
-			encCtx->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
-		}
-		if (enc->id == AV_CODEC_ID_H264 && encCtx->priv_data)
-		{
-			av_opt_set(encCtx->priv_data, "preset", "superfast", 0);
-			av_opt_set(encCtx->priv_data, "tune", "zerolatency", 0);
-		}
-		appendLogLine(QStringLiteral("[摄像头预览推流] 输入=%1x%2 输出=%3x%4 FPS=%5 码率=%6kbps")
-		              .arg(frame.width)
-		              .arg(frame.height)
-		              .arg(encCtx->width)
-		              .arg(encCtx->height)
-		              .arg(targetFps)
-		              .arg(bitrateKbps));
-		ret = avcodec_open2(encCtx, enc, nullptr);
-		if (ret < 0)
-		{
-			exitCode = ret;
-			setLastError(QStringLiteral("打开编码器失败"));
-			goto cleanup;
-		}
+		appendLogLine(QStringLiteral("[摄像头预览推流] 编码器已打开: %1").arg(encChoice.name));
+
 		AVStream* outStream = avformat_new_stream(ofmt, nullptr);
 		if (!outStream)
 		{
@@ -5961,6 +6016,7 @@ void fplayer::StreamFFmpeg::pushCameraPreviewLoop(const QString& outputUrl, cons
 			goto cleanup;
 		}
 	}
+	appendLogLine(QStringLiteral("[摄像头预览推流] 输出已打开: %1").arg(QString::fromUtf8(outPath)));
 	ret = avformat_write_header(ofmt, nullptr);
 	if (ret < 0)
 	{
@@ -5969,6 +6025,7 @@ void fplayer::StreamFFmpeg::pushCameraPreviewLoop(const QString& outputUrl, cons
 		goto cleanup;
 	}
 	wroteHeader = true;
+	appendLogLine(QStringLiteral("[摄像头预览推流] FLV头已写入，进入主编码循环"));
 
 	encFrame->format = encCtx->pix_fmt;
 	encFrame->width = encCtx->width;
@@ -6410,6 +6467,7 @@ cleanup:
 		QMutexLocker locker(&m_mutex);
 		m_lastExitCode = exitCode;
 	}
+	appendLogLine(QStringLiteral("[摄像头预览推流] 退出: exitCode=%1").arg(exitCode));
 	m_completedSession.store(true, std::memory_order_relaxed);
 	m_running.store(false, std::memory_order_relaxed);
 }

@@ -6,6 +6,7 @@
 #include <QImageReader>
 #include <QBuffer>
 #include <QNetworkRequest>
+#include <QDebug>
 
 namespace fplayer
 {
@@ -15,6 +16,16 @@ namespace fplayer
 	{
 		connect(m_net, &QNetworkAccessManager::finished,
 		        this, &AiService::onReplyFinished);
+	}
+
+	AiService::~AiService()
+	{
+		if (m_activeReply)
+		{
+			disconnect(m_activeReply, nullptr, this, nullptr);
+			m_activeReply->abort();
+			m_activeReply = nullptr;
+		}
 	}
 
 	void AiService::setConfig(const AiConfig& config)
@@ -81,11 +92,18 @@ namespace fplayer
 		req.setRawHeader("Accept", "text/event-stream");
 
 		m_streamBuffer.clear();
+		qDebug() << "[AiService] sendMessage endpoint:" << m_config.endpoint
+		         << "model:" << m_config.model << "image:" << imagePath;
 		m_activeReply = m_net->post(req, QJsonDocument(body).toJson(QJsonDocument::Compact));
 		if (m_activeReply)
 		{
+			qDebug() << "[AiService] request posted, waiting for stream...";
 			connect(m_activeReply, &QNetworkReply::readyRead,
 			        this, &AiService::onReadyRead);
+		}
+		else
+		{
+			qWarning() << "[AiService] post() returned nullptr!";
 		}
 	}
 
@@ -95,7 +113,9 @@ namespace fplayer
 		if (!reply)
 			return;
 
-		m_streamBuffer.append(reply->readAll());
+		QByteArray raw = reply->readAll();
+		qDebug() << "[AiService] onReadyRead received" << raw.size() << "bytes";
+		m_streamBuffer.append(raw);
 
 		// Parse complete SSE lines from buffer
 		while (true)
@@ -127,7 +147,10 @@ namespace fplayer
 
 			const QString chunk = choices[0].toObject()["delta"].toObject()["content"].toString();
 			if (!chunk.isEmpty())
+			{
+				qDebug() << "[AiService] emit responseChunk:" << chunk;
 				emit responseChunk(chunk);
+			}
 		}
 	}
 
@@ -136,22 +159,52 @@ namespace fplayer
 		if (reply == m_activeReply)
 			m_activeReply = nullptr;
 
+		// Read any remaining data not yet consumed by onReadyRead
+		const QByteArray remaining = reply->readAll();
+		if (!remaining.isEmpty())
+		{
+			m_streamBuffer.append(remaining);
+			qDebug() << "[AiService] late body:" << remaining;
+		}
+		// Log full buffer contents when error (it's the error response JSON)
+		if (reply->error() != QNetworkReply::NoError && !m_streamBuffer.isEmpty())
+		{
+			qDebug() << "[AiService] error buffer:" << m_streamBuffer;
+		}
+
+		qDebug() << "[AiService] onReplyFinished error:" << reply->error()
+		         << "status:" << reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt()
+		         << "streamBuffer size:" << m_streamBuffer.size();
 		if (reply->error() != QNetworkReply::NoError)
 		{
 			const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
-			// Don't report error if we already received valid stream content
-			if (!m_streamBuffer.isEmpty() || m_activeReply != nullptr)
+
+			// Try to extract error message from response body
+			QString errorMsg;
+			if (!m_streamBuffer.isEmpty())
 			{
-				emit responseFinished();
-				reply->deleteLater();
-				return;
+				const QJsonDocument doc = QJsonDocument::fromJson(m_streamBuffer);
+				if (!doc.isNull() && doc.isObject())
+				{
+					const QJsonObject obj = doc.object();
+					const QJsonObject errObj = obj["error"].toObject();
+					if (!errObj.isEmpty())
+					{
+						errorMsg = errObj["message"].toString();
+						if (errorMsg.isEmpty())
+							errorMsg = QString::fromUtf8(m_streamBuffer);
+					}
+				}
 			}
+
 			if (status == 401)
 				emit requestFailed(tr("API Key 无效 (401)，请检查设置。"));
 			else if (status == 429)
 				emit requestFailed(tr("请求过于频繁 (429)，请稍后重试。"));
+			else if (!errorMsg.isEmpty())
+				emit requestFailed(tr("API 错误 (HTTP %1)：%2").arg(status).arg(errorMsg));
 			else
-				emit requestFailed(tr("请求失败：%1").arg(reply->errorString()));
+				emit requestFailed(tr("请求失败 (HTTP %1)：%2").arg(status).arg(reply->errorString()));
 		}
 		else
 		{

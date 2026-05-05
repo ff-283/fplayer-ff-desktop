@@ -52,7 +52,7 @@ void ImagePoolSidebar::setupUi()
 	// --- Toolbar ---
 	auto* toolbar = new QWidget(this);
 	toolbar->setFixedHeight(36);
-	toolbar->setStyleSheet(QStringLiteral("QWidget { background-color: #f0f0f0; }"));
+	toolbar->setStyleSheet(QStringLiteral("QWidget { background-color: #141416; }"));
 	auto* tbLayout = new QHBoxLayout(toolbar);
 	tbLayout->setContentsMargins(8, 2, 8, 2);
 	tbLayout->setSpacing(6);
@@ -70,7 +70,7 @@ void ImagePoolSidebar::setupUi()
 	m_sortCombo->addItem(tr("大小 ↑"), static_cast<int>(fplayer::ImagePoolService::SortBySizeAsc));
 
 	m_countLabel = new QLabel(toolbar);
-	m_countLabel->setStyleSheet(QStringLiteral("color: #666; font-size: 12px;"));
+	m_countLabel->setStyleSheet(QStringLiteral("color: #a1a1a6; font-size: 12px;"));
 
 	tbLayout->addWidget(m_btnRefresh);
 	tbLayout->addWidget(m_sortCombo, 1);
@@ -320,6 +320,13 @@ void ImagePoolSidebar::loadImages()
 
 void ImagePoolSidebar::addImageToList(const QString& path)
 {
+	for (int i = 0; i < m_listWidget->count(); ++i)
+	{
+		if (m_listWidget->item(i)->data(Qt::UserRole).toString() == path)
+		{
+			return;
+		}
+	}
 	QFileInfo info(path);
 	if (!info.exists())
 	{
