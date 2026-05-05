@@ -79,7 +79,7 @@ m_input->setStyleSheet(
 固定样式，不受 `AiConfig` 影响 — [aichatdialog.cpp:26](../widget/src/aichatdialog.cpp#L26)
 ```cpp
 m_imageLabel->setStyleSheet(
-    "QLabel { background-color: #e5e7eb; border-radius: 4px; }");
+    "QLabel { background-color: #1a1a1c; border-radius: 8px; }");
 ```
 
 ---
@@ -121,8 +121,8 @@ QScrollArea (m_chatScroll)
 `ChatBubbleWidget::paintEvent()` 分三步：
 
 1. **发送者名称**：`QPainter::drawText()` 在 `m_senderRect` 中绘制
-   - 用户/AI：`#9ca3af`（灰色）
-   - 系统：`#d97706`（橙色）
+   - 用户/AI：`#6e6e73`（灰色）
+   - 系统：`#ff9f0a`（橙色）
 
 2. **气泡背景**：`QPainterPath` 绘制自定义圆角矩形（每角不同半径）
    - 辅助函数 `roundedRectPath()` 用 `arcTo()` 手动构建路径
@@ -308,17 +308,17 @@ emit requestFailed(tr("API 错误 (HTTP %1)：%2").arg(status).arg(errorMsg));
 
 | 需求 | 修改位置 | 改什么 |
 | ---- | -------- | ------ |
-| 改用户气泡颜色 | `AiConfig::userBubbleColor` | 默认 `"#2563eb"` |
-| 改 AI 气泡颜色 | `AiConfig::aiBubbleColor` | 默认 `"#ffffff"` |
-| 改聊天背景色 | `AiConfig::chatBgColor` | 默认 `"#f3f4f6"` |
-| 改字号 | `AiConfig::fontSize` | 默认 `13` |
+| 改用户气泡颜色 | `AiConfig::userBubbleColor` | 默认 `"#2997ff"` |
+| 改 AI 气泡颜色 | `AiConfig::aiBubbleColor` | 默认 `"#1c1c1e"` |
+| 改聊天背景色 | `AiConfig::chatBgColor` | 默认 `"#0d0d0f"` |
+| 改字号 | `AiConfig::fontSize` | 默认 `14` |
 | 改字体 | `AiConfig::fontFamily` | 默认空（系统默认） |
 | 调气泡最大宽度 | `updateAllMaxWidths()` | 改 `0.7` 系数 — [aichatdialog.cpp](../widget/src/aichatdialog.cpp) |
 | 调气泡圆角 | `paintEvent()` 中 `tl/tr/br/bl` | 每种类型有不同的圆角值 |
-| 改系统气泡颜色 | `AiConfig::systemBubbleColor` | 默认 `"#fef3c7"` |
-| 改系统文字颜色 | `AiConfig::systemTextColor` | 默认 `"#92400e"` |
-| 改发送者名称颜色 | `AiConfig::senderColor` | 默认 `"#9ca3af"` |
-| 改系统发送者颜色 | `AiConfig::systemSenderColor` | 默认 `"#d97706"` |
+| 改系统气泡颜色 | `AiConfig::systemBubbleColor` | 默认 `"#1a1a1c"` |
+| 改系统文字颜色 | `AiConfig::systemTextColor` | 默认 `"#a1a1a6"` |
+| 改发送者名称颜色 | `AiConfig::senderColor` | 默认 `"#6e6e73"` |
+| 改系统发送者颜色 | `AiConfig::systemSenderColor` | 默认 `"#ff9f0a"` |
 | 调发送者名称字号 | `recalculateLayout()` / `paintEvent()` | 改 `fontSize - 2` 的偏移量 |
 | 调气泡内边距 | `recalculateLayout()` 顶部常量 | `paddingH = 12`, `paddingV = 8` |
 | 改流式光标样式 | `recalculateLayout()` 中 displayText 拼接 | 修改 `▌` / `● ● ●` 字符串 |
