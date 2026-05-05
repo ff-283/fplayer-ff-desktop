@@ -94,7 +94,6 @@ bool fplayer::SystemSettingsRepository::load(fplayer::SystemSettings& data) cons
 		data.aiUserBubbleColor = loadString("ai_user_bubble_color", data.aiUserBubbleColor);
 		data.aiAiBubbleColor = loadString("ai_ai_bubble_color", data.aiAiBubbleColor);
 		data.aiChatBgColor = loadString("ai_chat_bg_color", data.aiChatBgColor);
-		data.imagePoolToolbarColor = loadString("image_pool_toolbar_color", data.imagePoolToolbarColor);
 		data.aiFontFamily = loadString("ai_font_family", data.aiFontFamily);
 		data.aiFontSize = YamlTool::YamlTool::getDef<int>(root, "ai_font_size", data.aiFontSize);
 		data.aiTextColor = loadString("ai_text_color", data.aiTextColor);
@@ -104,6 +103,7 @@ bool fplayer::SystemSettingsRepository::load(fplayer::SystemSettings& data) cons
 			data.aiSenderColor = loadString("ai_sender_color", data.aiSenderColor);
 			data.aiSystemSenderColor = loadString("ai_system_sender_color", data.aiSystemSenderColor);
 			data.theme = YamlTool::YamlTool::getDef<int>(root, "theme", data.theme);
+			data.accentColor = loadString("accent_color", data.accentColor);
 		data.recentPushInputs = loadStringList(root, "recent_push_inputs");
 		data.recentPushOutputs = loadStringList(root, "recent_push_outputs");
 		data.recentPullInputs = loadStringList(root, "recent_pull_inputs");
@@ -156,7 +156,6 @@ bool fplayer::SystemSettingsRepository::save(const fplayer::SystemSettings& data
 	YamlTool::YamlTool::set<std::string>(root, "ai_user_bubble_color", data.aiUserBubbleColor.toStdString());
 	YamlTool::YamlTool::set<std::string>(root, "ai_ai_bubble_color", data.aiAiBubbleColor.toStdString());
 	YamlTool::YamlTool::set<std::string>(root, "ai_chat_bg_color", data.aiChatBgColor.toStdString());
-	YamlTool::YamlTool::set<std::string>(root, "image_pool_toolbar_color", data.imagePoolToolbarColor.toStdString());
 	YamlTool::YamlTool::set<std::string>(root, "ai_font_family", data.aiFontFamily.toStdString());
 	YamlTool::YamlTool::set<int>(root, "ai_font_size", data.aiFontSize);
 		YamlTool::YamlTool::set<std::string>(root, "user_text_color", data.userTextColor.toStdString());
@@ -165,6 +164,7 @@ bool fplayer::SystemSettingsRepository::save(const fplayer::SystemSettings& data
 		YamlTool::YamlTool::set<std::string>(root, "ai_sender_color", data.aiSenderColor.toStdString());
 		YamlTool::YamlTool::set<std::string>(root, "ai_system_sender_color", data.aiSystemSenderColor.toStdString());
 		YamlTool::YamlTool::set<int>(root, "theme", data.theme);
+		YamlTool::YamlTool::set<std::string>(root, "accent_color", data.accentColor.toStdString());
 		YamlTool::YamlTool::set<std::string>(root, "ai_text_color", data.aiTextColor.toStdString());
 	saveStringList(root, "recent_push_inputs", data.recentPushInputs);
 	saveStringList(root, "recent_push_outputs", data.recentPushOutputs);

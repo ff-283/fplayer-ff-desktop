@@ -29,7 +29,6 @@ public:
 	void closeEvent(QCloseEvent* event) override;
 	void setScreenshotDir(const QString& dir);
 	QString screenshotDir() const;
-	void setToolbarColor(const QString& color);
 
 signals:
 	void visibilityChanged(bool visible);
@@ -68,7 +67,6 @@ private:
 	QLabel* m_countLabel = nullptr;
 	ImageViewerDialog* m_viewerDialog = nullptr;
 	QString m_screenshotDir;
-	QString m_toolbarColor;
 	QStringList m_pendingPaths;
 	int m_loadIndex = 0;
 	static constexpr int kThumbnailMaxW = 200;

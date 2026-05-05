@@ -1,12 +1,23 @@
 <RCC>
     <qresource prefix="/">
         <file>icon/icon.png</file>
-        <file>icon/picture.svg</file>
-        <file>icon/play.png</file>
-        <file>icon/pause.png</file>
-        <file>icon/camera.png</file>
-        <file>icon/capture.png</file>
-        <file>icon/settings.png</file>
-        <file>icon/refresh.png</file>
+        <file>icon/play-dark.svg</file>
+        <file>icon/play-light.svg</file>
+        <file>icon/pause-dark.svg</file>
+        <file>icon/pause-light.svg</file>
+        <file>icon/camera-dark.svg</file>
+        <file>icon/camera-light.svg</file>
+        <file>icon/video-dark.svg</file>
+        <file>icon/video-light.svg</file>
+        <file>icon/pictures-dark.svg</file>
+        <file>icon/pictures-light.svg</file>
+        <file>icon/settings-dark.svg</file>
+        <file>icon/settings-light.svg</file>
+        <file>icon/fullScreen-dark.svg</file>
+        <file>icon/fullScreen-light.svg</file>
+        <file>icon/refresh-dark.svg</file>
+        <file>icon/refresh-light.svg</file>
+        <file>icon/chevron-down.svg</file>
+        <file>icon/chevron-up.svg</file>
     </qresource>
 </RCC>

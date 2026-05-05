@@ -35,7 +35,7 @@ inline ThemeColors darkColors()
         "#0d0d0f",                    // canvas
         "#141416",                    // canvasElevated
         "#1a1a1c",                    // surfaceTile1
-        "#1c1c1e",                    // surfaceTile2
+        "#2c2c2e",                    // surfaceTile2
         "#1e1e20",                    // surfaceTile3
         "#000000",                    // surfaceBlack
         "#f5f5f7",                    // ink
@@ -51,18 +51,18 @@ inline ThemeColors darkColors()
 inline ThemeColors lightColors()
 {
     return {
-        "#0066cc",                    // primary (Action Blue)
-        "#0071e3",                    // primaryFocus
-        "#ffffff",                    // canvas
-        "#f5f5f7",                    // canvasElevated (parchment)
-        "#fafafc",                    // surfaceTile1 (pearl)
-        "#f0f0f0",                    // surfaceTile2
-        "#e8e8ea",                    // surfaceTile3
+        "#cc785c",                    // primary (warm coral, per DESIGN.md)
+        "#a9583e",                    // primaryFocus (coral active)
+        "#faf9f5",                    // canvas (warm cream, per DESIGN.md)
+        "#f5f0e8",                    // canvasElevated (surface-soft)
+        "#efe9de",                    // surfaceTile1 (surface-card)
+        "#e8e0d2",                    // surfaceTile2 (surface-cream-strong)
+        "#e6dfd8",                    // surfaceTile3 (hairline tone)
         "#d1d1d6",                    // surfaceBlack
-        "#1d1d1f",                    // ink (near-black)
-        "#6e6e73",                    // inkMuted
-        "#a1a1a6",                    // inkDisabled
-        "#e0e0e0",                    // hairline
+        "#141413",                    // ink (warm near-black)
+        "#6c6a64",                    // inkMuted
+        "#8e8b82",                    // inkDisabled (muted-soft)
+        "#e6dfd8",                    // hairline
         "rgba(0,0,0,0.08)",          // hairlineSoft
         "#ff9f0a",                    // systemOrange
         "#ff453a",                    // errorRed
@@ -108,9 +108,11 @@ inline constexpr int display    = 17;
 } // namespace fontSize
 
 // ── Global Style Sheet ────────────────────────────────
-inline QString globalStyleSheet(const ThemeColors& c)
+inline QString globalStyleSheet(const ThemeColors& c, const QString& customPrimary = {}, const QString& customPrimaryFocus = {})
 {
-    return QStringLiteral(
+    const QString primary = customPrimary.isEmpty() ? QString::fromLatin1(c.primary) : customPrimary;
+    const QString primaryFocus = customPrimaryFocus.isEmpty() ? QString::fromLatin1(c.primaryFocus) : customPrimaryFocus;
+    QString qss = QStringLiteral(
         // ── Root / Dialogs ──
         "QWidget#CaptureWindow{background:%1;color:%2;}"
         "QDialog{background:%1;color:%3;}"
@@ -122,7 +124,7 @@ inline QString globalStyleSheet(const ThemeColors& c)
         "QCheckBox::indicator:unchecked{border:1px solid %4;background:%5;border-radius:4px;}"
         "QCheckBox::indicator:checked{border:1px solid %6;background:%6;border-radius:4px;}"
         // ── MenuBar ──
-        "QMenuBar{background:%7;color:%2;border:none;padding:4px 8px;font-size:12px;}"
+        "QMenuBar{background:%8;color:%2;border:none;padding:4px 8px;font-size:12px;}"
         "QMenuBar::item{background:transparent;padding:6px 12px;border-radius:6px;}"
         "QMenuBar::item:selected{background:%4;}"
         // ── Menu ──
@@ -131,35 +133,68 @@ inline QString globalStyleSheet(const ThemeColors& c)
         "QMenu::item:selected{background:%6;color:#ffffff;}"
         "QMenu::separator{height:1px;background:%4;margin:4px 8px;}"
         // ── PushButton ──
-        "QPushButton{background:transparent;border:1px solid %4;color:%3;border-radius:%9px;padding:5px 12px;}"
-        "QPushButton:hover{background:%5;border-color:%10;}"
-        "QPushButton:pressed{background:%8;border-color:%10;}"
-        "QPushButton[role=\"primary\"]{background:%6;border:1px solid %6;color:#ffffff;font-weight:600;border-radius:%9px;padding:6px 16px;}"
-        "QPushButton[role=\"primary\"]:hover{background:%11;border-color:%11;}"
-        "QPushButton[role=\"primary\"]:pressed{background:%6;border-color:%6;}"
-        "QPushButton[role=\"primary\"]:disabled{background:%4;border-color:%4;color:%12;}"
+        "QPushButton{background:transparent;border:none;color:%3;border-radius:%9px;padding:6px 14px;}"
+        "QPushButton:hover{background:%13;color:%3;}"
+        "QPushButton:pressed{background:%13;color:%3;}"
+        "QPushButton:disabled{color:%12;}"
+        "QPushButton[role=\"primary\"]{background:%6;border:none;color:#ffffff;font-weight:600;border-radius:%9px;padding:6px 16px;}"
+        "QPushButton[role=\"primary\"]:hover{background:%11;}"
+        "QPushButton[role=\"primary\"]:pressed{background:%6;}"
+        "QPushButton[role=\"primary\"]:disabled{background:%4;color:%12;}"
         // ── ToolButton ──
-        "QToolButton{color:%3;border-radius:6px;padding:3px 8px;}"
-        "QToolButton:hover{background:%5;}"
-        // ── ComboBox / LineEdit / SpinBox / ListWidget / TextEdit ──
-        "QComboBox,QLineEdit,QSpinBox,QAbstractSpinBox,QListWidget,QTextEdit{"
-        "background:%5;border:1px solid %4;border-radius:%13px;color:%3;padding:4px 6px;}"
+        "QToolButton{background:transparent;border:none;color:%3;border-radius:%9px;padding:4px 8px;}"
+        "QToolButton:hover{background:%13;color:%3;}"
+        // ── LineEdit / TextEdit ──
+        "QLineEdit,QTextEdit{"
+        "background:transparent;border:none;border-radius:%9px;color:%3;padding:6px 10px;}"
+        "QLineEdit:hover,QTextEdit:hover{background:%13;}"
+        "QLineEdit:focus,QTextEdit:focus{background:%13;}"
         "QLineEdit::placeholder{color:%12;}"
-        "QComboBox:disabled,QLineEdit:disabled,QSpinBox:disabled,QAbstractSpinBox:disabled,QTextEdit:disabled,QPushButton:disabled{color:%12;}"
-        "QComboBox:focus,QLineEdit:focus,QSpinBox:focus,QAbstractSpinBox:focus,QTextEdit:focus{background:%8;border-color:%10;}"
-        "QComboBox::drop-down{border-left:1px solid %4;width:22px;}"
-        "QComboBox::down-arrow{image:none;width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:6px solid %10;}"
-        "QComboBox QAbstractItemView{background:%8;color:%3;border:1px solid %4;selection-background-color:%6;selection-color:#ffffff;}"
+        // ── ComboBox ──
+        "QComboBox{background:transparent;border:none;border-radius:%9px;color:%3;padding:6px 28px 6px 10px;}"
+        "QComboBox:hover{background:%13;}"
+        "QComboBox:focus{background:%13;}"
+        "QComboBox:disabled{color:%12;}"
+        "QComboBox::drop-down{background:transparent;border:none;width:20px;subcontrol-position:center right;subcontrol-origin:padding;border-top-right-radius:%9px;border-bottom-right-radius:%9px;}"
+        "QComboBox::drop-down:hover,QComboBox:focus::drop-down{background:transparent;}"
+        "QComboBox::down-arrow{image:url(:/icon/chevron-down.svg);width:12px;height:8px;}"
+        "QComboBox::down-arrow:disabled{image:url(:/icon/chevron-down.svg);}"
+        "QComboBox QAbstractItemView{"
+        "background:%8;color:%3;border:none;border-radius:%9px;padding:4px;outline:none;}"
+        "QComboBox QAbstractItemView::item{min-height:28px;padding:5px 12px;border-radius:6px;}"
+        "QComboBox QAbstractItemView::item:hover{background:%13;color:%3;}"
+        "QComboBox QAbstractItemView::item:selected{background:%6;color:#ffffff;}"
+        // ── SpinBox ──
+        "QSpinBox,QDoubleSpinBox{background:transparent;border:none;border-radius:%9px;color:%3;padding:6px 10px;}"
+        "QSpinBox:hover,QDoubleSpinBox:hover,QSpinBox:focus,QDoubleSpinBox:focus{background:%13;}"
+        "QSpinBox:disabled,QDoubleSpinBox:disabled{color:%12;}"
+        "QSpinBox::up-button,QDoubleSpinBox::up-button{background:transparent;border:none;width:20px;subcontrol-position:top right;subcontrol-origin:padding;border-top-right-radius:%9px;}"
+        "QSpinBox::up-button:hover,QDoubleSpinBox::up-button:hover{background:%13;}"
+        "QSpinBox::up-arrow,QDoubleSpinBox::up-arrow{image:url(:/icon/chevron-up.svg);width:10px;height:6px;}"
+        "QSpinBox::down-button,QDoubleSpinBox::down-button{background:transparent;border:none;width:20px;subcontrol-position:bottom right;subcontrol-origin:padding;border-bottom-right-radius:%9px;}"
+        "QSpinBox::down-button:hover,QDoubleSpinBox::down-button:hover{background:%13;}"
+        "QSpinBox::down-arrow,QDoubleSpinBox::down-arrow{image:url(:/icon/chevron-down.svg);width:10px;height:6px;}"
+        // ── ScrollBar ──
+        "QScrollBar:vertical{background:%5;width:8px;border-radius:4px;margin:0;}"
+        "QScrollBar::handle:vertical{background:%10;border-radius:4px;min-height:30px;}"
+        "QScrollBar::handle:vertical:hover{background:%6;}"
+        "QScrollBar::add-line:vertical,QScrollBar::sub-line:vertical{height:0;}"
+        "QScrollBar:horizontal{background:%5;height:8px;border-radius:4px;margin:0;}"
+        "QScrollBar::handle:horizontal{background:%10;border-radius:4px;min-width:30px;}"
+        "QScrollBar::handle:horizontal:hover{background:%6;}"
+        "QScrollBar::add-line:horizontal,QScrollBar::sub-line:horizontal{width:0;}"
         // ── Slider ──
         "QSlider::groove:horizontal{background:%4;height:4px;border-radius:2px;}"
         "QSlider::handle:horizontal{background:%10;border:1px solid %6;width:14px;margin:-5px 0;border-radius:7px;}"
         "QSlider::handle:horizontal:hover{background:%6;}"
         // ── ListWidget ──
-        "QListWidget::item{padding:6px;border-radius:6px;}"
+        "QListWidget{background:%5;border:1px solid %4;border-radius:%9px;color:%3;padding:4px;outline:none;}"
+        "QListWidget::item{padding:6px 10px;border-radius:6px;}"
         "QListWidget::item:hover{background:%5;}"
         "QListWidget::item:selected{background:%6;color:#ffffff;}"
         // ── Toolbar / Panels ──
         "#wgtDown{background:%8;border:none;}"
+        "#imagePoolToolbar{background:%8;}"
         "#wgtOperate{background:transparent;}"
         "#wgtDevices{background:transparent;}"
         // ── Compose Mode ──
@@ -170,27 +205,33 @@ inline QString globalStyleSheet(const ThemeColors& c)
         "#composeSourceItem[composeState=\"normal\"]{border:1px solid %4;}"
         "#composeSourceItem[composeState=\"selected\"]{border:2px solid #b388ff;}"
         "#composeSourceItem[composeState=\"crop\"]{border:2px solid #ffd166;}"
-    )
-        .arg(
-            c.canvas,                              // %1  root bg
-            c.ink,                                 // %2  root text
-            c.ink,                                 // %3  label / general text
-            c.hairline,                            // %4  borders
-            c.canvasElevated,                      // %5  elevated bg
-            c.primary,                             // %6  accent
-            c.surfaceBlack,                        // %7  menubar bg
-            c.surfaceTile1,                        // %8  menu/sunken bg
-            QString::number(radius::pill),         // %9  button radius
-            c.inkMuted,                            // %10 muted / hover accent
-            c.primaryFocus,                        // %11 primary hover
-            c.inkDisabled,                         // %12 disabled text
-            QString::number(radius::sm)            // %13 input radius
-        );
+    );
+    // NOTE: replace in descending order — otherwise %1 matches inside %10/%11/%12/%13
+    qss.replace(QStringLiteral("%13"), QString::fromLatin1(c.surfaceTile2));
+    qss.replace(QStringLiteral("%12"), QString::fromLatin1(c.inkDisabled));
+    qss.replace(QStringLiteral("%11"), primaryFocus);
+    qss.replace(QStringLiteral("%10"), QString::fromLatin1(c.inkMuted));
+    qss.replace(QStringLiteral("%9"),  QString::number(radius::md));
+    qss.replace(QStringLiteral("%8"),  QString::fromLatin1(c.surfaceTile1));
+    qss.replace(QStringLiteral("%7"),  QString::fromLatin1(c.surfaceBlack));
+    qss.replace(QStringLiteral("%6"),  primary);
+    qss.replace(QStringLiteral("%5"),  QString::fromLatin1(c.canvasElevated));
+    qss.replace(QStringLiteral("%4"),  QString::fromLatin1(c.hairline));
+    qss.replace(QStringLiteral("%3"),  QString::fromLatin1(c.ink));
+    qss.replace(QStringLiteral("%2"),  QString::fromLatin1(c.ink));
+    qss.replace(QStringLiteral("%1"),  QString::fromLatin1(c.canvas));
+    return qss;
 }
 
-inline QString globalStyleSheet(Theme theme)
+inline QString globalStyleSheet(Theme theme, const QString& customPrimary = {}, const QString& customPrimaryFocus = {})
 {
-    return globalStyleSheet(colorsForTheme(theme));
+    return globalStyleSheet(colorsForTheme(theme), customPrimary, customPrimaryFocus);
+}
+
+inline QString themedIconPath(Theme theme, const QString& name)
+{
+    return QStringLiteral(":/icon/%1-%2.svg")
+        .arg(name, theme == Theme::Dark ? QStringLiteral("dark") : QStringLiteral("light"));
 }
 
 } // namespace fplayer::tokens

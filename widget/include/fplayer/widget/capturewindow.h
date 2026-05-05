@@ -140,6 +140,7 @@ private:
 	void loadCapturePreferences();
 	void saveCapturePreferences() const;
 	void applyTheme();
+	void refreshThemeIcons();
 	void openCaptureSettingsDialog(QWidget* parent = nullptr);
 	QString makeScreenshotFilePath(const QString& prefix = QStringLiteral("capture")) const;
 	QString makeRecordingFilePath(const QString& prefix = QStringLiteral("record")) const;
@@ -188,6 +189,10 @@ private:
 	QPushButton* m_pullPreviewShotButton = nullptr;
 	QPushButton* m_pullPreviewRecordButton = nullptr;
 	QPushButton* m_pullPreviewSettingsButton = nullptr;
+	QPushButton* m_pullPreviewPauseButton = nullptr;
+	QPushButton* m_pullPreviewRefreshButton = nullptr;
+	QPushButton* m_pullPreviewFullscreenButton = nullptr;
+	QPushButton* m_pullPreviewImagePoolButton = nullptr;
 	QLabel* m_pullPreviewRecordDurationLabel = nullptr;
 	fplayer::Service* m_pullRecordService = nullptr;
 	fplayer::MediaBackendType m_screenBackendType = fplayer::MediaBackendType::Qt6;
@@ -218,7 +223,6 @@ private:
 	QString m_aiUserBubbleColor = QStringLiteral("#2997ff");
 	QString m_aiAiBubbleColor = QStringLiteral("#1c1c1e");
 	QString m_aiChatBgColor = QStringLiteral("#0d0d0f");
-	QString m_imagePoolToolbarColor = QStringLiteral("#141416");
 	QString m_aiFontFamily;
 	int m_aiFontSize = 14;
 	QString m_aiTextColor = QStringLiteral("#f5f5f7");
@@ -228,6 +232,7 @@ private:
 	QString m_aiSenderColor = QStringLiteral("#6e6e73");
 	QString m_aiSystemSenderColor = QStringLiteral("#ff9f0a");
 	int m_theme = 0;  // 0=dark, 1=light
+	QString m_accentColor = QStringLiteral("#2997ff");  // 主题色
 	bool m_mainRecording = false;
 	bool m_pullRecording = false;
 	bool m_pullRecordingViaMainService = false;

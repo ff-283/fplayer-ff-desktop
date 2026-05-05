@@ -51,8 +51,8 @@ void ImagePoolSidebar::setupUi()
 
 	// --- Toolbar ---
 	auto* toolbar = new QWidget(this);
+	toolbar->setObjectName(QStringLiteral("imagePoolToolbar"));
 	toolbar->setFixedHeight(36);
-	toolbar->setStyleSheet(QStringLiteral("QWidget { background-color: #141416; }"));
 	auto* tbLayout = new QHBoxLayout(toolbar);
 	tbLayout->setContentsMargins(8, 2, 8, 2);
 	tbLayout->setSpacing(6);
@@ -113,13 +113,6 @@ QString ImagePoolSidebar::screenshotDir() const
 	return m_screenshotDir;
 }
 
-void ImagePoolSidebar::setToolbarColor(const QString& color)
-{
-	m_toolbarColor = color;
-	// Find and update toolbar widget (first child of root layout)
-	if (auto* root = qobject_cast<QWidget*>(layout()->itemAt(0)->widget()))
-		root->setStyleSheet(QStringLiteral("QWidget { background-color: %1; }").arg(color));
-}
 
 void ImagePoolSidebar::onScreenshotSaved(const QString& filePath)
 {

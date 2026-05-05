@@ -1417,6 +1417,14 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 	this->ui->btnSettings->setFocusPolicy(Qt::NoFocus);
 	this->ui->btnFullscreen->setFocusPolicy(Qt::NoFocus);
 	this->ui->btnImagePool->setFocusPolicy(Qt::NoFocus);
+	this->ui->btnCut->setIcon(QIcon(fplayer::tokens::themedIconPath(static_cast<fplayer::tokens::Theme>(m_theme), QStringLiteral("camera"))));
+	this->ui->btnCast->setIcon(QIcon(fplayer::tokens::themedIconPath(static_cast<fplayer::tokens::Theme>(m_theme), QStringLiteral("video"))));
+	this->ui->btnSettings->setIcon(QIcon(fplayer::tokens::themedIconPath(static_cast<fplayer::tokens::Theme>(m_theme), QStringLiteral("settings"))));
+	this->ui->btnImagePool->setIcon(QIcon(fplayer::tokens::themedIconPath(static_cast<fplayer::tokens::Theme>(m_theme), QStringLiteral("pictures"))));
+	for (auto* btn : {static_cast<QPushButton*>(this->ui->btnCut), static_cast<QPushButton*>(this->ui->btnCast)})
+	{
+		btn->setIconSize(QSize(24, 24));
+	}
 	this->ui->chkCaptureCursor->setVisible(false);
 	this->ui->cmbScreenFps->setVisible(false);
 	m_mainRecordTimer = new QTimer(this);
@@ -1473,7 +1481,7 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 	connect(m_debugStatsTimer, &QTimer::timeout, this, &CaptureWindow::updateDebugStatsUi);
 	auto refreshFullscreenButton = [this]() {
 		Q_UNUSED(this);
-		this->ui->btnFullscreen->setIcon(QIcon::fromTheme(QIcon::ThemeIcon::ViewFullscreen));
+		this->ui->btnFullscreen->setIcon(QIcon(fplayer::tokens::themedIconPath(static_cast<fplayer::tokens::Theme>(m_theme), QStringLiteral("fullScreen"))));
 	};
 
 	// 1) 初始化摄像头
@@ -1570,8 +1578,8 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		this->ui->cmbFormats->clear();
 		this->ui->cmbFormats->addItems(formats);
 		this->ui->cmbFormats->setCurrentIndex(0);
-		this->ui->btnPlay->setIcon(QIcon::fromTheme(
-			this->m_service->cameraIsPlaying() ? QIcon::ThemeIcon::MediaPlaybackPause : QIcon::ThemeIcon::MediaPlaybackStart));
+		this->ui->btnPlay->setIcon(QIcon(fplayer::tokens::themedIconPath(static_cast<fplayer::tokens::Theme>(m_theme),
+			this->m_service->cameraIsPlaying() ? QStringLiteral("pause") : QStringLiteral("play"))));
 
 	});
 	connect(this->ui->chkCaptureCursor, &QCheckBox::toggled, this, [this](const bool checked) {
@@ -1685,8 +1693,8 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		this->ui->cmbFormats->setCurrentIndex(0);
 		this->m_service->selectCameraFormat(0);
 	}
-	this->ui->btnPlay->setIcon(QIcon::fromTheme(
-		this->m_service->cameraIsPlaying() ? QIcon::ThemeIcon::MediaPlaybackPause : QIcon::ThemeIcon::MediaPlaybackStart));
+	this->ui->btnPlay->setIcon(QIcon(fplayer::tokens::themedIconPath(static_cast<fplayer::tokens::Theme>(m_theme),
+		this->m_service->cameraIsPlaying() ? QStringLiteral("pause") : QStringLiteral("play"))));
 
 	connect(this->ui->btnPlay, &QPushButton::clicked, [this]() {
 		this->togglePlayPause();
@@ -1700,7 +1708,6 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		m_imagePoolSidebar = new ImagePoolSidebar(nullptr);
 		m_imagePoolSidebar->setScreenshotDir(m_screenshotSaveDir);
 		m_imagePoolSidebar->setWindowTitle(tr("图池"));
-		m_imagePoolSidebar->setToolbarColor(m_imagePoolToolbarColor);
 		connect(this->ui->btnImagePool, &QPushButton::clicked, [this]() {
 			if (m_imagePoolSidebar->isVisible())
 			{
@@ -1770,8 +1777,8 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		{
 			this->ui->cmbDevices->setCurrentIndex(0);
 		}
-		this->ui->btnPlay->setIcon(QIcon::fromTheme(
-			this->m_service->cameraIsPlaying() ? QIcon::ThemeIcon::MediaPlaybackPause : QIcon::ThemeIcon::MediaPlaybackStart));
+		this->ui->btnPlay->setIcon(QIcon(fplayer::tokens::themedIconPath(static_cast<fplayer::tokens::Theme>(m_theme),
+			this->m_service->cameraIsPlaying() ? QStringLiteral("pause") : QStringLiteral("play"))));
 	};
 	auto switchToFileMode = [this]() -> bool {
 		setComposeMode(false);
@@ -1795,7 +1802,7 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		this->updateDebugStatsUi();
 		this->m_fileProgressTimer->start();
 		this->m_debugStatsTimer->start();
-		this->ui->btnPlay->setIcon(QIcon::fromTheme(QIcon::ThemeIcon::MediaPlaybackPause));
+		this->ui->btnPlay->setIcon(QIcon(fplayer::tokens::themedIconPath(static_cast<fplayer::tokens::Theme>(m_theme), QStringLiteral("pause"))));
 		return true;
 	};
 	auto switchToScreenMode = [this]() -> bool {
@@ -3014,21 +3021,20 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 				btnFullscreen->setToolTip(tr("全屏/退出全屏"));
 				btnShot->setMinimumHeight(40);
 				btnShot->setMaximumHeight(40);
-				btnShot->setMinimumWidth(80);
-				btnShot->setMaximumWidth(80);
+				btnShot->setMinimumWidth(40);
+				btnShot->setMaximumWidth(40);
 				btnRecord->setMinimumHeight(40);
 				btnRecord->setMaximumHeight(40);
-				btnRecord->setMinimumWidth(80);
-				btnRecord->setMaximumWidth(80);
-				btnShot->setText(tr("截图"));
-				btnPause->setIcon(QIcon::fromTheme(QIcon::ThemeIcon::MediaPlaybackPause));
-				btnRefresh->setIcon(QIcon::fromTheme(QStringLiteral("view-refresh")));
-				btnShot->setIcon(QIcon::fromTheme(QIcon::ThemeIcon::CameraPhoto));
-				btnRecord->setIcon(QIcon::fromTheme(QIcon::ThemeIcon::CameraVideo));
-				btnSettings->setIcon(QIcon::fromTheme(QStringLiteral("document-properties")));
-				btnFullscreen->setIcon(QIcon::fromTheme(QIcon::ThemeIcon::ViewFullscreen));
-				btnImagePool->setToolTip(tr("图池"));
-				btnImagePool->setIcon(QIcon(QStringLiteral(":/icon/picture.svg")));
+				btnRecord->setMinimumWidth(40);
+				btnRecord->setMaximumWidth(40);
+			btnPause->setIcon(QIcon(fplayer::tokens::themedIconPath(static_cast<fplayer::tokens::Theme>(m_theme), QStringLiteral("pause"))));
+			btnRefresh->setIcon(QIcon(fplayer::tokens::themedIconPath(static_cast<fplayer::tokens::Theme>(m_theme), QStringLiteral("refresh"))));
+			btnShot->setIcon(QIcon(fplayer::tokens::themedIconPath(static_cast<fplayer::tokens::Theme>(m_theme), QStringLiteral("camera"))));
+			btnRecord->setIcon(QIcon(fplayer::tokens::themedIconPath(static_cast<fplayer::tokens::Theme>(m_theme), QStringLiteral("video"))));
+			btnSettings->setIcon(QIcon(fplayer::tokens::themedIconPath(static_cast<fplayer::tokens::Theme>(m_theme), QStringLiteral("settings"))));
+			btnFullscreen->setIcon(QIcon(fplayer::tokens::themedIconPath(static_cast<fplayer::tokens::Theme>(m_theme), QStringLiteral("fullScreen"))));
+			btnImagePool->setToolTip(tr("图池"));
+			btnImagePool->setIcon(QIcon(fplayer::tokens::themedIconPath(static_cast<fplayer::tokens::Theme>(m_theme), QStringLiteral("pictures"))));
 				lblRecordDuration->setMinimumWidth(140);
 				lblVolume->setMinimumWidth(34);
 				lblVolumeValue->setMinimumWidth(46);
@@ -3054,7 +3060,12 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 				m_pullPreviewShotButton = btnShot;
 				m_pullPreviewRecordButton = btnRecord;
 				m_pullPreviewSettingsButton = btnSettings;
+				m_pullPreviewPauseButton = btnPause;
+				m_pullPreviewRefreshButton = btnRefresh;
+				m_pullPreviewFullscreenButton = btnFullscreen;
+				m_pullPreviewImagePoolButton = btnImagePool;
 				m_pullPreviewRecordDurationLabel = lblRecordDuration;
+				updatePullRecordButtonUi();
 				connect(btnImagePool, &QPushButton::clicked, [this]() {
 					if (m_imagePoolSidebar)
 					{
@@ -3078,6 +3089,10 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 					m_pullPreviewShotButton = nullptr;
 					m_pullPreviewRecordButton = nullptr;
 					m_pullPreviewSettingsButton = nullptr;
+					m_pullPreviewPauseButton = nullptr;
+					m_pullPreviewRefreshButton = nullptr;
+					m_pullPreviewFullscreenButton = nullptr;
+					m_pullPreviewImagePoolButton = nullptr;
 					m_pullPreviewRecordDurationLabel = nullptr;
 					m_pullRecording = false;
 					m_pullSessionStartMs = 0;
@@ -3117,7 +3132,7 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 				connect(btnPause, &QPushButton::clicked, preview, [this, btnPause]() {
 					const bool paused = this->m_service->streamPreviewPaused();
 					this->m_service->streamSetPreviewPaused(!paused);
-					btnPause->setIcon(QIcon::fromTheme(paused ? QIcon::ThemeIcon::MediaPlaybackPause : QIcon::ThemeIcon::MediaPlaybackStart));
+					btnPause->setIcon(QIcon(fplayer::tokens::themedIconPath(static_cast<fplayer::tokens::Theme>(m_theme), paused ? QStringLiteral("pause") : QStringLiteral("play"))));
 				});
 				connect(btnRefresh, &QPushButton::clicked, preview, [this, dlg]() {
 					const QString prev = dlg->property("pullExtraLog").toString();
@@ -3560,7 +3575,6 @@ void CaptureWindow::loadCapturePreferences()
 	m_aiUserBubbleColor = data.aiUserBubbleColor;
 	m_aiAiBubbleColor = data.aiAiBubbleColor;
 	m_aiChatBgColor = data.aiChatBgColor;
-	m_imagePoolToolbarColor = data.imagePoolToolbarColor;
 	m_aiTextColor = data.aiTextColor;
 	m_userTextColor = data.userTextColor;
 	m_aiSystemBubbleColor = data.aiSystemBubbleColor;
@@ -3574,6 +3588,7 @@ void CaptureWindow::loadCapturePreferences()
 	if (!data.aiFontFamily.trimmed().isEmpty()) m_aiFontFamily = data.aiFontFamily;
 	m_aiFontSize = (data.aiFontSize >= 8 && data.aiFontSize <= 32) ? data.aiFontSize : 13;
 	m_theme = data.theme;
+	if (!data.accentColor.trimmed().isEmpty()) m_accentColor = data.accentColor;
 	{
 		const QString backend = data.screenCaptureBackend.trimmed().toLower();
 		if (backend == QStringLiteral("ffmpeg"))
@@ -3626,10 +3641,10 @@ void CaptureWindow::saveCapturePreferences() const
 	data.aiSystemTextColor = m_aiSystemTextColor;
 	data.aiSenderColor = m_aiSenderColor;
 	data.aiSystemSenderColor = m_aiSystemSenderColor;
-	data.imagePoolToolbarColor = m_imagePoolToolbarColor;
 	data.aiFontFamily = m_aiFontFamily;
 	data.aiFontSize = m_aiFontSize;
 	data.theme = m_theme;
+	data.accentColor = m_accentColor;
 	data.screenCaptureBackend = (m_screenBackendType == fplayer::MediaBackendType::FFmpeg)
 		                            ? QStringLiteral("ffmpeg")
 		                            : QStringLiteral("dxgi");
@@ -3642,11 +3657,19 @@ void CaptureWindow::saveCapturePreferences() const
 void CaptureWindow::applyTheme()
 {
 	auto theme = static_cast<fplayer::tokens::Theme>(m_theme);
-	setStyleSheet(fplayer::tokens::globalStyleSheet(theme));
-	qApp->setStyleSheet(fplayer::tokens::globalStyleSheet(theme));
-	if (m_imagePoolSidebar) {
-		m_imagePoolSidebar->setToolbarColor(m_imagePoolToolbarColor);
+	const auto c = fplayer::tokens::colorsForTheme(theme);
+	QString accentFocus;
+	if (!m_accentColor.isEmpty())
+	{
+		QColor col(m_accentColor);
+		if (col.isValid())
+		{
+			accentFocus = col.lighter(115).name();
+		}
 	}
+	const auto qss = fplayer::tokens::globalStyleSheet(c, m_accentColor, accentFocus);
+	setStyleSheet(qss);
+	qApp->setStyleSheet(qss);
 	const auto dialogs = findChildren<AiChatDialog*>();
 	fplayer::AiConfig cfg;
 	cfg.endpoint = m_aiEndpoint;
@@ -3666,6 +3689,41 @@ void CaptureWindow::applyTheme()
 	for (auto* dlg : dialogs) {
 		dlg->reconfigure(cfg);
 	}
+	refreshThemeIcons();
+}
+
+void CaptureWindow::refreshThemeIcons()
+{
+	const auto theme = static_cast<fplayer::tokens::Theme>(m_theme);
+	// Static icons
+	ui->btnCut->setIcon(QIcon(fplayer::tokens::themedIconPath(theme, QStringLiteral("camera"))));
+	ui->btnCast->setIcon(QIcon(fplayer::tokens::themedIconPath(theme, QStringLiteral("video"))));
+	ui->btnSettings->setIcon(QIcon(fplayer::tokens::themedIconPath(theme, QStringLiteral("settings"))));
+	ui->btnImagePool->setIcon(QIcon(fplayer::tokens::themedIconPath(theme, QStringLiteral("pictures"))));
+	ui->btnFullscreen->setIcon(QIcon(fplayer::tokens::themedIconPath(theme, QStringLiteral("fullScreen"))));
+	// Play/pause: determine current playing state
+	bool playing = false;
+	if (m_isFileMode)
+		playing = m_service && m_service->playerIsPlaying();
+	else if (m_isComposeMode)
+		playing = composeSourceIsPlaying(m_composeSelectedIndex);
+	else if (m_captureMode == CaptureMode::Screen)
+		playing = m_service && m_service->screenIsActive();
+	else
+		playing = m_service && m_service->cameraIsPlaying();
+	ui->btnPlay->setIcon(QIcon(fplayer::tokens::themedIconPath(theme, playing ? QStringLiteral("pause") : QStringLiteral("play"))));
+	// Pull preview dialog buttons
+	if (m_pullPreviewPauseButton)
+	{
+		const bool paused = m_service && m_service->streamPreviewPaused();
+		m_pullPreviewPauseButton->setIcon(QIcon(fplayer::tokens::themedIconPath(theme, paused ? QStringLiteral("pause") : QStringLiteral("play"))));
+	}
+	if (m_pullPreviewRefreshButton) m_pullPreviewRefreshButton->setIcon(QIcon(fplayer::tokens::themedIconPath(theme, QStringLiteral("refresh"))));
+	if (m_pullPreviewShotButton) m_pullPreviewShotButton->setIcon(QIcon(fplayer::tokens::themedIconPath(theme, QStringLiteral("camera"))));
+	if (m_pullPreviewRecordButton) m_pullPreviewRecordButton->setIcon(QIcon(fplayer::tokens::themedIconPath(theme, QStringLiteral("video"))));
+	if (m_pullPreviewSettingsButton) m_pullPreviewSettingsButton->setIcon(QIcon(fplayer::tokens::themedIconPath(theme, QStringLiteral("settings"))));
+	if (m_pullPreviewFullscreenButton) m_pullPreviewFullscreenButton->setIcon(QIcon(fplayer::tokens::themedIconPath(theme, QStringLiteral("fullScreen"))));
+	if (m_pullPreviewImagePoolButton) m_pullPreviewImagePoolButton->setIcon(QIcon(fplayer::tokens::themedIconPath(theme, QStringLiteral("pictures"))));
 }
 
 void CaptureWindow::openCaptureSettingsDialog(QWidget* parent)
@@ -3838,60 +3896,6 @@ void CaptureWindow::openCaptureSettingsDialog(QWidget* parent)
 	sysSenderColorLay->addStretch();
 	layout->addRow(tr("系统发送者颜色"), sysSenderColorRow);
 
-	auto [btnTbColor, updateTbSwatch] = makeColorSwatch(m_imagePoolToolbarColor);
-	auto tbColorRow = new QWidget(&dlg);
-	auto* tbColorLay = new QHBoxLayout(tbColorRow);
-	tbColorLay->setContentsMargins(0, 0, 0, 0);
-	auto* tbColorLabel = new QLabel(m_imagePoolToolbarColor, &dlg);
-	tbColorLabel->setStyleSheet(QStringLiteral("font-family: monospace; font-size: 12px;"));
-	tbColorLay->addWidget(btnTbColor);
-	tbColorLay->addWidget(tbColorLabel);
-	tbColorLay->addStretch();
-	layout->addRow(tr("图池工具栏颜色"), tbColorRow);
-
-	connect(btnTbColor, &QPushButton::clicked, &dlg, [updateTbSwatch, tbColorLabel, &dlg]() {
-		QColor c = QColorDialog::getColor(QColor(tbColorLabel->text()), &dlg, tr("选择工具栏背景颜色"));
-		if (c.isValid()) { updateTbSwatch(c.name()); tbColorLabel->setText(c.name()); }
-	});
-
-	// Color picker connections
-	connect(btnUserColor, &QPushButton::clicked, &dlg, [updateUserSwatch, userColorLabel, &dlg]() {
-		QColor c = QColorDialog::getColor(QColor(userColorLabel->text()), &dlg, tr("选择用户气泡颜色"));
-		if (c.isValid()) { updateUserSwatch(c.name()); userColorLabel->setText(c.name()); }
-	});
-	connect(btnAiColor, &QPushButton::clicked, &dlg, [updateAiSwatch, aiColorLabel, &dlg]() {
-		QColor c = QColorDialog::getColor(QColor(aiColorLabel->text()), &dlg, tr("选择 AI 气泡颜色"));
-		if (c.isValid()) { updateAiSwatch(c.name()); aiColorLabel->setText(c.name()); }
-	});
-	connect(btnBgColor, &QPushButton::clicked, &dlg, [updateBgSwatch, bgColorLabel, &dlg]() {
-		QColor c = QColorDialog::getColor(QColor(bgColorLabel->text()), &dlg, tr("选择聊天背景颜色"));
-		if (c.isValid()) { updateBgSwatch(c.name()); bgColorLabel->setText(c.name()); }
-	});
-
-	connect(btnTextColor, &QPushButton::clicked, &dlg, [updateTextSwatch, textColorLabel, &dlg]() {
-		QColor c = QColorDialog::getColor(QColor(textColorLabel->text()), &dlg, tr("选择 AI 文字颜色"));
-		if (c.isValid()) { updateTextSwatch(c.name()); textColorLabel->setText(c.name()); }
-	});
-	connect(btnUserTextColor, &QPushButton::clicked, &dlg, [updateUserTextSwatch, userTextColorLabel, &dlg]() {
-		QColor c = QColorDialog::getColor(QColor(userTextColorLabel->text()), &dlg, tr("选择用户文字颜色"));
-		if (c.isValid()) { updateUserTextSwatch(c.name()); userTextColorLabel->setText(c.name()); }
-	});
-	connect(btnSysBubbleColor, &QPushButton::clicked, &dlg, [updateSysBubbleSwatch, sysBubbleColorLabel, &dlg]() {
-		QColor c = QColorDialog::getColor(QColor(sysBubbleColorLabel->text()), &dlg, tr("选择系统气泡颜色"));
-		if (c.isValid()) { updateSysBubbleSwatch(c.name()); sysBubbleColorLabel->setText(c.name()); }
-	});
-	connect(btnSysTextColor, &QPushButton::clicked, &dlg, [updateSysTextSwatch, sysTextColorLabel, &dlg]() {
-		QColor c = QColorDialog::getColor(QColor(sysTextColorLabel->text()), &dlg, tr("选择系统文字颜色"));
-		if (c.isValid()) { updateSysTextSwatch(c.name()); sysTextColorLabel->setText(c.name()); }
-	});
-	connect(btnSenderColor, &QPushButton::clicked, &dlg, [updateSenderSwatch, senderColorLabel, &dlg]() {
-		QColor c = QColorDialog::getColor(QColor(senderColorLabel->text()), &dlg, tr("选择发送者名称颜色"));
-		if (c.isValid()) { updateSenderSwatch(c.name()); senderColorLabel->setText(c.name()); }
-	});
-	connect(btnSysSenderColor, &QPushButton::clicked, &dlg, [updateSysSenderSwatch, sysSenderColorLabel, &dlg]() {
-		QColor c = QColorDialog::getColor(QColor(sysSenderColorLabel->text()), &dlg, tr("选择系统发送者颜色"));
-		if (c.isValid()) { updateSysSenderSwatch(c.name()); sysSenderColorLabel->setText(c.name()); }
-	});
 	auto* lblFontSection = new QLabel(tr("── AI 聊天字体 ──"), &dlg);
 	lblFontSection->setStyleSheet(QStringLiteral("font-weight: bold; color: #6b5ba0; margin-top: 8px;"));
 	layout->addRow(lblFontSection);
@@ -3916,6 +3920,60 @@ void CaptureWindow::openCaptureSettingsDialog(QWidget* parent)
 	themeCombo->setCurrentIndex(m_theme);
 	layout->addRow(tr("主题"), themeCombo);
 
+	auto* lblAccent = new QLabel(tr("── 主题色 ──"), &dlg);
+	lblAccent->setStyleSheet(QStringLiteral("font-weight: bold; color: #6b5ba0; margin-top: 8px;"));
+	layout->addRow(lblAccent);
+	auto accentColorRow = new QWidget(&dlg);
+	auto* accentColorLay = new QHBoxLayout(accentColorRow);
+	accentColorLay->setContentsMargins(0, 0, 0, 0);
+	auto [btnAccentColor, updateAccentSwatch] = makeColorSwatch(m_accentColor);
+	auto* accentColorLabel = new QLabel(m_accentColor, &dlg);
+	accentColorLabel->setStyleSheet(QStringLiteral("font-family: monospace; font-size: 12px;"));
+	accentColorLay->addWidget(btnAccentColor);
+	accentColorLay->addWidget(accentColorLabel);
+	accentColorLay->addStretch();
+	layout->addRow(tr("主题色"), accentColorRow);
+	connect(btnAccentColor, &QPushButton::clicked, &dlg, [updateAccentSwatch, accentColorLabel, &dlg]() {
+		QColor c = QColorDialog::getColor(QColor(accentColorLabel->text()), &dlg, tr("选择主题色"));
+		if (c.isValid()) { updateAccentSwatch(c.name()); accentColorLabel->setText(c.name()); }
+	});
+	connect(btnUserColor, &QPushButton::clicked, &dlg, [updateUserSwatch, userColorLabel, &dlg]() {
+		QColor c = QColorDialog::getColor(QColor(userColorLabel->text()), &dlg, tr("选择用户气泡颜色"));
+		if (c.isValid()) { updateUserSwatch(c.name()); userColorLabel->setText(c.name()); }
+	});
+	connect(btnAiColor, &QPushButton::clicked, &dlg, [updateAiSwatch, aiColorLabel, &dlg]() {
+		QColor c = QColorDialog::getColor(QColor(aiColorLabel->text()), &dlg, tr("选择AI气泡颜色"));
+		if (c.isValid()) { updateAiSwatch(c.name()); aiColorLabel->setText(c.name()); }
+	});
+	connect(btnBgColor, &QPushButton::clicked, &dlg, [updateBgSwatch, bgColorLabel, &dlg]() {
+		QColor c = QColorDialog::getColor(QColor(bgColorLabel->text()), &dlg, tr("选择聊天背景颜色"));
+		if (c.isValid()) { updateBgSwatch(c.name()); bgColorLabel->setText(c.name()); }
+	});
+	connect(btnTextColor, &QPushButton::clicked, &dlg, [updateTextSwatch, textColorLabel, &dlg]() {
+		QColor c = QColorDialog::getColor(QColor(textColorLabel->text()), &dlg, tr("选择AI文字颜色"));
+		if (c.isValid()) { updateTextSwatch(c.name()); textColorLabel->setText(c.name()); }
+	});
+	connect(btnUserTextColor, &QPushButton::clicked, &dlg, [updateUserTextSwatch, userTextColorLabel, &dlg]() {
+		QColor c = QColorDialog::getColor(QColor(userTextColorLabel->text()), &dlg, tr("选择用户文字颜色"));
+		if (c.isValid()) { updateUserTextSwatch(c.name()); userTextColorLabel->setText(c.name()); }
+	});
+	connect(btnSysBubbleColor, &QPushButton::clicked, &dlg, [updateSysBubbleSwatch, sysBubbleColorLabel, &dlg]() {
+		QColor c = QColorDialog::getColor(QColor(sysBubbleColorLabel->text()), &dlg, tr("选择系统气泡颜色"));
+		if (c.isValid()) { updateSysBubbleSwatch(c.name()); sysBubbleColorLabel->setText(c.name()); }
+	});
+	connect(btnSysTextColor, &QPushButton::clicked, &dlg, [updateSysTextSwatch, sysTextColorLabel, &dlg]() {
+		QColor c = QColorDialog::getColor(QColor(sysTextColorLabel->text()), &dlg, tr("选择系统文字颜色"));
+		if (c.isValid()) { updateSysTextSwatch(c.name()); sysTextColorLabel->setText(c.name()); }
+	});
+	connect(btnSenderColor, &QPushButton::clicked, &dlg, [updateSenderSwatch, senderColorLabel, &dlg]() {
+		QColor c = QColorDialog::getColor(QColor(senderColorLabel->text()), &dlg, tr("选择发送者名称颜色"));
+		if (c.isValid()) { updateSenderSwatch(c.name()); senderColorLabel->setText(c.name()); }
+	});
+	connect(btnSysSenderColor, &QPushButton::clicked, &dlg, [updateSysSenderSwatch, sysSenderColorLabel, &dlg]() {
+		QColor c = QColorDialog::getColor(QColor(sysSenderColorLabel->text()), &dlg, tr("选择系统发送者颜色"));
+		if (c.isValid()) { updateSysSenderSwatch(c.name()); sysSenderColorLabel->setText(c.name()); }
+	});
+
 	auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
 	layout->addRow(buttons);
 	connect(shotBrowse, &QPushButton::clicked, &dlg, [shotPath, this]() {
@@ -3932,7 +3990,7 @@ void CaptureWindow::openCaptureSettingsDialog(QWidget* parent)
 			recPath->setText(QDir::toNativeSeparators(dir));
 		}
 	});
-	connect(buttons, &QDialogButtonBox::accepted, &dlg, [&dlg, shotPath, recPath, chkCloseToTray, cmbScreenBackend, aiEndpointEdit, aiApiKeyEdit, aiModelEdit, userColorLabel, aiColorLabel, bgColorLabel, textColorLabel, userTextColorLabel, sysBubbleColorLabel, sysTextColorLabel, senderColorLabel, sysSenderColorLabel, tbColorLabel, fontCombo, fontSizeSpin, themeCombo, this]() {
+	connect(buttons, &QDialogButtonBox::accepted, &dlg, [&dlg, shotPath, recPath, chkCloseToTray, cmbScreenBackend, aiEndpointEdit, aiApiKeyEdit, aiModelEdit, userColorLabel, aiColorLabel, bgColorLabel, textColorLabel, userTextColorLabel, sysBubbleColorLabel, sysTextColorLabel, senderColorLabel, 	sysSenderColorLabel, accentColorLabel, fontCombo, fontSizeSpin, themeCombo, this]() {
 		const QString shot = shotPath->text().trimmed();
 		const QString rec = recPath->text().trimmed();
 		if (shot.isEmpty() || rec.isEmpty())
@@ -4020,7 +4078,7 @@ void CaptureWindow::openCaptureSettingsDialog(QWidget* parent)
 				if (!mainWasScreenActive)
 				{
 					m_service->screenSetActive(false);
-					ui->btnPlay->setIcon(QIcon::fromTheme(QIcon::ThemeIcon::MediaPlaybackStart));
+					ui->btnPlay->setIcon(QIcon(fplayer::tokens::themedIconPath(static_cast<fplayer::tokens::Theme>(m_theme), QStringLiteral("play"))));
 				}
 			}
 			for (const auto& st : composeScreenStates)
@@ -4064,14 +4122,13 @@ void CaptureWindow::openCaptureSettingsDialog(QWidget* parent)
 		m_aiSystemSenderColor = sysSenderColorLabel->text();
 		m_aiChatBgColor = bgColorLabel->text();
 			m_aiTextColor = textColorLabel->text();
-		m_imagePoolToolbarColor = tbColorLabel->text();
 		m_aiFontFamily = fontCombo->currentFont().family();
 		m_aiFontSize = fontSizeSpin->value();
 		m_theme = themeCombo->currentData().toInt();
+		m_accentColor = accentColorLabel->text();
 		saveCapturePreferences();
 		applyTheme();
 		m_imagePoolSidebar->setScreenshotDir(m_screenshotSaveDir);
-		m_imagePoolSidebar->setToolbarColor(m_imagePoolToolbarColor);
 		const auto dialogs = findChildren<AiChatDialog*>();
 		for (auto* dlg : dialogs)
 		{
@@ -4263,16 +4320,17 @@ void CaptureWindow::updateRecordButtonUi()
 
 void CaptureWindow::updatePullRecordButtonUi()
 {
-	if (!m_pullPreviewRecordButton || !m_pullPreviewRecordDurationLabel)
+	if (!m_pullPreviewRecordDurationLabel)
 	{
 		return;
 	}
 	const bool pullRunning = m_service && m_service->streamIsRunning();
 	const qint64 elapsed = (pullRunning && m_pullSessionStartMs > 0) ? (QDateTime::currentMSecsSinceEpoch() - m_pullSessionStartMs) : 0;
-	const qint64 recordElapsed = m_pullRecording ? (QDateTime::currentMSecsSinceEpoch() - m_pullRecordStartMs) : 0;
-	m_pullPreviewRecordButton->setText(m_pullRecording ? formatTimeMs(recordElapsed) : tr("开始录制"));
-	m_pullPreviewRecordButton->setToolTip(m_pullRecording ? tr("结束录制") : tr("开始录制"));
 	m_pullPreviewRecordDurationLabel->setText(tr("拉流时长：%1").arg(formatTimeMs(elapsed)));
+	if (m_pullPreviewRecordButton)
+	{
+		m_pullPreviewRecordButton->setToolTip(m_pullRecording ? tr("结束录制") : tr("开始录制"));
+	}
 }
 
 void CaptureWindow::handleMainCaptureScreenshot()
@@ -4353,7 +4411,7 @@ void CaptureWindow::handleMainCaptureRecordToggle()
 			{
 				m_service->cameraResume();
 			}
-			this->ui->btnPlay->setIcon(QIcon::fromTheme(QIcon::ThemeIcon::MediaPlaybackPause));
+			this->ui->btnPlay->setIcon(QIcon(fplayer::tokens::themedIconPath(static_cast<fplayer::tokens::Theme>(m_theme), QStringLiteral("pause"))));
 		}
 		else if (m_captureMode == CaptureMode::Screen)
 		{
@@ -4361,7 +4419,7 @@ void CaptureWindow::handleMainCaptureRecordToggle()
 			{
 				m_service->screenSetActive(true);
 			}
-			this->ui->btnPlay->setIcon(QIcon::fromTheme(QIcon::ThemeIcon::MediaPlaybackPause));
+			this->ui->btnPlay->setIcon(QIcon(fplayer::tokens::themedIconPath(static_cast<fplayer::tokens::Theme>(m_theme), QStringLiteral("pause"))));
 		}
 		else if (m_captureMode == CaptureMode::File)
 		{
@@ -4369,7 +4427,7 @@ void CaptureWindow::handleMainCaptureRecordToggle()
 			{
 				m_service->playerResume();
 			}
-			this->ui->btnPlay->setIcon(QIcon::fromTheme(QIcon::ThemeIcon::MediaPlaybackPause));
+			this->ui->btnPlay->setIcon(QIcon(fplayer::tokens::themedIconPath(static_cast<fplayer::tokens::Theme>(m_theme), QStringLiteral("pause"))));
 		}
 		showNonBlockingHint(this, tr("录制已停止"));
 		return;
@@ -4453,12 +4511,12 @@ void CaptureWindow::togglePlayPause()
 		if (this->m_service->playerIsPlaying())
 		{
 			this->m_service->playerPause();
-			this->ui->btnPlay->setIcon(QIcon::fromTheme(QIcon::ThemeIcon::MediaPlaybackStart));
+			this->ui->btnPlay->setIcon(QIcon(fplayer::tokens::themedIconPath(static_cast<fplayer::tokens::Theme>(m_theme), QStringLiteral("play"))));
 		}
 		else
 		{
 			this->m_service->playerResume();
-			this->ui->btnPlay->setIcon(QIcon::fromTheme(QIcon::ThemeIcon::MediaPlaybackPause));
+			this->ui->btnPlay->setIcon(QIcon(fplayer::tokens::themedIconPath(static_cast<fplayer::tokens::Theme>(m_theme), QStringLiteral("pause"))));
 		}
 		return;
 	}
@@ -4470,20 +4528,20 @@ void CaptureWindow::togglePlayPause()
 		}
 		const bool active = m_service->screenIsActive();
 		m_service->screenSetActive(!active);
-		this->ui->btnPlay->setIcon(QIcon::fromTheme(
-			!active ? QIcon::ThemeIcon::MediaPlaybackPause : QIcon::ThemeIcon::MediaPlaybackStart));
+		this->ui->btnPlay->setIcon(QIcon(fplayer::tokens::themedIconPath(static_cast<fplayer::tokens::Theme>(m_theme),
+			!active ? QStringLiteral("pause") : QStringLiteral("play"))));
 		return;
 	}
 
 	if (this->m_service->cameraIsPlaying())
 	{
 		this->m_service->cameraPause();
-		this->ui->btnPlay->setIcon(QIcon::fromTheme(QIcon::ThemeIcon::MediaPlaybackStart));
+		this->ui->btnPlay->setIcon(QIcon(fplayer::tokens::themedIconPath(static_cast<fplayer::tokens::Theme>(m_theme), QStringLiteral("play"))));
 	}
 	else
 	{
 		this->m_service->cameraResume();
-		this->ui->btnPlay->setIcon(QIcon::fromTheme(QIcon::ThemeIcon::MediaPlaybackPause));
+		this->ui->btnPlay->setIcon(QIcon(fplayer::tokens::themedIconPath(static_cast<fplayer::tokens::Theme>(m_theme), QStringLiteral("pause"))));
 	}
 }
 
@@ -5609,8 +5667,8 @@ void CaptureWindow::updateComposePlaybackIcons()
 		return;
 	}
 	const bool playing = composeSourceIsPlaying(m_composeSelectedIndex);
-	ui->btnPlay->setIcon(QIcon::fromTheme(
-		playing ? QIcon::ThemeIcon::MediaPlaybackPause : QIcon::ThemeIcon::MediaPlaybackStart));
+	ui->btnPlay->setIcon(QIcon(fplayer::tokens::themedIconPath(static_cast<fplayer::tokens::Theme>(m_theme),
+		playing ? QStringLiteral("pause") : QStringLiteral("play"))));
 }
 
 void CaptureWindow::toggleComposeSourcePlayPauseAt(const int index)
@@ -6228,7 +6286,7 @@ bool CaptureWindow::selectScreen(int index)
 			this->ui->chkCaptureCursor->setEnabled(true);
 			this->updateCaptureCursorCheckToolTip();
 		}
-		this->ui->btnPlay->setIcon(QIcon::fromTheme(QIcon::ThemeIcon::MediaPlaybackPause));
+		this->ui->btnPlay->setIcon(QIcon(fplayer::tokens::themedIconPath(static_cast<fplayer::tokens::Theme>(m_theme), QStringLiteral("pause"))));
 		return true;
 	};
 	LOG_INFO("[screen]", "start capture, backend=", screenBackendName(m_screenBackendType), " index=", index);
@@ -6286,7 +6344,7 @@ bool CaptureWindow::selectScreen(int index)
 		this->ui->chkCaptureCursor->setEnabled(true);
 		this->updateCaptureCursorCheckToolTip();
 	}
-	this->ui->btnPlay->setIcon(QIcon::fromTheme(QIcon::ThemeIcon::MediaPlaybackPause));
+	this->ui->btnPlay->setIcon(QIcon(fplayer::tokens::themedIconPath(static_cast<fplayer::tokens::Theme>(m_theme), QStringLiteral("pause"))));
 	return true;
 }
 

@@ -41,7 +41,6 @@ namespace fplayer
 		QString aiUserBubbleColor = QStringLiteral("#2997ff");
 		QString aiAiBubbleColor = QStringLiteral("#1c1c1e");
 		QString aiChatBgColor = QStringLiteral("#0d0d0f");
-		QString imagePoolToolbarColor = QStringLiteral("#141416");
 		QString aiFontFamily;
 		int aiFontSize = 14;
 		QString aiTextColor = QStringLiteral("#f5f5f7");
@@ -51,6 +50,7 @@ namespace fplayer
 		QString aiSenderColor = QStringLiteral("#6e6e73");
 		QString aiSystemSenderColor = QStringLiteral("#ff9f0a");
 		int theme = 0;   // 0=dark, 1=light
+		QString accentColor = QStringLiteral("#2997ff");   // 主题色（蓝色默认）
 	};
 
 	class SystemSettingsRepository

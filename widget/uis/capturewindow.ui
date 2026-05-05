@@ -220,12 +220,24 @@
       <item>
        <widget class="QWidget" name="wgtDevices" native="true">
         <layout class="QHBoxLayout" name="horizontalLayout_3">
+         <property name="topMargin">
+          <number>0</number>
+         </property>
+         <property name="bottomMargin">
+          <number>0</number>
+         </property>
          <item>
           <widget class="QComboBox" name="cmbDevices">
            <property name="minimumSize">
             <size>
              <width>150</width>
-             <height>0</height>
+             <height>30</height>
+            </size>
+           </property>
+           <property name="maximumSize">
+            <size>
+             <width>16777215</width>
+             <height>30</height>
             </size>
            </property>
           </widget>
@@ -235,7 +247,13 @@
            <property name="minimumSize">
             <size>
              <width>150</width>
-             <height>0</height>
+             <height>30</height>
+            </size>
+           </property>
+           <property name="maximumSize">
+            <size>
+             <width>16777215</width>
+             <height>30</height>
             </size>
            </property>
           </widget>
@@ -290,7 +308,7 @@
          <string/>
         </property>
         <property name="icon">
-         <iconset resource="../res/res.qrc">
+         <iconset>
           <normaloff>:/icon/picture.svg</normaloff>:/icon/picture.svg</iconset>
         </property>
         <property name="iconSize">
