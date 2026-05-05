@@ -4087,9 +4087,18 @@ void CaptureWindow::openCaptureSettingsDialog(QWidget* parent)
 		dlg.accept();
 	});
 	connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
-	dlg.resize(760, 520);
+	dlg.setAttribute(Qt::WA_DontShowOnScreen, true);
+	dlg.show();
+	dlg.hide();
+	dlg.setAttribute(Qt::WA_DontShowOnScreen, false);
+	QSize hint = layout->sizeHint();
+	QMargins margins = dlg.contentsMargins();
+	QSize totalSize = hint + QSize(margins.left() + margins.right(), margins.top() + margins.bottom());
+	totalSize.setWidth(qMax(totalSize.width(), 760));
+	totalSize.setHeight(qMax(totalSize.height(), 460));
+	dlg.resize(totalSize);
 	if (auto* screen = QGuiApplication::primaryScreen()) {
-		dlg.move(screen->geometry().center() - dlg.rect().center());
+		dlg.move(screen->geometry().center() - QRect(QPoint(0, 0), totalSize).center());
 	}
 	dlg.exec();
 }
