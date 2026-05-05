@@ -3672,7 +3672,6 @@ void CaptureWindow::openCaptureSettingsDialog(QWidget* parent)
 {
 	QDialog dlg(parent ? parent : this);
 	dlg.setWindowTitle(tr("系统设置"));
-	dlg.resize(760, 520);
 	dlg.setMinimumSize(700, 460);
 	auto* layout = new QFormLayout(&dlg);
 	auto* shotPath = new QLineEdit(m_screenshotSaveDir, &dlg);
@@ -4096,6 +4095,19 @@ void CaptureWindow::openCaptureSettingsDialog(QWidget* parent)
 		dlg.accept();
 	});
 	connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+	dlg.setAttribute(Qt::WA_DontShowOnScreen, true);
+	dlg.show();
+	dlg.hide();
+	dlg.setAttribute(Qt::WA_DontShowOnScreen, false);
+	QSize hint = layout->sizeHint();
+	QMargins margins = dlg.contentsMargins();
+	QSize totalSize = hint + QSize(margins.left() + margins.right(), margins.top() + margins.bottom());
+	totalSize.setWidth(qMax(totalSize.width(), 760));
+	totalSize.setHeight(qMax(totalSize.height(), 460));
+	dlg.resize(totalSize);
+	if (auto* screen = QGuiApplication::primaryScreen()) {
+		dlg.move(screen->geometry().center() - QRect(QPoint(0, 0), totalSize).center());
+	}
 	dlg.exec();
 }
 
