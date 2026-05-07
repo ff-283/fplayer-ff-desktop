@@ -20,6 +20,7 @@ namespace fplayer::streamffmpeg_helpers
 		CameraCapture,
 		CameraPreview,
 		FileTranscode,
+		FilePreview,
 		Remux
 	};
 
@@ -44,6 +45,7 @@ namespace fplayer::streamffmpeg_helpers
 		int x = 0;
 		int y = 0;
 		int bitrateKbps = 0;
+		QString sourceId;  // ScreenFrameBus source ID
 	};
 
 	struct VideoEncoderChoice

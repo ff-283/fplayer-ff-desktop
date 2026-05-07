@@ -58,7 +58,7 @@ namespace fplayer
 		}
 	}
 
-	// YUV 渲染着色器
+	// YUV 渲染着色器 — 支持 BT.601 / BT.709 色彩矩阵 + limited/full range
 	static const char* vertexShaderSource = R"(
 		attribute vec2 position;
 		attribute vec2 texCoord;
@@ -75,20 +75,48 @@ namespace fplayer
 		uniform sampler2D texY;
 		uniform sampler2D texU;
 		uniform sampler2D texV;
-		
+		uniform int  uColorMatrix;   // 0 = BT.601, 1 = BT.709
+		uniform bool uFullRange;     // true = full/jpeg range, false = limited/mpeg range
+
 		void main()
 		{
 			vec3 yuv;
 			yuv.x = texture2D(texY, vTexCoord).r;
-			yuv.y = texture2D(texU, vTexCoord).r - 0.5;
-			yuv.z = texture2D(texV, vTexCoord).r - 0.5;
-			
-			vec3 rgb = mat3(
-				1.0, 1.0, 1.0,
-				0.0, -0.39465, 2.03211,
-				1.13983, -0.58060, 0.0
-			) * yuv;
-			
+			yuv.y = texture2D(texU, vTexCoord).r;
+			yuv.z = texture2D(texV, vTexCoord).r;
+
+			// Limited range → full range expansion (ITU-T H.265 / MPEG range)
+			if (!uFullRange)
+			{
+				yuv.x = (yuv.x - 16.0/255.0) * (255.0/219.0);
+				yuv.y = (yuv.y - 16.0/255.0) * (255.0/224.0);  // 128/255 centered; scale from 224
+				yuv.z = (yuv.z - 16.0/255.0) * (255.0/224.0);
+			}
+
+			// Center chroma channels
+			yuv.y -= 0.5;
+			yuv.z -= 0.5;
+
+			vec3 rgb;
+			if (uColorMatrix == 1)
+			{
+				// BT.709 (HD: 720p / 1080p / 4K)
+				rgb = mat3(
+					1.0, 1.0, 1.0,
+					0.0, -0.21482, 2.12798,
+					1.28033, -0.38059, 0.0
+				) * yuv;
+			}
+			else
+			{
+				// BT.601 (SD: ≤576p)
+				rgb = mat3(
+					1.0, 1.0, 1.0,
+					0.0, -0.39465, 2.03211,
+					1.13983, -0.58060, 0.0
+				) * yuv;
+			}
+
 			gl_FragColor = vec4(rgb, 1.0);
 		}
 	)";
@@ -209,6 +237,8 @@ namespace fplayer
 		m_program->setUniformValue(texYLocation, 0);
 		m_program->setUniformValue(texULocation, 1);
 		m_program->setUniformValue(texVLocation, 2);
+		m_program->setUniformValue("uColorMatrix", m_isBT709 ? 1 : 0);
+		m_program->setUniformValue("uFullRange", m_isFullRange);
 
 		glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
 
@@ -312,6 +342,16 @@ namespace fplayer
 		else
 		{
 			glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, uvWidth, uvHeight, GL_RED, GL_UNSIGNED_BYTE, vTight.constData());
+		}
+	}
+
+	void FGLWidget::setColorParams(bool isBT709, bool isFullRange)
+	{
+		if (m_isBT709 != isBT709 || m_isFullRange != isFullRange)
+		{
+			m_isBT709 = isBT709;
+			m_isFullRange = isFullRange;
+			m_colorParamsDirty = true;
 		}
 	}
 

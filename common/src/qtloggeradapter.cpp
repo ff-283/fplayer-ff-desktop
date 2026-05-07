@@ -30,7 +30,8 @@ void fplayer::qtToLoggerHandler(QtMsgType type, const QMessageLogContext& ctx, c
             LOG_INFO(cat, text, file, ctx.line, func);
             break;
         case QtWarningMsg:
-            LOG_WARN(cat, text, file, ctx.line, func);
+
+    	LOG_WARN(cat, text, file, ctx.line, func);
             break;
         case QtCriticalMsg:
             LOG_ERROR(cat, text, file, ctx.line, func);

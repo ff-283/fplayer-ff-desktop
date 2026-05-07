@@ -196,6 +196,7 @@ private:
 	QLabel* m_pullPreviewRecordDurationLabel = nullptr;
 	fplayer::Service* m_pullRecordService = nullptr;
 	fplayer::MediaBackendType m_screenBackendType = fplayer::MediaBackendType::Qt6;
+	fplayer::MediaBackendType m_filePlaybackBackend = fplayer::MediaBackendType::Qt6;
 	QString m_capturePrefPath;
 	QString m_screenshotSaveDir;
 	QString m_recordSaveDir;

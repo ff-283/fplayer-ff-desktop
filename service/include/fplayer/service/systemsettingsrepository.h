@@ -32,6 +32,7 @@ namespace fplayer
 		bool pushKeepAspect = true;
 		QString composeOutputSize;
 		QString screenCaptureBackend;
+		QString filePlaybackBackend;  // "qt6" (default) or "ffmpeg"
 		bool closeToTrayOnClose = true;
 		// AI configuration
 		QString aiEndpoint = QStringLiteral("https://api.openai.com/v1/chat/completions");

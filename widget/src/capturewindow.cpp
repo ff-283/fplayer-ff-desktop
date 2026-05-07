@@ -1486,8 +1486,7 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 
 	// 1) 初始化摄像头
 	m_service->initCamera(backendType);
-	// 文件播放模块当前仅实现 FFmpeg 后端，固定用 FFmpeg 初始化播放器。
-	m_service->initPlayer(fplayer::MediaBackendType::FFmpeg);
+	m_service->initPlayer(m_filePlaybackBackend);
 	// 屏幕捕获后端选择遵循系统设置；若当前构建不支持 DXGI，则自动回退 FFmpeg。
 #if !(defined(_WIN32) && defined(FPLAYER_WITH_SCREEN_DXGI))
 	if (m_screenBackendType == fplayer::MediaBackendType::Dxgi)
@@ -1497,13 +1496,15 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 #endif
 	m_service->initScreenCapture(m_screenBackendType);
 	m_service->initStream(fplayer::MediaBackendType::FFmpeg);
-	this->ui->wgtView->setBackendType(backendType);
 	setupTrayIcon();
 
-	// 2) 绑定预览窗口
-	m_service->bindCameraPreview(this->ui->wgtView);
+	// 2) 绑定预览窗口（各后端需要不同的渲染组件，setBackendType 会重建）
+	this->ui->wgtView->setBackendType(m_filePlaybackBackend);
 	m_service->bindPlayerPreview(this->ui->wgtView);
+	this->ui->wgtView->setBackendType(m_screenBackendType);
 	m_service->bindScreenPreview(this->ui->wgtView);
+	this->ui->wgtView->setBackendType(backendType);
+	m_service->bindCameraPreview(this->ui->wgtView);
 
 	// 3) 获取摄像头列表
 	this->refreshCameraDeviceUi();
@@ -1736,7 +1737,7 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		connect(m_imagePoolSidebar, &ImagePoolSidebar::visibilityChanged,
 		        actionImagePool, &QAction::setChecked);
 		connect(m_imagePoolSidebar, &ImagePoolSidebar::analyzeRequested, [this](const QString& path) {
-			auto* dlg = new AiChatDialog(this);
+			auto* dlg = new AiChatDialog(nullptr);
 			dlg->setAttribute(Qt::WA_DeleteOnClose);
 			fplayer::AiConfig cfg;
 			cfg.endpoint = m_aiEndpoint;
@@ -1767,7 +1768,7 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		this->m_debugStatsLabel->setVisible(false);
 		this->m_fileProgressTimer->stop();
 		this->m_debugStatsTimer->stop();
-		this->m_service->playerPause();
+		this->m_service->playerStop();
 		this->m_service->playerSetPlaybackRate(1.0);
 		this->m_speedCombo->setCurrentIndex(0);
 		this->ui->wgtView->setBackendType(m_cameraBackendType);
@@ -1784,7 +1785,7 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		setComposeMode(false);
 		m_captureMode = CaptureMode::File;
 		stopScreenCapture();
-		this->ui->wgtView->setBackendType(fplayer::MediaBackendType::FFmpeg);
+		this->ui->wgtView->setBackendType(m_filePlaybackBackend);
 		this->m_service->bindPlayerPreview(this->ui->wgtView);
 		if (!this->chooseAndPlayFile())
 		{
@@ -1810,7 +1811,7 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		m_isFileMode = false;
 		m_captureMode = CaptureMode::Screen;
 		LOG_INFO("[screen]", "switch to screen mode, backend=", screenBackendName(m_screenBackendType));
-		this->m_service->playerPause();
+		this->m_service->playerStop();
 		this->m_service->cameraPause();
 		this->m_fileProgress->setVisible(false);
 		this->m_fileProgressLabel->setVisible(false);
@@ -2527,13 +2528,13 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 					return;
 				}
 			}
-			if (!this->m_service->streamStartPushByScene(pushScene, pushOutput, sceneInput, options))
-			{
-				QMessageBox::warning(this, tr("推流失败"), this->m_service->streamLastError());
-				return;
-			}
-			addRecent(m_recentPushOutputs, pushOutput);
-			applyPushUiRunningState(true);
+		if (!this->m_service->streamStartPushByScene(pushScene, pushOutput, sceneInput, options))
+		{
+			QMessageBox::warning(this, tr("推流失败"), this->m_service->streamLastError());
+			return;
+		}
+		addRecent(m_recentPushOutputs, pushOutput);
+		applyPushUiRunningState(true);
 		});
 		connect(logTimer, &QTimer::timeout, &dlg,
 		        [this, applyPushUiRunningState]() {
@@ -2556,10 +2557,10 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 			saveCapturePreferences();
 		applyTheme();
 		};
-		auto* dlg = new QDialog(this);
+		auto* dlg = new QDialog(nullptr);
 		dlg->setAttribute(Qt::WA_DeleteOnClose, true);
 		dlg->setModal(false);
-		dlg->setWindowTitle(tr("拉流监视窗口"));
+		dlg->setWindowTitle(tr("拉流配置窗口"));
 		m_pullMonitorDialog = dlg;
 		connect(dlg, &QObject::destroyed, this, [this]() {
 			m_pullMonitorDialog = nullptr;
@@ -2692,19 +2693,22 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		auto* buttons = new QDialogButtonBox(dlg);
 		auto* btnStart = new QPushButton(tr("开始拉流"), dlg);
 		auto* btnStop = new QPushButton(tr("结束拉流"), dlg);
+		auto* btnPreview = new QPushButton(tr("预览窗口"), dlg);
 		auto* btnDiag = new QPushButton(tr("网络自检"), dlg);
 		btnStart->setProperty("role", QStringLiteral("primary"));
 		buttons->addButton(btnStart, QDialogButtonBox::AcceptRole);
 		buttons->addButton(btnStop, QDialogButtonBox::ActionRole);
+		buttons->addButton(btnPreview, QDialogButtonBox::ActionRole);
 		buttons->addButton(btnDiag, QDialogButtonBox::ActionRole);
 		m_pullStartButton = btnStart;
 		m_pullStopButton = btnStop;
-		auto applyPullUiRunningState = [btnStart, btnStop, cmbPullRouteMode, cmbProtocol, edtStreamKey,
+		auto applyPullUiRunningState = [btnStart, btnStop, btnPreview, cmbPullRouteMode, cmbProtocol, edtStreamKey,
 		                                edtPullGateway, edtPullServiceApp, edtPullServiceStream, cmbPullServicePrefer,
 		                                btnResolvePullUrl](
 			bool running) {
 			btnStart->setEnabled(!running);
 			btnStop->setEnabled(running);
+			btnPreview->setEnabled(running);
 			cmbPullRouteMode->setEnabled(!running);
 			cmbProtocol->setEnabled(!running);
 			edtStreamKey->setEnabled(!running);
@@ -2977,8 +2981,7 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 			dlg->setProperty("pullPreviewAutoOpened", false);
 			if (!m_pullPreviewDialog)
 			{
-				auto* preview = new PullPreviewDialog(this);
-				preview->setAttribute(Qt::WA_DeleteOnClose, true);
+				auto* preview = new PullPreviewDialog(nullptr);
 				preview->setWindowTitle(tr("拉流预览"));
 				preview->resize(900, 560);
 				auto* vLayout = new QVBoxLayout(preview);
@@ -3082,7 +3085,7 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 						}
 					}
 				});
-				connect(preview, &QObject::destroyed, this, [this, requestStopPullAsync]() {
+				connect(preview, &QObject::destroyed, this, [this]() {
 					m_pullPreviewDialog = nullptr;
 					m_pullPreviewView = nullptr;
 					m_pullVolumeSlider = nullptr;
@@ -3104,29 +3107,15 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 					{
 						m_pullRecordService->streamStop();
 					}
-					if (m_service && m_service->streamIsRunning())
-					{
-						requestStopPullAsync();
-					}
+					// 关闭预览窗口不停止拉流，拉流在后台继续运行
 				});
-				preview->beforeClose = [this, preview, dlg, requestStopPullAsync]() -> bool {
+				preview->beforeClose = [preview, dlg]() -> bool {
 					if (dlg->property("pullStopping").toBool())
 					{
 						return false;
 					}
-					if (!m_service || !m_service->streamIsRunning())
-					{
-						return true;
-					}
-					const auto answer = QMessageBox::question(preview,
-					                                          tr("确认关闭"),
-					                                          tr("关闭拉流预览将同时停止拉流，是否继续？"),
-					                                          QMessageBox::Yes | QMessageBox::No,
-					                                          QMessageBox::No);
-					if (answer == QMessageBox::Yes)
-					{
-						requestStopPullAsync();
-					}
+					// 关闭预览窗口不停止拉流，仅隐藏
+					preview->hide();
 					return false;
 				};
 				connect(btnPause, &QPushButton::clicked, preview, [this, btnPause]() {
@@ -3378,6 +3367,14 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		connect(btnStop, &QPushButton::clicked, dlg, [requestStopPullAsync]() {
 			requestStopPullAsync();
 		});
+		connect(btnPreview, &QPushButton::clicked, dlg, [this]() {
+			if (m_pullPreviewDialog)
+			{
+				m_pullPreviewDialog->show();
+				m_pullPreviewDialog->raise();
+				m_pullPreviewDialog->activateWindow();
+			}
+		});
 		connect(btnDiag, &QPushButton::clicked, dlg, [this, dlg, makePullListenUrl, makePublishUrl, reservedPort]() {
 			QStringList lines;
 			lines << QStringLiteral("[自检] ===== 网络自检开始 =====");
@@ -3600,6 +3597,17 @@ void CaptureWindow::loadCapturePreferences()
 			m_screenBackendType = fplayer::MediaBackendType::Dxgi;
 		}
 	}
+	{
+		const QString fileBackend = data.filePlaybackBackend.trimmed().toLower();
+		if (fileBackend == QStringLiteral("ffmpeg"))
+		{
+			m_filePlaybackBackend = fplayer::MediaBackendType::FFmpeg;
+		}
+		else
+		{
+			m_filePlaybackBackend = fplayer::MediaBackendType::Qt6;
+		}
+	}
 }
 
 void CaptureWindow::saveCapturePreferences() const
@@ -3648,6 +3656,9 @@ void CaptureWindow::saveCapturePreferences() const
 	data.screenCaptureBackend = (m_screenBackendType == fplayer::MediaBackendType::FFmpeg)
 		                            ? QStringLiteral("ffmpeg")
 		                            : QStringLiteral("dxgi");
+	data.filePlaybackBackend = (m_filePlaybackBackend == fplayer::MediaBackendType::FFmpeg)
+		                           ? QStringLiteral("ffmpeg")
+		                           : QStringLiteral("qt6");
 	if (m_service)
 	{
 		m_service->saveSystemSettings(data);
@@ -3728,7 +3739,7 @@ void CaptureWindow::refreshThemeIcons()
 
 void CaptureWindow::openCaptureSettingsDialog(QWidget* parent)
 {
-	QDialog dlg(parent ? parent : this);
+	QDialog dlg(nullptr);
 	dlg.setWindowTitle(tr("系统设置"));
 	dlg.setMinimumSize(700, 460);
 	auto* layout = new QFormLayout(&dlg);
@@ -3769,6 +3780,23 @@ void CaptureWindow::openCaptureSettingsDialog(QWidget* parent)
 	layout->addRow(tr("关闭行为"), chkCloseToTray);
 	layout->addRow(tr("屏幕采集后端"), cmbScreenBackend);
 	layout->addRow(lblHdrHint);
+
+	auto* cmbFileBackend = new QComboBox(&dlg);
+	cmbFileBackend->addItem(tr("Qt6（默认）"), QStringLiteral("qt6"));
+	cmbFileBackend->addItem(tr("FFmpeg"), QStringLiteral("ffmpeg"));
+	{
+		const QString currentFileBackend = (m_filePlaybackBackend == fplayer::MediaBackendType::FFmpeg)
+			                                   ? QStringLiteral("ffmpeg")
+			                                   : QStringLiteral("qt6");
+		const int idx = cmbFileBackend->findData(currentFileBackend);
+		cmbFileBackend->setCurrentIndex(idx >= 0 ? idx : 0);
+	}
+	auto* lblFileBackendHint = new QLabel(
+		tr("文件播放后端切换后，若正在播放将自动以当前进度重新打开。"),
+		&dlg);
+	lblFileBackendHint->setWordWrap(true);
+	layout->addRow(tr("文件播放后端"), cmbFileBackend);
+	layout->addRow(lblFileBackendHint);
 
 	auto* lblAiSection = new QLabel(tr("── AI 识别配置 ──"), &dlg);
 	lblAiSection->setStyleSheet(QStringLiteral("font-weight: bold; color: #6b5ba0; margin-top: 8px;"));
@@ -3990,7 +4018,7 @@ void CaptureWindow::openCaptureSettingsDialog(QWidget* parent)
 			recPath->setText(QDir::toNativeSeparators(dir));
 		}
 	});
-	connect(buttons, &QDialogButtonBox::accepted, &dlg, [&dlg, shotPath, recPath, chkCloseToTray, cmbScreenBackend, aiEndpointEdit, aiApiKeyEdit, aiModelEdit, userColorLabel, aiColorLabel, bgColorLabel, textColorLabel, userTextColorLabel, sysBubbleColorLabel, sysTextColorLabel, senderColorLabel, 	sysSenderColorLabel, accentColorLabel, fontCombo, fontSizeSpin, themeCombo, this]() {
+	connect(buttons, &QDialogButtonBox::accepted, &dlg, [&dlg, shotPath, recPath, chkCloseToTray, cmbScreenBackend, cmbFileBackend, aiEndpointEdit, aiApiKeyEdit, aiModelEdit, userColorLabel, aiColorLabel, bgColorLabel, textColorLabel, userTextColorLabel, sysBubbleColorLabel, sysTextColorLabel, senderColorLabel, 	sysSenderColorLabel, accentColorLabel, fontCombo, fontSizeSpin, themeCombo, this]() {
 		const QString shot = shotPath->text().trimmed();
 		const QString rec = recPath->text().trimmed();
 		if (shot.isEmpty() || rec.isEmpty())
@@ -4110,6 +4138,69 @@ void CaptureWindow::openCaptureSettingsDialog(QWidget* parent)
 				forceRefreshComposePreview();
 			}
 		}
+		// 文件播放后端热切换
+		{
+			const QString fileBackendStr = cmbFileBackend->currentData().toString().trimmed().toLower();
+			const fplayer::MediaBackendType selectedFileBackend = (fileBackendStr == QStringLiteral("ffmpeg"))
+				                                                      ? fplayer::MediaBackendType::FFmpeg
+				                                                      : fplayer::MediaBackendType::Qt6;
+			const bool fileBackendChanged = (selectedFileBackend != m_filePlaybackBackend);
+			if (fileBackendChanged && m_service)
+			{
+				// 保存当前播放状态
+				const bool wasFileMode = m_isFileMode;
+				const QString currentFile = m_currentFilePath;
+				const qint64 savedPosition = wasFileMode ? m_service->playerPositionMs() : 0;
+				const bool wasPlaying = wasFileMode && m_service->playerIsPlaying();
+
+				// 停止并切换后端
+				m_service->playerStop();
+				m_filePlaybackBackend = selectedFileBackend;
+				m_service->initPlayer(m_filePlaybackBackend);
+				ui->wgtView->setBackendType(m_filePlaybackBackend);
+				m_service->bindPlayerPreview(ui->wgtView);
+
+				// 如果正在文件模式，重新打开并恢复进度
+				if (wasFileMode && !currentFile.isEmpty())
+				{
+					if (m_service->openMediaFile(currentFile))
+					{
+						if (savedPosition > 0)
+						{
+							m_service->playerSeekMs(savedPosition);
+						}
+						if (!wasPlaying)
+						{
+							m_service->playerPause();
+						}
+						// 更新组合推流通道
+						for (auto& src : m_composeSources)
+						{
+							if (src.kind == ComposeSourceItem::SourceKind::File && src.service == m_service)
+							{
+								m_service->setPlayerComposeStreamBusId(src.sourceId);
+								break;
+							}
+						}
+					}
+				}
+
+				// 更新组合模式中所有文件素材的服务
+				for (auto& src : m_composeSources)
+				{
+					if (src.kind == ComposeSourceItem::SourceKind::File && src.service && src.service != m_service)
+					{
+						const QString srcFilePath = src.service->playerDebugStats(); // doesn't store path, skip reinit
+						Q_UNUSED(srcFilePath);
+						if (src.view)
+						{
+							src.view->setBackendType(m_filePlaybackBackend);
+						}
+					}
+				}
+			}
+		}
+
 		m_aiEndpoint = aiEndpointEdit->text().trimmed();
 		m_aiApiKey = aiApiKeyEdit->text().trimmed();
 		m_aiModel = aiModelEdit->text().trimmed();
@@ -4812,7 +4903,7 @@ void CaptureWindow::setComposeMode(const bool enabled)
 		m_captureMode = CaptureMode::Screen;
 		m_isFileMode = false;
 		stopScreenCapture();
-		m_service->playerPause();
+		m_service->playerStop();
 		m_service->cameraPause();
 		// 从摄像头模式切到组合模式前，重建主相机实例以释放设备占用，
 		// 避免组合内新建相机素材时因句柄冲突拿不到画面。
@@ -4955,10 +5046,10 @@ void CaptureWindow::addComposeFileSource()
 		return;
 	}
 	auto* svc = new fplayer::Service();
-	svc->initPlayer(fplayer::MediaBackendType::FFmpeg);
+	svc->initPlayer(m_filePlaybackBackend);
 	auto* container = new ComposeSourceWidget();
 	auto* view = new fplayer::FVideoView(container);
-	view->setBackendType(fplayer::MediaBackendType::FFmpeg);
+	view->setBackendType(m_filePlaybackBackend);
 	view->setAttribute(Qt::WA_TransparentForMouseEvents, true);
 	container->setInnerView(view);
 	const QString fileStreamBusId = QUuid::createUuid().toString(QUuid::WithoutBraces);
@@ -6155,11 +6246,20 @@ void CaptureWindow::showFromTray()
 void CaptureWindow::quitFromTray()
 {
 	m_quitFromTray = true;
-	if (!isVisible())
+	// 直接停掉所有推拉流和录制，避免 closeEvent 里弹确认框
+	if (m_service)
 	{
-		show();
+		if (m_mainRecordTimer) m_mainRecordTimer->stop();
+		if (m_pullRecordTimer) m_pullRecordTimer->stop();
+		if (m_pullRecordService) m_pullRecordService->streamStop();
+		m_service->streamStop();
 	}
-	close();
+	m_mainRecording = false;
+	m_pullRecording = false;
+	if (m_pullPreviewDialog) m_pullPreviewDialog->close();
+	if (m_pullMonitorDialog) m_pullMonitorDialog->close();
+	if (m_imagePoolSidebar) m_imagePoolSidebar->close();
+	QApplication::quit();
 }
 
 void CaptureWindow::refreshCameraDeviceUi()

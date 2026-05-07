@@ -55,6 +55,7 @@ namespace fplayer::streamffmpeg_helpers
 		const QString cameraPrefix = QStringLiteral("__camera_capture__:");
 		const QString cameraPreviewPrefix = QStringLiteral("__camera_preview__:");
 		const QString fileTranscodePrefix = QStringLiteral("__file_transcode__:");
+		const QString filePreviewPrefix = QStringLiteral("__file_preview__:");
 
 		PushInputRoute route;
 		if (inputUrl.startsWith(composePrefix))
@@ -93,6 +94,12 @@ namespace fplayer::streamffmpeg_helpers
 			route.spec = inputUrl.mid(fileTranscodePrefix.size()).trimmed();
 			return route;
 		}
+		if (inputUrl.startsWith(filePreviewPrefix))
+		{
+			route.kind = PushInputKind::FilePreview;
+			route.spec = inputUrl.mid(filePreviewPrefix.size()).trimmed();
+			return route;
+		}
 		route.kind = PushInputKind::Remux;
 		route.spec.clear();
 		return route;
@@ -114,6 +121,8 @@ namespace fplayer::streamffmpeg_helpers
 			return QStringLiteral("[推流] 已启动（当前摄像头预览帧推流）");
 		case PushInputKind::FileTranscode:
 			return QStringLiteral("[推流] 已启动（文件转码推流）");
+		case PushInputKind::FilePreview:
+			return QStringLiteral("[推流] 已启动（文件预览帧推流）");
 		case PushInputKind::Remux:
 		default:
 			return QStringLiteral("[推流] 已启动（libavformat 转封装 copy）");
@@ -236,6 +245,12 @@ namespace fplayer::streamffmpeg_helpers
 			if (key == QStringLiteral("encoder"))
 			{
 				params.videoEncoder = value.toLower();
+				continue;
+			}
+			if (key == QStringLiteral("sourceid"))
+			{
+				params.sourceId = value;
+				continue;
 			}
 		}
 		return params;

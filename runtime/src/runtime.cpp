@@ -3,6 +3,7 @@
 #include <fplayer/backend/media_ffmpeg/cameraffmpeg.h>
 #include <fplayer/backend/media_ffmpeg/playerffmpeg.h>
 #include <fplayer/backend/media_ffmpeg/screencaptureffmpeg.h>
+#include <fplayer/backend/media_qt6/playerqt6.h>
 #if defined(_WIN32) && defined(FPLAYER_WITH_SCREEN_DXGI)
 #include <fplayer/backend/desktopcapture_dxgi/screencapturedxgi.h>
 #endif
@@ -38,6 +39,7 @@ std::shared_ptr<fplayer::IPlayer> fplayer::RunTime::createPlayer(MediaBackendTyp
 	switch (backend)
 	{
 	case MediaBackendType::Qt6:
+		m_player = std::make_shared<fplayer::PlayerQt6>();
 		break;
 	case MediaBackendType::FFmpeg:
 		m_player = std::make_shared<fplayer::PlayerFFmpeg>();

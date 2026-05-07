@@ -28,6 +28,7 @@ namespace fplayer
 	public slots:
 		void updateYUVFrame(const QByteArray& yData, const QByteArray& uData, const QByteArray& vData,
 		                    int width, int height, int yStride, int uStride, int vStride);
+		void setColorParams(bool isBT709, bool isFullRange);
 
 	protected:
 		void initializeGL() override;
@@ -60,6 +61,9 @@ namespace fplayer
 		YUVData m_yuvData;
 		QMutex m_mutex;
 		bool m_initialized = false;
+		bool m_isBT709 = false;
+		bool m_isFullRange = false;
+		bool m_colorParamsDirty = true;
 	};
 }
 #endif //FPLAYER_DESKETOP_FGLWIDGET_H

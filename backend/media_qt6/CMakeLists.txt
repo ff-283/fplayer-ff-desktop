@@ -5,7 +5,7 @@ find_package(Qt6 COMPONENTS Core Multimedia MultimediaWidgets REQUIRED)
 add_standard_module(${PROJECT_NAME} include/fplayer/backend/media_qt6 ON ON)
 
 target_link_libraries(${PROJECT_NAME} PRIVATE Qt6::Core Qt6::Multimedia Qt6::MultimediaWidgets)
-target_link_libraries(${PROJECT_NAME} PUBLIC FPlayer_Api)
+target_link_libraries(${PROJECT_NAME} PUBLIC FPlayer_Api FPlayer_Common)
 target_link_libraries(${PROJECT_NAME} PRIVATE Logger)
 
 #qt_deploy_runtime(FPlayer_Backend_Media_Qt6)

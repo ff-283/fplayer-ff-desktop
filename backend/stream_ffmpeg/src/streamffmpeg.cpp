@@ -1,5 +1,7 @@
 #include <fplayer/backend/stream_ffmpeg/streamffmpeg.h>
 
+#include "logger/logger.h"
+
 extern "C"
 {
 #include <libavdevice/avdevice.h>
@@ -95,7 +97,33 @@ int fplayer::StreamFFmpeg::interruptCallback(void* opaque)
 fplayer::StreamFFmpeg::StreamFFmpeg(QObject* parent) : QObject(parent)
 {
 	static std::once_flag netInit;
-	std::call_once(netInit, []() { avformat_network_init(); });
+	std::call_once(netInit, []() {
+		avformat_network_init();
+		// 接管 FFmpeg 全局日志：抑制默认 stderr 输出（"Input #0..." 等格式探测日志），
+		// 重定向到项目 Logger。StreamFFmpeg 始终被创建，确保任意后端下均生效。
+		av_log_set_callback([](void*, int level, const char* fmt, va_list vl) {
+			if (level > av_log_get_level()) return;
+			static char buf[2048];
+			static std::mutex mtx;
+			{
+				std::lock_guard<std::mutex> lock(mtx);
+				vsnprintf(buf, sizeof(buf), fmt, vl);
+			}
+			std::string str(buf);
+			if (!str.empty() && str.back() == '\n') str.pop_back();
+			// 过滤第三方虚拟设备噪音（如 e2eSoft VCam 缓冲区告警）
+			if (str.find("real-time buffer") != std::string::npos
+			    && str.find("too full") != std::string::npos)
+				return;
+			if (level <= AV_LOG_ERROR)
+				LOG_ERROR("[ffmpeg] ", str);
+			else if (level <= AV_LOG_WARNING)
+				LOG_WARN("[ffmpeg] ", str);
+			else
+				LOG_INFO("[ffmpeg] ", str);
+		});
+		av_log_set_level(AV_LOG_ERROR);
+	});
 }
 
 fplayer::StreamFFmpeg::~StreamFFmpeg()
@@ -199,6 +227,12 @@ bool fplayer::StreamFFmpeg::startPushWorkerByRoute(const PushInputRoute& route, 
 		{
 			m_worker = std::make_unique<std::thread>([this, outputUrl, route]() {
 				transcodeFileLoop(outputUrl, route.spec);
+			});
+		}
+		else if (route.kind == PushInputKind::FilePreview)
+		{
+			m_worker = std::make_unique<std::thread>([this, outputUrl, route]() {
+				pushScreenPreviewLoop(outputUrl, route.spec);
 			});
 		}
 		else
@@ -476,6 +510,21 @@ void fplayer::StreamFFmpeg::remuxLoop(const QString& inputUrl, const QString& ou
 	const QByteArray outUtf8 = effectiveOutputUrl.toUtf8();
 	const char* inPath = inUtf8.constData();
 	const char* outPath = outUtf8.constData();
+	// 若输入为本地文件则拷贝到临时目录，避免与播放器 FFmpeg 实例共享冲突
+	QString tempFilePath;
+	QByteArray tempPathUtf8;
+	if (!inputUrl.contains(QStringLiteral("://")) && QFile::exists(inputUrl))
+	{
+		tempFilePath = QDir::temp().absoluteFilePath(
+			QStringLiteral("fplayer_push_") + QString::number(QDateTime::currentMSecsSinceEpoch())
+			+ QStringLiteral("_") + QFileInfo(inputUrl).fileName());
+		if (QFile::copy(inputUrl, tempFilePath))
+		{
+			tempPathUtf8 = tempFilePath.toUtf8();
+			inPath = tempPathUtf8.constData();
+			appendLogLine(QStringLiteral("[拉流] 已拷贝输入文件到临时目录: %1").arg(tempFilePath));
+		}
+	}
 	appendLogLine(QStringLiteral("[拉流] remuxLoop start"));
 	appendLogLine(QStringLiteral("[拉流] 输入地址: %1").arg(inputUrl));
 	appendLogLine(QStringLiteral("[拉流] 输出地址: %1").arg(outputUrl.isEmpty() ? QStringLiteral("<预览模式，不保存文件>") : outputUrl));
@@ -1173,6 +1222,7 @@ cleanup:
 		QMutexLocker locker(&m_mutex);
 		m_lastExitCode = exitCode;
 	}
+	if (!tempFilePath.isEmpty()) { QFile::remove(tempFilePath); }
 	appendLogLine(QStringLiteral("[拉流] remuxLoop 结束 exitCode=%1 openRetry=%2 infoRetry=%3")
 	              .arg(exitCode)
 	              .arg(openRetryCount)
@@ -2869,6 +2919,7 @@ void fplayer::StreamFFmpeg::pushScreenLoop(const QString& outputUrl, const QStri
 	const QByteArray outUtf8 = outputUrl.toUtf8();
 	const char* outPath = outUtf8.constData();
 	const CaptureParams params = parseCaptureParams(captureSpec);
+	const QString frameBusSourceId = params.sourceId.isEmpty() ? QStringLiteral("default") : params.sourceId;
 	const int targetFps = qMax(1, params.fps);
 	avdevice_register_all();
 	AVFormatContext* audioIfmt = nullptr;
@@ -4010,6 +4061,7 @@ void fplayer::StreamFFmpeg::pushScreenPreviewLoop(const QString& outputUrl, cons
 	const QByteArray outUtf8 = outputUrl.toUtf8();
 	const char* outPath = outUtf8.constData();
 	const CaptureParams params = parseCaptureParams(captureSpec);
+	const QString frameBusSourceId = params.sourceId.isEmpty() ? QStringLiteral("default") : params.sourceId;
 	const int targetFps = qMax(1, params.fps);
 	const int frameIntervalMs = qMax(1, 1000 / targetFps);
 
@@ -4217,7 +4269,7 @@ void fplayer::StreamFFmpeg::pushScreenPreviewLoop(const QString& outputUrl, cons
 	}
 audio_preview_init_done:
 
-	fplayer::ScreenFrameBus::instance().setPublishTargetSize(0, 0);
+	fplayer::ScreenFrameBus::instance().setPublishTargetSize(0, 0, frameBusSourceId);
 	outPkt = av_packet_alloc();
 	encFrame = av_frame_alloc();
 	if (!outPkt || !encFrame)
@@ -4240,14 +4292,15 @@ audio_preview_init_done:
 	ofmt->interrupt_callback.callback = &StreamFFmpeg::interruptCallback;
 	ofmt->interrupt_callback.opaque = &m_stopRequest;
 
+	appendLogLine(QStringLiteral("[屏幕推流] 等待 ScreenFrameBus 帧 sourceId=%1").arg(frameBusSourceId));
 	// 等待当前屏幕预览帧可用，避免推流线程空跑。（暂停后总线不再更新 serial，需回退 snapshot 取最后一帧。）
 	for (int i = 0; i < 300 && !m_stopRequest.load(std::memory_order_relaxed); ++i)
 	{
-		if (fplayer::ScreenFrameBus::instance().snapshotIfNew(lastSerial, frame) && frame.width > 0 && frame.height > 0)
+		if (fplayer::ScreenFrameBus::instance().snapshotIfNew(lastSerial, frame, frameBusSourceId) && frame.width > 0 && frame.height > 0)
 		{
 			break;
 		}
-		frame = fplayer::ScreenFrameBus::instance().snapshot();
+		frame = fplayer::ScreenFrameBus::instance().snapshot(frameBusSourceId);
 		if (frame.valid && frame.width > 0 && frame.height > 0)
 		{
 			break;
@@ -4584,7 +4637,7 @@ audio_preview_init_done:
 	appendLogLine(QStringLiteral("[屏幕推流] 编码像素格式=%1").arg(static_cast<int>(encCtx->pix_fmt)));
 		appendLogLine(QStringLiteral("[屏幕推流] 编码节流=严格FPS 同分辨率=%1")
 		              .arg((frame.width == encCtx->width && frame.height == encCtx->height) ? QStringLiteral("直拷贝") : QStringLiteral("缩放")));
-		fplayer::ScreenFrameBus::instance().setPublishTargetSize(encCtx->width, encCtx->height);
+		fplayer::ScreenFrameBus::instance().setPublishTargetSize(encCtx->width, encCtx->height, frameBusSourceId);
 		appendLogLine(QStringLiteral("[屏幕推流] DXGI发布尺寸=%1x%2（采集阶段直接缩放）").arg(encCtx->width).arg(encCtx->height));
 		if (audioActive)
 		{
@@ -4602,13 +4655,29 @@ audio_preview_init_done:
 
 	if (!(ofmt->oformat->flags & AVFMT_NOFILE))
 	{
-		ret = avio_open2(&ofmt->pb, outPath, AVIO_FLAG_WRITE, nullptr, nullptr);
+		// P2P 模式下对端可能在上一轮连接断开后需要几秒释放流名，加重试避免 -138
+		for (int ioRetry = 0; ioRetry < 5; ++ioRetry)
+		{
+			if (m_stopRequest.load(std::memory_order_relaxed))
+			{
+				exitCode = AVERROR_EXIT;
+				setLastError(QStringLiteral("推流已被用户停止"));
+				goto cleanup;
+			}
+			ret = avio_open2(&ofmt->pb, outPath, AVIO_FLAG_WRITE, nullptr, nullptr);
+			if (ret >= 0) break;
+			if (ioRetry < 4)
+			{
+				appendLogLine(QStringLiteral("[屏幕推流] 打开输出失败(ret=%1)，推流线路重复或拉流端尚未启动，2秒后重试(%2/4)").arg(ret).arg(ioRetry + 1));
+				QThread::sleep(2);
+			}
+		}
 		if (ret < 0)
 		{
 			char errbuf[AV_ERROR_MAX_STRING_SIZE];
 			av_strerror(ret, errbuf, sizeof(errbuf));
 			exitCode = ret;
-			setLastError(QStringLiteral("打开推流输出地址失败: %1").arg(QString::fromUtf8(errbuf)));
+			setLastError(QStringLiteral("打开推流输出地址失败（推流线路重复或拉流端尚未启动）: %1").arg(QString::fromUtf8(errbuf)));
 			goto cleanup;
 		}
 	}
@@ -5177,11 +5246,11 @@ audio_preview_init_done:
 			writeFailed = true;
 			break;
 		}
-		const bool gotNew = fplayer::ScreenFrameBus::instance().snapshotIfNew(lastSerial, frame);
+		const bool gotNew = fplayer::ScreenFrameBus::instance().snapshotIfNew(lastSerial, frame, frameBusSourceId);
 		if (!gotNew)
 		{
 			// 预览暂停时 serial 不递增：用最后一帧按帧率重复编码，拉流端才能持续收到视频而非一直缓冲。
-			frame = fplayer::ScreenFrameBus::instance().snapshot();
+			frame = fplayer::ScreenFrameBus::instance().snapshot(frameBusSourceId);
 			if (!frame.valid || frame.width <= 0 || frame.height <= 0)
 			{
 				QThread::msleep(2);
@@ -5368,7 +5437,7 @@ audio_preview_init_done:
 	}
 
 cleanup:
-	fplayer::ScreenFrameBus::instance().setPublishTargetSize(0, 0);
+	fplayer::ScreenFrameBus::instance().setPublishTargetSize(0, 0, frameBusSourceId);
 	if (exitCode < 0)
 	{
 		const QString err = lastError();
@@ -5494,6 +5563,7 @@ void fplayer::StreamFFmpeg::pushCameraPreviewLoop(const QString& outputUrl, cons
 	const QByteArray outUtf8 = outputUrl.toUtf8();
 	const char* outPath = outUtf8.constData();
 	const CaptureParams params = parseCaptureParams(captureSpec);
+	const QString frameBusSourceId = params.sourceId.isEmpty() ? QStringLiteral("default") : params.sourceId;
 	const int targetFps = qMax(1, params.fps);
 	const int camHoldFrameIntervalMs = qMax(1, 1000 / targetFps);
 	const QString requestedAudioOut = params.audioOutputSource.trimmed();

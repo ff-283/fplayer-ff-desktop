@@ -1,6 +1,7 @@
 #include <fplayer/service/service.h>
 
 #include <QtMultimediaWidgets/QVideoWidget>
+#include <QDateTime>
 #include <QRegularExpression>
 #include <fplayer/common/maplist/maplist.hpp>
 #include <logger/logger.h>
@@ -452,7 +453,31 @@ bool fplayer::Service::streamStartPushByScene(PushScene scene, const QString& ou
 	}
 	case PushScene::File:
 	{
-		// 文件模式：未指定参数时走 remux/copy；指定码率/尺寸/帧率时走转码推流。
+		// Qt6 后端：通过 ScreenFrameBus 推流（播放器喂帧，架构统一）
+		if (m_player && m_player->getBackendType() == MediaBackendType::Qt6 && !sceneInput.isEmpty()
+		    && m_player->isPlaying())
+		{
+			const QString busId = QStringLiteral("file_push_") + QString::number(
+				QDateTime::currentMSecsSinceEpoch());
+			m_player->setComposeStreamBusId(busId);
+			QStringList pp;
+			pp << QStringLiteral("sourceid=%1").arg(busId);
+			if (options.fps > 0) pp << QStringLiteral("fps=%1").arg(options.fps);
+			else pp << QStringLiteral("fps=30");
+			if (options.width > 0 && options.height > 0)
+				pp << QStringLiteral("size=%1x%2").arg(options.width).arg(options.height);
+			if (options.bitrateKbps > 0)
+				pp << QStringLiteral("bitrate=%1").arg(options.bitrateKbps);
+			if (!options.videoEncoder.trimmed().isEmpty())
+				pp << QStringLiteral("encoder=%1").arg(options.videoEncoder.trimmed());
+			pp << QStringLiteral("audio_in=%1").arg(options.audioInputSource.trimmed().isEmpty()
+				? QStringLiteral("loopback") : options.audioInputSource.trimmed());
+			pp << QStringLiteral("audio_out=off");  // 文件推流不需要输出设备监听
+			const QString spec = QStringLiteral("__file_preview__:") + pp.join(';');
+			LOG_INFO("[推流] File(Qt6-preview): spec=%s", spec.toUtf8().constData());
+			return m_stream->startPush(spec, outputUrl);
+		}
+		// FFmpeg 后端：直接读文件推流（remux 或转码）
 		const bool needTranscode = options.bitrateKbps > 0 || options.fps > 0 || (options.width > 0 && options.height > 0);
 		if (!needTranscode)
 		{
