@@ -209,6 +209,16 @@ void PlayerQt6::setComposeStreamBusId(const QString& sourceId)
 	}
 }
 
+QImage PlayerQt6::currentFrameImage() const
+{
+	if (!m_videoSink)
+		return {};
+	QVideoFrame frame = m_videoSink->videoFrame();
+	if (!frame.isValid())
+		return {};
+	return frame.toImage();
+}
+
 void PlayerQt6::onVideoFrameChanged(const QVideoFrame& frame)
 {
 	if (!frame.isValid())

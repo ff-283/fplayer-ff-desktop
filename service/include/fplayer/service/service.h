@@ -91,6 +91,7 @@ namespace fplayer
 		void playerSetVolume(float volume);
 		float playerVolume() const;
 		QString playerDebugStats() const;
+		QImage playerCurrentFrameImage() const;
 		/** 文件播放 YUV 发布到 ScreenFrameBus 的通道（组合推流用）；传空停止发布。 */
 		void setPlayerComposeStreamBusId(const QString& sourceId);
 		QList<QString> getScreenList() const;

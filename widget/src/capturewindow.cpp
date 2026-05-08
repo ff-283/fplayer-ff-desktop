@@ -4396,7 +4396,25 @@ QImage CaptureWindow::buildComposeSnapshotImage(const QSize& outSize) const
 		{
 			continue;
 		}
-		painter.drawImage(target, srcImage);
+		{
+			// 保持源帧的宽高比，在目标区域内居中绘制，与预览窗口中的实际显示保持一致。
+			const double srcAspect = static_cast<double>(srcImage.width()) / qMax(1, srcImage.height());
+			const double targetAspect = static_cast<double>(target.width()) / qMax(1, target.height());
+			QRect fitted = target;
+			if (srcAspect > targetAspect)
+			{
+				const int fittedH = qMax(1, qRound(target.width() / srcAspect));
+				fitted.setY(target.y() + (target.height() - fittedH) / 2);
+				fitted.setHeight(fittedH);
+			}
+			else
+			{
+				const int fittedW = qMax(1, qRound(target.height() * srcAspect));
+				fitted.setX(target.x() + (target.width() - fittedW) / 2);
+				fitted.setWidth(fittedW);
+			}
+			painter.drawImage(fitted, srcImage);
+		}
 	}
 	painter.end();
 	return canvas;
@@ -4453,6 +4471,10 @@ void CaptureWindow::handleMainCaptureScreenshot()
 		{
 			sourceImage = i420ToImage(frame.y, frame.u, frame.v, frame.width, frame.height, frame.yStride, frame.uStride, frame.vStride);
 		}
+	}
+	else if (m_captureMode == CaptureMode::File && m_service)
+	{
+		sourceImage = m_service->playerCurrentFrameImage();
 	}
 	if (sourceImage.isNull())
 	{

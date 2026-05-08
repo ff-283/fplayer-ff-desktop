@@ -44,6 +44,7 @@ namespace fplayer
 		bool isPlaying() const override;
 		void setPreviewTarget(const PreviewTarget& target) override;
 		void setComposeStreamBusId(const QString& sourceId) override;
+		QImage currentFrameImage() const override;
 
 	private slots:
 		void onVideoFrameChanged(const QVideoFrame& frame);

@@ -15,6 +15,8 @@
 #include <QtTypes>
 #include <atomic>
 
+class QImage;
+
 namespace fplayer
 {
     class FPLAYER_API_EXPORT IPlayer
@@ -39,6 +41,9 @@ namespace fplayer
 
             /** 组合推流时向 ScreenFrameBus 发布的通道 ID；空字符串表示不发布。 */
             virtual void setComposeStreamBusId(const QString& sourceId) { (void)sourceId; }
+
+            /** 获取当前视频帧图像；默认返回空 QImage。 */
+            virtual QImage currentFrameImage() const;
 
             MediaBackendType getBackendType() const;
 

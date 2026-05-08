@@ -77,6 +77,109 @@ if (WIN32 AND MSVC)
     # Auto-generate product GUID for each build.
     set(CPACK_WIX_PRODUCT_GUID "*")
     set(CPACK_WIX_PRODUCT_ICON "${FPLAYER_WINDOWS_ICON}")
+
+    # ---- VC++ Redistributable (VCRUNTIME140.dll, MSVCP140.dll, etc.) ----
+    # Find or download vc_redist.x64.exe so target machines don't show "missing VCRUNTIME140.dll".
+    set(_vcredist_exe "")
+
+    # Helper: check downloaded file is non-empty, delete if broken
+    macro(_verify_vcredist _path)
+        if(EXISTS "${_path}")
+            file(SIZE "${_path}" _vcs)
+            if(_vcs GREATER 0)
+                set(_vcredist_exe "${_path}")
+            else()
+                message(WARNING "Removing zero-byte vc_redist.x64.exe: ${_path}")
+                file(REMOVE "${_path}")
+            endif()
+        endif()
+    endmacro()
+
+    # 1) Pre-downloaded copy in cmake/ or disk/vcredist (offline / CI cache)
+    _verify_vcredist("${CMAKE_SOURCE_DIR}/cmake/vc_redist.x64.exe")
+    if(_vcredist_exe)
+        file(COPY "${_vcredist_exe}" DESTINATION "${CMAKE_SOURCE_DIR}/disk/vcredist")
+    else()
+        _verify_vcredist("${CMAKE_SOURCE_DIR}/disk/vcredist/vc_redist.x64.exe")
+    endif()
+
+    # 2) Search Visual Studio 2022 installation
+    if(NOT _vcredist_exe)
+        foreach(_edition Community Professional Enterprise BuildTools)
+            file(GLOB _vcredist_candidates
+                "C:/Program Files/Microsoft Visual Studio/2022/${_edition}/VC/Redist/MSVC/*/x64/Microsoft.VC143.CRT/vc_redist.x64.exe"
+            )
+            if(_vcredist_candidates)
+                list(GET _vcredist_candidates 0 _vcredist_exe)
+                break()
+            endif()
+        endforeach()
+    endif()
+
+    # 3) Download from Microsoft (aka.ms redirects to latest VC++ 2022 redist)
+    if(NOT _vcredist_exe)
+        set(_vcredist_dl_dir "${CMAKE_BINARY_DIR}/vcredist")
+        set(_vcredist_exe "${_vcredist_dl_dir}/vc_redist.x64.exe")
+        _verify_vcredist("${_vcredist_exe}")  # re-check after possible failed download
+        if(NOT _vcredist_exe)
+            file(MAKE_DIRECTORY "${_vcredist_dl_dir}")
+            message(STATUS "Downloading VC++ Redistributable from Microsoft...")
+            file(DOWNLOAD
+                "https://aka.ms/vs/17/release/vc_redist.x64.exe"
+                "${_vcredist_exe}"
+                STATUS _vcredist_dl_status
+                TLS_VERIFY ON
+                TIMEOUT 120
+            )
+            list(GET _vcredist_dl_status 0 _vcredist_dl_code)
+            if(NOT _vcredist_dl_code EQUAL 0)
+                list(GET _vcredist_dl_status 1 _vcredist_dl_error)
+                message(WARNING "Failed to download VC++ Redistributable: ${_vcredist_dl_error}")
+                message(WARNING "Installers will NOT include the VC++ runtime.")
+                message(WARNING "Download it manually and place at: ${_vcredist_exe}")
+                message(WARNING "  https://aka.ms/vs/17/release/vc_redist.x64.exe")
+                set(_vcredist_exe "")
+            else()
+                _verify_vcredist("${_vcredist_exe}")
+                if(_vcredist_exe)
+                    message(STATUS "Downloaded VC++ Redistributable successfully.")
+                else()
+                    message(WARNING "Download completed but file is empty. Place manually at disk/vcredist/")
+                endif()
+            endif()
+        endif()
+    endif()
+
+    if(_vcredist_exe AND EXISTS "${_vcredist_exe}")
+        message(STATUS "Bundling VC++ Redistributable: ${_vcredist_exe}")
+
+        # Ship the redist installer inside the package
+        install(
+            FILES "${_vcredist_exe}"
+            DESTINATION "${CMAKE_INSTALL_BINDIR}"
+        )
+
+        # NSIS: run redist silently after files are laid down, then delete it.
+        # We use CPACK_PROJECT_CONFIG_FILE (an extra CMake file included by
+        # CPackConfig.cmake at CPack time) to set the NSIS commands via a
+        # bracket argument.  This avoids the double-quote escaping problem
+        # that would happen if the commands went through CPackConfig.cmake's
+        # own double-quoted set().
+        file(WRITE "${CMAKE_BINARY_DIR}/CPackExtra.cmake" [=[
+set(CPACK_NSIS_EXTRA_INSTALL_COMMANDS [==[
+DetailPrint "Installing Visual C++ Redistributable..."
+ExecWait '"$INSTDIR\bin\vc_redist.x64.exe" /install /quiet /norestart' $0
+DetailPrint "VC++ Redistributable exit code: $0"
+Delete "$INSTDIR\bin\vc_redist.x64.exe"
+]==])
+]=])
+        set(CPACK_PROJECT_CONFIG_FILE "${CMAKE_BINARY_DIR}/CPackExtra.cmake")
+    else()
+        message(WARNING "VC++ Redistributable not available.")
+        message(WARNING "Target machines may see \"VCRUNTIME140.dll not found\".")
+        message(WARNING "Users must install the VC++ runtime manually:")
+        message(WARNING "  https://aka.ms/vs/17/release/vc_redist.x64.exe")
+    endif()
 endif()
 include(CPack)
 

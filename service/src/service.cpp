@@ -284,6 +284,11 @@ QString fplayer::Service::playerDebugStats() const
 	return m_player ? m_player->debugStats() : QStringLiteral("n/a");
 }
 
+QImage fplayer::Service::playerCurrentFrameImage() const
+{
+	return m_player ? m_player->currentFrameImage() : QImage{};
+}
+
 void fplayer::Service::setPlayerComposeStreamBusId(const QString& sourceId)
 {
 	if (m_player)
