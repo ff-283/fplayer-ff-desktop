@@ -4002,6 +4002,18 @@ void CaptureWindow::openCaptureSettingsDialog(QWidget* parent)
 		if (c.isValid()) { updateSysSenderSwatch(c.name()); sysSenderColorLabel->setText(c.name()); }
 	});
 
+	auto* lblLinks = new QLabel(tr("── 相关链接 ──"), &dlg);
+	lblLinks->setStyleSheet(QStringLiteral("font-weight: bold; color: #6e6e73; margin-top: 8px;"));
+	layout->addRow(lblLinks);
+	auto* linkLabel = new QLabel(&dlg);
+	linkLabel->setTextFormat(Qt::RichText);
+	linkLabel->setOpenExternalLinks(true);
+	linkLabel->setText(QStringLiteral(
+		"%1: <a href=\"http://codis.fun:5003\">http://codis.fun:5003</a>&nbsp;&nbsp;|&nbsp;&nbsp;"
+		"%2: <a href=\"https://github.com/ff-283\">https://github.com/ff-283</a>"
+	).arg(tr("官网地址"), tr("GitHub")));
+	layout->addRow(linkLabel);
+
 	auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
 	layout->addRow(buttons);
 	connect(shotBrowse, &QPushButton::clicked, &dlg, [shotPath, this]() {

@@ -1,0 +1,94 @@
+<mxfile host="app.diagrams.net">
+  <diagram name="第 1 页" id="Dz5JJIXmy9I0Iw3mRjae">
+    <mxGraphModel dx="1201" dy="764" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="750" pageHeight="480" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="l7_bg" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F5F6FA;strokeColor=#34495E;strokeWidth=1;" value="" vertex="1">
+          <mxGeometry height="34" width="630" x="60" y="20" as="geometry" />
+        </mxCell>
+        <mxCell id="l7_label" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=9;fontStyle=1;fontColor=#2C3E50;" value="App" vertex="1">
+          <mxGeometry height="30" width="35" x="65" y="22" as="geometry" />
+        </mxCell>
+        <mxCell id="l7_box" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#BDC3C7;fontColor=#2C3E50;fontSize=8;align=left;spacingLeft=8;" value="main.cpp — CLI 解析 · OpenGL 初始化 · QApplication · CaptureWindow" vertex="1">
+          <mxGeometry height="28" width="560" x="110" y="23" as="geometry" />
+        </mxCell>
+        <mxCell id="l6_bg" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F5F6FA;strokeColor=#34495E;strokeWidth=1;" value="" vertex="1">
+          <mxGeometry height="34" width="630" x="60" y="62" as="geometry" />
+        </mxCell>
+        <mxCell id="l6_label" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=9;fontStyle=1;fontColor=#2C3E50;" value="Widget" vertex="1">
+          <mxGeometry height="30" width="40" x="65" y="64" as="geometry" />
+        </mxCell>
+        <mxCell id="l6_box" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#BDC3C7;fontColor=#2C3E50;fontSize=8;align=left;spacingLeft=8;" value="CaptureWindow (主窗口) · FVideoView (视频预览) · ImagePoolSidebar (截图面板) · AiChatDialog" vertex="1">
+          <mxGeometry height="28" width="560" x="110" y="65" as="geometry" />
+        </mxCell>
+        <mxCell id="l5_bg" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F5F6FA;strokeColor=#34495E;strokeWidth=1;" value="" vertex="1">
+          <mxGeometry height="34" width="630" x="60" y="104" as="geometry" />
+        </mxCell>
+        <mxCell id="l5_label" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=9;fontStyle=1;fontColor=#2C3E50;" value="Service" vertex="1">
+          <mxGeometry height="30" width="40" x="65" y="106" as="geometry" />
+        </mxCell>
+        <mxCell id="l5_box" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#BDC3C7;fontColor=#2C3E50;fontSize=8;align=left;spacingLeft=8;" value="Service (业务门面) · ImagePoolService · AiService · SystemSettingsRepository" vertex="1">
+          <mxGeometry height="28" width="560" x="110" y="107" as="geometry" />
+        </mxCell>
+        <mxCell id="l4_bg" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EBF5FB;strokeColor=#2471A3;strokeWidth=1;" value="" vertex="1">
+          <mxGeometry height="34" width="630" x="60" y="146" as="geometry" />
+        </mxCell>
+        <mxCell id="l4_label" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=9;fontStyle=1;fontColor=#2471A3;" value="Runtime" vertex="1">
+          <mxGeometry height="30" width="40" x="65" y="148" as="geometry" />
+        </mxCell>
+        <mxCell id="l4_box" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#2471A3;fontColor=#2C3E50;fontSize=8;align=left;spacingLeft=8;" value="RunTime — 抽象工厂: createCamera() · createPlayer() · createScreenCapture() · createStream() [依赖反转]" vertex="1">
+          <mxGeometry height="28" width="560" x="110" y="149" as="geometry" />
+        </mxCell>
+        <mxCell id="l3_bg" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F5F6FA;strokeColor=#34495E;strokeWidth=1;" value="" vertex="1">
+          <mxGeometry height="68" width="630" x="60" y="188" as="geometry" />
+        </mxCell>
+        <mxCell id="l3_label" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=9;fontStyle=1;fontColor=#2C3E50;" value="Backend" vertex="1">
+          <mxGeometry height="64" width="40" x="65" y="190" as="geometry" />
+        </mxCell>
+        <mxCell id="l3_r1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#BDC3C7;fontColor=#2C3E50;fontSize=7.5;align=left;spacingLeft=6;" value="media_qt6 (CameraQt6 · PlayerQt6 · ScreenCaptureQt6)" vertex="1">
+          <mxGeometry height="26" width="280" x="110" y="191" as="geometry" />
+        </mxCell>
+        <mxCell id="l3_r2" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#BDC3C7;fontColor=#2C3E50;fontSize=7.5;align=left;spacingLeft=6;" value="media_ffmpeg (CameraFFmpeg · PlayerFFmpeg · ScreenCaptureFFmpeg)" vertex="1">
+          <mxGeometry height="26" width="270" x="405" y="191" as="geometry" />
+        </mxCell>
+        <mxCell id="l3_r3" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#BDC3C7;fontColor=#2C3E50;fontSize=7.5;align=left;spacingLeft=6;" value="desktopcapture_dxgi (ScreenCaptureDxgi) · stream_ffmpeg (StreamFFmpeg) · net_qt6 (占位)" vertex="1">
+          <mxGeometry height="26" width="560" x="110" y="224" as="geometry" />
+        </mxCell>
+        <mxCell id="l2_bg" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FDF2E9;strokeColor=#B9770E;strokeWidth=1;" value="" vertex="1">
+          <mxGeometry height="34" width="630" x="60" y="264" as="geometry" />
+        </mxCell>
+        <mxCell id="l2_label" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=9;fontStyle=1;fontColor=#B9770E;" value="API" vertex="1">
+          <mxGeometry height="30" width="35" x="65" y="266" as="geometry" />
+        </mxCell>
+        <mxCell id="l2_box" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#B9770E;fontColor=#2C3E50;fontSize=8;align=left;spacingLeft=8;" value="纯虚接口: ICamera | IPlayer | IScreenCapture | IStream | IFVideoView | PreviewTarget | MediaBackendType" vertex="1">
+          <mxGeometry height="28" width="560" x="110" y="267" as="geometry" />
+        </mxCell>
+        <mxCell id="l1_bg" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F5F6FA;strokeColor=#34495E;strokeWidth=1;" value="" vertex="1">
+          <mxGeometry height="34" width="630" x="60" y="306" as="geometry" />
+        </mxCell>
+        <mxCell id="l1_label" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=9;fontStyle=1;fontColor=#2C3E50;" value="Common" vertex="1">
+          <mxGeometry height="30" width="40" x="65" y="308" as="geometry" />
+        </mxCell>
+        <mxCell id="l1_box" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#BDC3C7;fontColor=#2C3E50;fontSize=8;align=left;spacingLeft=8;" value="FGLWidget (YUV渲染) · CameraFrameBus / ScreenFrameBus (帧总线) · QtLoggerAdapter · DesignTokens" vertex="1">
+          <mxGeometry height="28" width="560" x="110" y="309" as="geometry" />
+        </mxCell>
+        <mxCell id="ext_bg" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EAECEE;strokeColor=#7F8C8D;strokeWidth=1;" value="" vertex="1">
+          <mxGeometry height="30" width="630" x="60" y="348" as="geometry" />
+        </mxCell>
+        <mxCell id="ext_box" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#BDC3C7;fontColor=#2C3E50;fontSize=8;align=left;spacingLeft=8;" value="外部依赖: Qt 6.10 · FFmpeg 8.1 · DirectX 11 + DXGI · spdlog · yaml-cpp · WASAPI" vertex="1">
+          <mxGeometry height="26" width="560" x="110" y="350" as="geometry" />
+        </mxCell>
+        <mxCell id="dep_line" edge="1" parent="1" style="endArrow=block;endFill=1;html=1;strokeColor=#7F8C8D;strokeWidth=1;" value="">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="28" y="338" as="sourcePoint" />
+            <mxPoint x="28" y="35" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="title" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=11;fontStyle=1;fontColor=#2C3E50;" value="图 X&amp;nbsp;&amp;nbsp;FPlayer Desktop 系统分层架构" vertex="1">
+          <mxGeometry height="20" width="350" x="200" y="386" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

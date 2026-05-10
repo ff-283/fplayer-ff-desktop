@@ -1,0 +1,223 @@
+<mxfile host="app.diagrams.net">
+  <diagram name="第 1 页" id="vEboPhrRG-ExVV-xdFn9">
+    <mxGraphModel dx="1092" dy="695" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1000" pageHeight="750" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=14;fontStyle=1;fontColor=#2C3E50;" value="FPlayer Desktop — 推拉流流程" vertex="1">
+          <mxGeometry height="24" width="400" x="300" y="8" as="geometry" />
+        </mxCell>
+        <mxCell id="push_zone" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FDF2E9;strokeColor=#E67E22;strokeWidth=1.5;dashed=1;" value="" vertex="1">
+          <mxGeometry height="620" width="440" x="30" y="42" as="geometry" />
+        </mxCell>
+        <mxCell id="push_label" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=12;fontStyle=1;fontColor=#E67E22;" value="推流 (Push)" vertex="1">
+          <mxGeometry height="18" width="100" x="38" y="44" as="geometry" />
+        </mxCell>
+        <mxCell id="ps_src" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E67E22;strokeColor=#D35400;fontColor=#FFFFFF;fontSize=9;fontStyle=1;align=center;" value="选择推流场景 (PushScene)" vertex="1">
+          <mxGeometry height="28" width="200" x="130" y="70" as="geometry" />
+        </mxCell>
+        <mxCell id="ps_r1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#E67E22;fontColor=#2C3E50;fontSize=8;align=center;" value="摄像头推流&lt;br&gt;__camera_preview__" vertex="1">
+          <mxGeometry height="32" width="160" x="50" y="130" as="geometry" />
+        </mxCell>
+        <mxCell id="ps_r2" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#E67E22;fontColor=#2C3E50;fontSize=8;align=center;" value="文件推流 (remux)&lt;br&gt;不转码，仅换封装" vertex="1">
+          <mxGeometry height="32" width="160" x="250" y="130" as="geometry" />
+        </mxCell>
+        <mxCell id="ps_r3" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#E67E22;fontColor=#2C3E50;fontSize=8;align=center;" value="屏幕推流&lt;br&gt;__screen_capture__" vertex="1">
+          <mxGeometry height="32" width="160" x="50" y="185" as="geometry" />
+        </mxCell>
+        <mxCell id="ps_r4" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#E67E22;fontColor=#2C3E50;fontSize=8;align=center;" value="组合推流 (compose)&lt;br&gt;多源画布合成" vertex="1">
+          <mxGeometry height="32" width="160" x="250" y="185" as="geometry" />
+        </mxCell>
+        <mxCell id="ps_a0_1" edge="1" parent="1" style="endArrow=block;endFill=1;html=1;strokeColor=#E67E22;strokeWidth=1;" value="">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="180" y="98" as="sourcePoint" />
+            <mxPoint x="130" y="130" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ps_a0_2" edge="1" parent="1" style="endArrow=block;endFill=1;html=1;strokeColor=#E67E22;strokeWidth=1;" value="">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="260" y="98" as="sourcePoint" />
+            <mxPoint x="330" y="130" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ps_a1_3" edge="1" parent="1" style="endArrow=block;endFill=1;html=1;strokeColor=#E67E22;strokeWidth=1;" value="">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="130" y="162" as="sourcePoint" />
+            <mxPoint x="130" y="185" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ps_a2_4" edge="1" parent="1" style="endArrow=block;endFill=1;html=1;strokeColor=#E67E22;strokeWidth=1;" value="">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="330" y="162" as="sourcePoint" />
+            <mxPoint x="330" y="185" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ps_spec" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#E67E22;fontColor=#2C3E50;fontSize=9;align=center;" value="构建 Push Spec 字符串&lt;br&gt;(streamffmpeg_helpers 解析)" vertex="1">
+          <mxGeometry height="36" width="210" x="130" y="250" as="geometry" />
+        </mxCell>
+        <mxCell id="ps_a_spec1" edge="1" parent="1" style="endArrow=block;endFill=1;html=1;strokeColor=#E67E22;strokeWidth=1;" value="">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="130" y="217" as="sourcePoint" />
+            <mxPoint x="180" y="250" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ps_a_spec2" edge="1" parent="1" style="endArrow=block;endFill=1;html=1;strokeColor=#E67E22;strokeWidth=1;" value="">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="330" y="217" as="sourcePoint" />
+            <mxPoint x="280" y="250" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ps_core" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E67E22;strokeColor=#D35400;fontColor=#FFFFFF;fontSize=9;fontStyle=1;align=center;" value="StreamFFmpeg::startPush()&lt;br&gt;std::thread 后台执行" vertex="1">
+          <mxGeometry height="36" width="210" x="130" y="320" as="geometry" />
+        </mxCell>
+        <mxCell id="ps_a_core" edge="1" parent="1" style="endArrow=block;endFill=1;html=1;strokeColor=#E67E22;strokeWidth=1;" value="">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="235" y="286" as="sourcePoint" />
+            <mxPoint x="235" y="320" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ps_p1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#E67E22;fontColor=#2C3E50;fontSize=8;align=center;" value="remuxLoop&lt;br&gt;av_read_frame → av_write_frame" vertex="1">
+          <mxGeometry height="36" width="160" x="50" y="390" as="geometry" />
+        </mxCell>
+        <mxCell id="ps_p2" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#E67E22;fontColor=#2C3E50;fontSize=8;align=center;" value="pushCameraLoop / pushScreenLoop&lt;br&gt;采集 → avcodec_encode → av_write_frame" vertex="1">
+          <mxGeometry height="36" width="180" x="250" y="390" as="geometry" />
+        </mxCell>
+        <mxCell id="ps_a_p1" edge="1" parent="1" style="endArrow=block;endFill=1;html=1;strokeColor=#E67E22;strokeWidth=1;" value="">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="170" y="356" as="sourcePoint" />
+            <mxPoint x="130" y="390" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ps_a_p2" edge="1" parent="1" style="endArrow=block;endFill=1;html=1;strokeColor=#E67E22;strokeWidth=1;" value="">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="290" y="356" as="sourcePoint" />
+            <mxPoint x="340" y="390" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ps_audio" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFF3E0;strokeColor=#E67E22;fontColor=#2C3E50;fontSize=8;align=center;dashed=1;" value="AudioPipeline (WASAPI loopback)&lt;br&gt;音频采集 → swresample → 编码混入" vertex="1">
+          <mxGeometry height="32" width="250" x="100" y="450" as="geometry" />
+        </mxCell>
+        <mxCell id="ps_a_audio" edge="1" parent="1" style="endArrow=block;endFill=1;html=1;strokeColor=#E67E22;strokeWidth=1;dashed=1;" value="">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="255" y="426" as="sourcePoint" />
+            <mxPoint x="225" y="450" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ps_out" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D35400;strokeColor=#A04000;fontColor=#FFFFFF;fontSize=9;fontStyle=1;align=center;" value="avformat 封装输出&lt;br&gt;RTMP / RTSP / SRT / HTTP-FLV" vertex="1">
+          <mxGeometry height="36" width="250" x="100" y="515" as="geometry" />
+        </mxCell>
+        <mxCell id="ps_a_out1" edge="1" parent="1" style="endArrow=block;endFill=1;html=1;strokeColor=#E67E22;strokeWidth=1;" value="">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="130" y="426" as="sourcePoint" />
+            <mxPoint x="180" y="515" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ps_a_out2" edge="1" parent="1" style="endArrow=block;endFill=1;html=1;strokeColor=#E67E22;strokeWidth=1;" value="">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="340" y="426" as="sourcePoint" />
+            <mxPoint x="280" y="515" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ps_log" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FDEBD0;strokeColor=#E67E22;fontColor=#2C3E50;fontSize=8;align=center;dashed=1;" value="推流状态回调 (信号槽) → UI 日志展示" vertex="1">
+          <mxGeometry height="26" width="230" x="110" y="575" as="geometry" />
+        </mxCell>
+        <mxCell id="ps_a_log" edge="1" parent="1" style="endArrow=block;endFill=1;html=1;strokeColor=#E67E22;strokeWidth=1;dashed=1;" value="">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="225" y="551" as="sourcePoint" />
+            <mxPoint x="225" y="575" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="pull_zone" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EBF5FB;strokeColor=#2471A3;strokeWidth=1.5;dashed=1;" value="" vertex="1">
+          <mxGeometry height="620" width="460" x="500" y="42" as="geometry" />
+        </mxCell>
+        <mxCell id="pull_label" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=12;fontStyle=1;fontColor=#2471A3;" value="拉流 (Pull)" vertex="1">
+          <mxGeometry height="18" width="100" x="508" y="44" as="geometry" />
+        </mxCell>
+        <mxCell id="pl_src" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#2471A3;strokeColor=#1A5276;fontColor=#FFFFFF;fontSize=9;fontStyle=1;align=center;" value="输入 URL&lt;br&gt;RTMP / RTSP / HTTP-FLV / SRT" vertex="1">
+          <mxGeometry height="36" width="220" x="610" y="70" as="geometry" />
+        </mxCell>
+        <mxCell id="pl_core" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#2471A3;strokeColor=#1A5276;fontColor=#FFFFFF;fontSize=9;fontStyle=1;align=center;" value="StreamFFmpeg::startPull()&lt;br&gt;std::thread 后台执行" vertex="1">
+          <mxGeometry height="36" width="220" x="610" y="140" as="geometry" />
+        </mxCell>
+        <mxCell id="pl_a1" edge="1" parent="1" style="endArrow=block;endFill=1;html=1;strokeColor=#2471A3;strokeWidth=1;" value="">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="720" y="106" as="sourcePoint" />
+            <mxPoint x="720" y="140" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="pl_fork" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#2471A3;fontColor=#2C3E50;fontSize=9;align=center;" value="avformat_open_input&lt;br&gt;解封装 → 获取流信息" vertex="1">
+          <mxGeometry height="36" width="220" x="610" y="210" as="geometry" />
+        </mxCell>
+        <mxCell id="pl_a2" edge="1" parent="1" style="endArrow=block;endFill=1;html=1;strokeColor=#2471A3;strokeWidth=1;" value="">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="720" y="176" as="sourcePoint" />
+            <mxPoint x="720" y="210" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="pl_rec" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#2471A3;fontColor=#2C3E50;fontSize=8;align=center;" value="录制到本地文件&lt;br&gt;av_read_frame → av_write_frame" vertex="1">
+          <mxGeometry height="36" width="180" x="535" y="285" as="geometry" />
+        </mxCell>
+        <mxCell id="pl_a_rec" edge="1" parent="1" style="endArrow=block;endFill=1;html=1;strokeColor=#2471A3;strokeWidth=1;" value="">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="670" y="246" as="sourcePoint" />
+            <mxPoint x="625" y="285" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="pl_pre" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#2471A3;fontColor=#2C3E50;fontSize=8;align=center;" value="解码 → YUV420P&lt;br&gt;avcodec_decode → FrameBus" vertex="1">
+          <mxGeometry height="36" width="180" x="760" y="285" as="geometry" />
+        </mxCell>
+        <mxCell id="pl_a_pre" edge="1" parent="1" style="endArrow=block;endFill=1;html=1;strokeColor=#2471A3;strokeWidth=1;" value="">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="770" y="246" as="sourcePoint" />
+            <mxPoint x="850" y="285" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="pl_view" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#D6EAF8;strokeColor=#2471A3;fontColor=#2C3E50;fontSize=8;align=center;" value="FGLWidget 渲染预览&lt;br&gt;+ 音量控制" vertex="1">
+          <mxGeometry height="32" width="180" x="760" y="355" as="geometry" />
+        </mxCell>
+        <mxCell id="pl_a_view" edge="1" parent="1" style="endArrow=block;endFill=1;html=1;strokeColor=#2471A3;strokeWidth=1;" value="">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="850" y="321" as="sourcePoint" />
+            <mxPoint x="850" y="355" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="pl_file" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#D6EAF8;strokeColor=#2471A3;fontColor=#2C3E50;fontSize=8;align=center;" value="MP4 / FLV / MKV 本地文件" vertex="1">
+          <mxGeometry height="32" width="180" x="535" y="355" as="geometry" />
+        </mxCell>
+        <mxCell id="pl_a_file" edge="1" parent="1" style="endArrow=block;endFill=1;html=1;strokeColor=#2471A3;strokeWidth=1;" value="">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="625" y="321" as="sourcePoint" />
+            <mxPoint x="625" y="355" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="pl_log" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#D6EAF8;strokeColor=#2471A3;fontColor=#2C3E50;fontSize=8;align=center;dashed=1;" value="拉流状态 / SPS-PPS 日志 → UI 展示" vertex="1">
+          <mxGeometry height="26" width="230" x="590" y="420" as="geometry" />
+        </mxCell>
+        <mxCell id="pl_a_log1" edge="1" parent="1" style="endArrow=block;endFill=1;html=1;strokeColor=#2471A3;strokeWidth=1;dashed=1;" value="">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="625" y="387" as="sourcePoint" />
+            <mxPoint x="680" y="420" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="pl_a_log2" edge="1" parent="1" style="endArrow=block;endFill=1;html=1;strokeColor=#2471A3;strokeWidth=1;dashed=1;" value="">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="850" y="387" as="sourcePoint" />
+            <mxPoint x="750" y="420" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="pl_stop" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EAF2F8;strokeColor=#2471A3;fontColor=#2C3E50;fontSize=8;align=center;dashed=1;" value="用户停止 / 流结束 → StreamFFmpeg::stop() → 释放资源" vertex="1">
+          <mxGeometry height="26" width="300" x="560" y="475" as="geometry" />
+        </mxCell>
+        <mxCell id="common_box" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F5F6FA;strokeColor=#7F8C8D;strokeWidth=1;" value="" vertex="1">
+          <mxGeometry height="30" width="500" x="250" y="620" as="geometry" />
+        </mxCell>
+        <mxCell id="common_txt" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=8;fontColor=#7F8C8D;" value="共用基础设施:  CameraFrameBus / ScreenFrameBus  ·  FGLWidget (OpenGL)  ·  WASAPI 音频" vertex="1">
+          <mxGeometry height="22" width="490" x="255" y="624" as="geometry" />
+        </mxCell>
+        <mxCell id="note" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=8;fontStyle=2;fontColor=#7F8C8D;" value="StreamFFmpeg 统一管理推拉流生命周期，内部线程由 startPush/startPull 创建，stop() 回收。spec 字符串定义输入源、编码参数与输出 URL。" vertex="1">
+          <mxGeometry height="18" width="700" x="150" y="660" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

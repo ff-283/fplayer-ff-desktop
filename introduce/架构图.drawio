@@ -1,0 +1,259 @@
+<mxfile host="Electron" agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) draw.io/28.2.5 Chrome/138.0.7204.251 Electron/37.6.1 Safari/537.36" version="28.2.5">
+  <diagram name="第 1 页" id="DeM35F2B5SONInaOGmDN">
+    <mxGraphModel dx="1213" dy="828" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1800" pageHeight="1150" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" value="FPlayer Desktop — 系统分层架构图" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=22;fontStyle=1;fontColor=#2C3E50;fontFamily=Courier New;" parent="1" vertex="1">
+          <mxGeometry x="400" y="15" width="700" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="可插拔后端架构的跨平台桌面多媒体应用" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=12;fontStyle=2;fontColor=#7F8C8D;fontFamily=Courier New;" parent="1" vertex="1">
+          <mxGeometry x="400" y="48" width="700" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="l7_bg" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F5F6FA;strokeColor=#34495E;strokeWidth=2;" parent="1" vertex="1">
+          <mxGeometry x="60" y="85" width="1480" height="72" as="geometry" />
+        </mxCell>
+        <mxCell id="l7_tag" value="第 7 层" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#2C3E50;strokeColor=#2C3E50;fontColor=#FFFFFF;fontSize=9;fontStyle=1;" parent="1" vertex="1">
+          <mxGeometry x="60" y="85" width="50" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="l7_label" value="应用入口" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=12;fontStyle=1;fontColor=#2C3E50;" parent="1" vertex="1">
+          <mxGeometry x="118" y="86" width="80" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="l7_box" value="&lt;b&gt;main.cpp&lt;/b&gt; — 程序入口&lt;br&gt;• 命令行解析: --backend &amp;lt;0|1&amp;gt; (FFmpeg / Qt6)&lt;br&gt;• Qt 日志重定向至 spdlog&lt;br&gt;• OpenGL Surface 初始化&lt;br&gt;• 创建 QApplication 与 CaptureWindow" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#BDC3C7;fontColor=#2C3E50;fontSize=10;align=left;spacingLeft=10;" parent="1" vertex="1">
+          <mxGeometry x="210" y="92" width="500" height="58" as="geometry" />
+        </mxCell>
+        <mxCell id="l6_bg" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F5F6FA;strokeColor=#34495E;strokeWidth=2;" parent="1" vertex="1">
+          <mxGeometry x="60" y="175" width="1480" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="l6_tag" value="第 6 层" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#2C3E50;strokeColor=#2C3E50;fontColor=#FFFFFF;fontSize=9;fontStyle=1;" parent="1" vertex="1">
+          <mxGeometry x="60" y="175" width="50" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="l6_label" value="UI 表现层 (Widget)" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=12;fontStyle=1;fontColor=#2C3E50;" parent="1" vertex="1">
+          <mxGeometry x="118" y="176" width="170" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="l6_a" value="&lt;b&gt;CaptureWindow&lt;/b&gt;&lt;br&gt;主窗口控制器&lt;br&gt;模式切换: 相机 | 文件 | 屏幕&lt;br&gt;组合画布 | 系统托盘" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#BDC3C7;fontColor=#2C3E50;fontSize=10;align=left;spacingLeft=10;" parent="1" vertex="1">
+          <mxGeometry x="210" y="210" width="250" height="72" as="geometry" />
+        </mxCell>
+        <mxCell id="l6_b" value="&lt;b&gt;FVideoView&lt;/b&gt;&lt;br&gt;视频预览控件&lt;br&gt;双后端: QVideoWidget&lt;br&gt;+ FGLWidget (OpenGL)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#BDC3C7;fontColor=#2C3E50;fontSize=10;align=left;spacingLeft=10;" parent="1" vertex="1">
+          <mxGeometry x="500" y="210" width="240" height="72" as="geometry" />
+        </mxCell>
+        <mxCell id="l6_c" value="&lt;b&gt;ImagePoolSidebar&lt;/b&gt;&lt;br&gt;截图缩略图面板&lt;br&gt;排序 | 刷新 | 右键菜单&lt;br&gt;QFileSystemWatcher" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#BDC3C7;fontColor=#2C3E50;fontSize=10;align=left;spacingLeft=10;" parent="1" vertex="1">
+          <mxGeometry x="775" y="210" width="230" height="72" as="geometry" />
+        </mxCell>
+        <mxCell id="l6_d" value="&lt;b&gt;ImageViewerDialog&lt;/b&gt;&lt;br&gt;全屏图片查看器&lt;br&gt;缩放 | 导航 | 快捷键" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#BDC3C7;fontColor=#2C3E50;fontSize=10;align=left;spacingLeft=10;" parent="1" vertex="1">
+          <mxGeometry x="1050" y="210" width="210" height="72" as="geometry" />
+        </mxCell>
+        <mxCell id="l6_e" value="&lt;b&gt;AiChatDialog&lt;/b&gt;&lt;br&gt;+ ChatBubbleWidget&lt;br&gt;AI 对话 (SSE 流式)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#BDC3C7;fontColor=#2C3E50;fontSize=10;align=left;spacingLeft=10;" parent="1" vertex="1">
+          <mxGeometry x="1300" y="210" width="200" height="72" as="geometry" />
+        </mxCell>
+        <mxCell id="l5_bg" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F5F6FA;strokeColor=#34495E;strokeWidth=2;" parent="1" vertex="1">
+          <mxGeometry x="60" y="313" width="1480" height="127" as="geometry" />
+        </mxCell>
+        <mxCell id="l5_tag" value="第 5 层" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#2C3E50;strokeColor=#2C3E50;fontColor=#FFFFFF;fontSize=9;fontStyle=1;" parent="1" vertex="1">
+          <mxGeometry x="60" y="313" width="50" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="l5_label" value="业务逻辑层 (Service)" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=12;fontStyle=1;fontColor=#2C3E50;" parent="1" vertex="1">
+          <mxGeometry x="118" y="314" width="170" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="l5_a" value="&lt;b&gt;Service&lt;/b&gt;&lt;br&gt;门面模式&lt;br&gt;统一编排接口&lt;br&gt;委托至 Runtime 层" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#BDC3C7;fontColor=#2C3E50;fontSize=10;align=left;spacingLeft=10;" parent="1" vertex="1">
+          <mxGeometry x="210" y="350" width="250" height="76" as="geometry" />
+        </mxCell>
+        <mxCell id="l5_b" value="&lt;b&gt;ImagePoolService&lt;/b&gt;&lt;br&gt;截图缓存管理&lt;br&gt;目录监控" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#BDC3C7;fontColor=#2C3E50;fontSize=10;align=left;spacingLeft=10;" parent="1" vertex="1">
+          <mxGeometry x="500" y="350" width="230" height="76" as="geometry" />
+        </mxCell>
+        <mxCell id="l5_c" value="&lt;b&gt;AiService&lt;/b&gt;&lt;br&gt;OpenAI 兼容 API 客户端&lt;br&gt;SSE 流式 + Base64 编码" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#BDC3C7;fontColor=#2C3E50;fontSize=10;align=left;spacingLeft=10;" parent="1" vertex="1">
+          <mxGeometry x="770" y="350" width="240" height="76" as="geometry" />
+        </mxCell>
+        <mxCell id="l5_d" value="&lt;b&gt;SystemSettingsRepository&lt;/b&gt;&lt;br&gt;YAML 配置持久化&lt;br&gt;&lt;b&gt;SystemSettings&lt;/b&gt; 数据模型" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#BDC3C7;fontColor=#2C3E50;fontSize=10;align=left;spacingLeft=10;" parent="1" vertex="1">
+          <mxGeometry x="1050" y="350" width="260" height="76" as="geometry" />
+        </mxCell>
+        <mxCell id="l4_bg" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EBF5FB;strokeColor=#2471A3;strokeWidth=2;" parent="1" vertex="1">
+          <mxGeometry x="60" y="460" width="1480" height="139" as="geometry" />
+        </mxCell>
+        <mxCell id="l4_tag" value="第 4 层" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#2471A3;strokeColor=#2471A3;fontColor=#FFFFFF;fontSize=9;fontStyle=1;" parent="1" vertex="1">
+          <mxGeometry x="60" y="460" width="50" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="l4_label" value="工厂/组装层 (Runtime)" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=12;fontStyle=1;fontColor=#2471A3;" parent="1" vertex="1">
+          <mxGeometry x="118" y="461" width="180" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="l4_box" value="&lt;b&gt;class RunTime&lt;/b&gt; — 抽象工厂模式&lt;br&gt;  + createCamera(MediaBackendType) → shared_ptr&amp;lt;ICamera&amp;gt;&lt;br&gt;  + createPlayer(MediaBackendType) → shared_ptr&amp;lt;IPlayer&amp;gt;&lt;br&gt;  + createScreenCapture(MediaBackendType) → shared_ptr&amp;lt;IScreenCapture&amp;gt;&lt;br&gt;  + createStream(MediaBackendType) → shared_ptr&amp;lt;IStream&amp;gt;&lt;br&gt;  + bindPreview(PreviewTarget) → void" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#2471A3;fontColor=#2C3E50;fontSize=10;align=left;spacingLeft=10;" parent="1" vertex="1">
+          <mxGeometry x="210" y="489" width="560" height="84" as="geometry" />
+        </mxCell>
+        <mxCell id="l4_note" value="唯一知晓所有&lt;br&gt;Backend 实现的层&lt;br&gt;(依赖反转原则)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EBF5FB;strokeColor=#2471A3;fontColor=#2471A3;fontSize=10;align=center;fontStyle=2;dashed=1;" parent="1" vertex="1">
+          <mxGeometry x="823" y="501.5" width="155" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="l3_bg" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F5F6FA;strokeColor=#34495E;strokeWidth=2;" parent="1" vertex="1">
+          <mxGeometry x="60" y="629" width="1480" height="148" as="geometry" />
+        </mxCell>
+        <mxCell id="l3_tag" value="第 3 层" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#2C3E50;strokeColor=#2C3E50;fontColor=#FFFFFF;fontSize=9;fontStyle=1;" parent="1" vertex="1">
+          <mxGeometry x="60" y="629" width="50" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="l3_label" value="实现层 (Backend)" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=12;fontStyle=1;fontColor=#2C3E50;" parent="1" vertex="1">
+          <mxGeometry x="118" y="630" width="150" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="l2_bg" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FDF2E9;strokeColor=#B9770E;strokeWidth=2;" parent="1" vertex="1">
+          <mxGeometry x="60" y="795" width="1480" height="114" as="geometry" />
+        </mxCell>
+        <mxCell id="l2_tag" value="第 2 层" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#B9770E;strokeColor=#B9770E;fontColor=#FFFFFF;fontSize=9;fontStyle=1;" parent="1" vertex="1">
+          <mxGeometry x="60" y="795" width="50" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="l2_label" value="抽象接口层 (API)" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=12;fontStyle=1;fontColor=#B9770E;" parent="1" vertex="1">
+          <mxGeometry x="118" y="796" width="150" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="l2_box" value="&lt;b&gt;纯虚接口&lt;/b&gt;&lt;br&gt;  ICamera  |  IPlayer  |  IScreenCapture  |  IStream  |  IFVideoView&lt;br&gt;  PreviewTarget (NativeWindow + backend_hint)  |  MediaBackendType {Qt6, FFmpeg, Dxgi}" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#B9770E;fontColor=#2C3E50;fontSize=10;align=left;spacingLeft=10;" parent="1" vertex="1">
+          <mxGeometry x="200" y="834" width="900" height="54" as="geometry" />
+        </mxCell>
+        <mxCell id="l2_note" value="依赖反转:&lt;br&gt;上层仅依赖接口&lt;br&gt;不依赖具体实现" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FDF2E9;strokeColor=#B9770E;fontColor=#B9770E;fontSize=9;align=center;fontStyle=2;dashed=1;" parent="1" vertex="1">
+          <mxGeometry x="1150" y="832" width="150" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="l1_bg" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F5F6FA;strokeColor=#34495E;strokeWidth=2;" parent="1" vertex="1">
+          <mxGeometry x="60" y="939" width="1480" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="l1_tag" value="第 1 层" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#2C3E50;strokeColor=#2C3E50;fontColor=#FFFFFF;fontSize=9;fontStyle=1;" parent="1" vertex="1">
+          <mxGeometry x="60" y="939" width="50" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="l1_label" value="基础设施层 (Common)" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=12;fontStyle=1;fontColor=#2C3E50;" parent="1" vertex="1">
+          <mxGeometry x="118" y="940" width="170" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="l1_a" value="&lt;b&gt;FGLWidget&lt;/b&gt;&lt;br&gt;OpenGL YUV 渲染器&lt;br&gt;BT.601 / BT.709" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#BDC3C7;fontColor=#2C3E50;fontSize=10;align=left;spacingLeft=10;" parent="1" vertex="1">
+          <mxGeometry x="198" y="980" width="200" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="l1_b" value="&lt;b&gt;CameraFrameBus&lt;/b&gt; / &lt;b&gt;ScreenFrameBus&lt;/b&gt;&lt;br&gt;线程安全 YUV 帧总线 (单例)&lt;br&gt;按 sourceId 分区 / 互斥锁保护" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#BDC3C7;fontColor=#2C3E50;fontSize=10;align=left;spacingLeft=10;" parent="1" vertex="1">
+          <mxGeometry x="440" y="980" width="330" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="l1_c" value="&lt;b&gt;QtLoggerAdapter&lt;/b&gt;&lt;br&gt;Qt 日志 → spdlog&lt;br&gt;(qDebug/qInfo/...)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#BDC3C7;fontColor=#2C3E50;fontSize=10;align=left;spacingLeft=10;" parent="1" vertex="1">
+          <mxGeometry x="810" y="980" width="200" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="l1_d" value="&lt;b&gt;DesignTokens&lt;/b&gt;&lt;br&gt;主题系统 (深色/浅色)&lt;br&gt;Qt Stylesheet 生成器" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#BDC3C7;fontColor=#2C3E50;fontSize=10;align=left;spacingLeft=10;" parent="1" vertex="1">
+          <mxGeometry x="1050" y="980" width="210" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="ext_bg" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EAECEE;strokeColor=#7F8C8D;strokeWidth=2;" parent="1" vertex="1">
+          <mxGeometry x="60" y="1079" width="1480" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="ext_label" value="外部依赖" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=12;fontStyle=1;fontColor=#7F8C8D;" parent="1" vertex="1">
+          <mxGeometry x="118" y="1080" width="80" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="ext_qt" value="Qt 6.10 (Core · Gui · Widgets · Network · Multimedia · OpenGL · OpenGLWidgets)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#BDC3C7;fontColor=#2C3E50;fontSize=10;align=center;" parent="1" vertex="1">
+          <mxGeometry x="200" y="1090" width="370" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="ext_ffmpeg" value="FFmpeg 8.1 (avcodec · avformat · avutil · swscale · avdevice · avfilter)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#BDC3C7;fontColor=#2C3E50;fontSize=10;align=center;" parent="1" vertex="1">
+          <mxGeometry x="600" y="1090" width="360" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="ext_dx" value="DirectX 11 + DXGI" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#BDC3C7;fontColor=#2C3E50;fontSize=10;align=center;" parent="1" vertex="1">
+          <mxGeometry x="990" y="1090" width="150" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="ext_libs" value="spdlog · yaml-cpp · WASAPI" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#BDC3C7;fontColor=#2C3E50;fontSize=10;align=center;" parent="1" vertex="1">
+          <mxGeometry x="1170" y="1090" width="200" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="dep_head" value="依赖" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=8;fontStyle=2;fontColor=#7F8C8D;" parent="1" vertex="1">
+          <mxGeometry x="18" y="135" width="25" height="14" as="geometry" />
+        </mxCell>
+        <mxCell id="dep_line" value="" style="endArrow=block;endFill=1;html=1;strokeColor=#7F8C8D;strokeWidth=1;" parent="1" edge="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="40" y="1120" as="sourcePoint" />
+            <mxPoint x="40" y="90" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="dep_label" value="编译&lt;br&gt;依赖&lt;br&gt;方向" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=8;fontStyle=2;fontColor=#7F8C8D;" parent="1" vertex="1">
+          <mxGeometry x="5" y="469" width="32" height="42" as="geometry" />
+        </mxCell>
+        <mxCell id="bus_line" value="" style="endArrow=block;endFill=1;html=1;strokeColor=#B9770E;strokeWidth=2;dashed=1;curved=1;entryX=0.919;entryY=0.488;entryDx=0;entryDy=0;entryPerimeter=0;" parent="1" target="l1_bg" edge="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1420" y="714" as="sourcePoint" />
+            <mxPoint x="1420" y="914" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="bus_label" value="YUV 帧总线&lt;br&gt;(运行时数据通道)" style="text;html=1;strokeColor=#B9770E;fillColor=#FFFFFF;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=8;fontColor=#B9770E;fontStyle=2;" parent="1" vertex="1">
+          <mxGeometry x="1430" y="834" width="100" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="an_note" value="注: 所有模块采用 C++17 编译。后端选择通过 CLI 参数在启动时确定。当前架构支持三种捕获后端 (Qt6, FFmpeg, DXGI) 运行时切换。" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;fontStyle=2;fontColor=#7F8C8D;" parent="1" vertex="1">
+          <mxGeometry x="200" y="1136" width="780" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="qQSiASMfA2e4RU_pDRsb-1" value="" style="group" parent="1" vertex="1" connectable="0">
+          <mxGeometry x="1320" y="20" width="220" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="legend_bg" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#BDC3C7;strokeWidth=1;" parent="qQSiASMfA2e4RU_pDRsb-1" vertex="1">
+          <mxGeometry width="220" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="legend_title" value="图例" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;fontStyle=1;fontColor=#2C3E50;" parent="qQSiASMfA2e4RU_pDRsb-1" vertex="1">
+          <mxGeometry x="8" y="3" width="30" height="14" as="geometry" />
+        </mxCell>
+        <mxCell id="legend_dep_arrow" value="" style="endArrow=block;endFill=1;html=1;strokeColor=#7F8C8D;strokeWidth=1;" parent="qQSiASMfA2e4RU_pDRsb-1" edge="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="12" y="29" as="sourcePoint" />
+            <mxPoint x="50" y="29" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="legend_dep_txt" value="编译期依赖" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=9;fontColor=#2C3E50;" parent="qQSiASMfA2e4RU_pDRsb-1" vertex="1">
+          <mxGeometry x="56" y="22" width="70" height="14" as="geometry" />
+        </mxCell>
+        <mxCell id="legend_bus_arrow" value="" style="endArrow=block;endFill=1;html=1;strokeColor=#B9770E;strokeWidth=1;dashed=1;" parent="qQSiASMfA2e4RU_pDRsb-1" edge="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="12" y="42" as="sourcePoint" />
+            <mxPoint x="50" y="42" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="legend_bus_txt" value="运行时数据流" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=9;fontColor=#2C3E50;" parent="qQSiASMfA2e4RU_pDRsb-1" vertex="1">
+          <mxGeometry x="56" y="35" width="80" height="14" as="geometry" />
+        </mxCell>
+        <mxCell id="qQSiASMfA2e4RU_pDRsb-2" value="" style="group" parent="1" vertex="1" connectable="0">
+          <mxGeometry x="200" y="669" width="210" height="88" as="geometry" />
+        </mxCell>
+        <mxCell id="l3_qt6_hdr" value="media_qt6" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#34495E;strokeColor=#34495E;fontColor=#FFFFFF;fontSize=9;fontStyle=1;" parent="qQSiASMfA2e4RU_pDRsb-2" vertex="1">
+          <mxGeometry width="210" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="l3_qt6" value="CameraQt6 (QCamera)&lt;br&gt;PlayerQt6 (QMediaPlayer)&lt;br&gt;ScreenCaptureQt6 (QScreenCapture)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#BDC3C7;fontColor=#2C3E50;fontSize=10;align=left;spacingLeft=10;" parent="qQSiASMfA2e4RU_pDRsb-2" vertex="1">
+          <mxGeometry y="20" width="210" height="52" as="geometry" />
+        </mxCell>
+        <mxCell id="l3_qt6_dep" value="依赖: Qt6::Multimedia" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F5F6FA;strokeColor=none;fontColor=#7F8C8D;fontSize=8;fontStyle=2;align=right;spacingRight=8;" parent="qQSiASMfA2e4RU_pDRsb-2" vertex="1">
+          <mxGeometry y="72" width="210" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="qQSiASMfA2e4RU_pDRsb-3" value="" style="group" parent="1" vertex="1" connectable="0">
+          <mxGeometry x="450" y="669" width="230" height="88" as="geometry" />
+        </mxCell>
+        <mxCell id="l3_ffmpeg_hdr" value="media_ffmpeg" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#34495E;strokeColor=#34495E;fontColor=#FFFFFF;fontSize=9;fontStyle=1;" parent="qQSiASMfA2e4RU_pDRsb-3" vertex="1">
+          <mxGeometry width="230" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="l3_ffmpeg" value="CameraFFmpeg (dshow)&lt;br&gt;PlayerFFmpeg (软件解码)&lt;br&gt;ScreenCaptureFFmpeg (gdigrab)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#BDC3C7;fontColor=#2C3E50;fontSize=10;align=left;spacingLeft=10;" parent="qQSiASMfA2e4RU_pDRsb-3" vertex="1">
+          <mxGeometry y="20" width="230" height="52" as="geometry" />
+        </mxCell>
+        <mxCell id="l3_ffmpeg_dep" value="依赖: FFmpeg libav*" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F5F6FA;strokeColor=none;fontColor=#7F8C8D;fontSize=8;fontStyle=2;align=right;spacingRight=8;" parent="qQSiASMfA2e4RU_pDRsb-3" vertex="1">
+          <mxGeometry y="72" width="230" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="qQSiASMfA2e4RU_pDRsb-4" value="" style="group" parent="1" vertex="1" connectable="0">
+          <mxGeometry x="720" y="669" width="220" height="88" as="geometry" />
+        </mxCell>
+        <mxCell id="l3_dxgi_hdr" value="desktopcapture_dxgi" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#34495E;strokeColor=#34495E;fontColor=#FFFFFF;fontSize=9;fontStyle=1;" parent="qQSiASMfA2e4RU_pDRsb-4" vertex="1">
+          <mxGeometry width="220" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="l3_dxgi" value="ScreenCaptureDxgi&lt;br&gt;DXGI Desktop Duplication&lt;br&gt;DirectX 11 + 光标叠加" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#BDC3C7;fontColor=#2C3E50;fontSize=10;align=left;spacingLeft=10;" parent="qQSiASMfA2e4RU_pDRsb-4" vertex="1">
+          <mxGeometry y="20" width="220" height="52" as="geometry" />
+        </mxCell>
+        <mxCell id="l3_dxgi_dep" value="依赖: DirectX 11 + DXGI" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F5F6FA;strokeColor=none;fontColor=#7F8C8D;fontSize=8;fontStyle=2;align=right;spacingRight=8;" parent="qQSiASMfA2e4RU_pDRsb-4" vertex="1">
+          <mxGeometry y="72" width="220" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="qQSiASMfA2e4RU_pDRsb-5" value="" style="group" parent="1" vertex="1" connectable="0">
+          <mxGeometry x="980" y="669" width="240" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="l3_stream_hdr" value="stream_ffmpeg" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#34495E;strokeColor=#34495E;fontColor=#FFFFFF;fontSize=9;fontStyle=1;" parent="qQSiASMfA2e4RU_pDRsb-5" vertex="1">
+          <mxGeometry width="240" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="l3_stream" value="StreamFFmpeg&lt;br&gt;推流: remux | 转码 | 场景合成&lt;br&gt;拉流: 接收 + 录制&lt;br&gt;WASAPI 音频采集" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#BDC3C7;fontColor=#2C3E50;fontSize=10;align=left;spacingLeft=10;" parent="qQSiASMfA2e4RU_pDRsb-5" vertex="1">
+          <mxGeometry y="20" width="240" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="l3_stream_dep" value="依赖: FFmpeg libav* + WASAPI" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F5F6FA;strokeColor=none;fontColor=#7F8C8D;fontSize=8;fontStyle=2;align=right;spacingRight=8;" parent="qQSiASMfA2e4RU_pDRsb-5" vertex="1">
+          <mxGeometry y="84" width="240" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="qQSiASMfA2e4RU_pDRsb-6" value="" style="group" parent="1" vertex="1" connectable="0">
+          <mxGeometry x="1260" y="669" width="140" height="58" as="geometry" />
+        </mxCell>
+        <mxCell id="l3_net_hdr" value="net_qt6" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#95A5A6;strokeColor=#95A5A6;fontColor=#FFFFFF;fontSize=9;fontStyle=1;" parent="qQSiASMfA2e4RU_pDRsb-6" vertex="1">
+          <mxGeometry width="140" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="l3_net" value="StreamQt6&lt;br&gt;(占位桩)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#BDC3C7;fontColor=#95A5A6;fontSize=10;align=left;spacingLeft=10;dashed=1;" parent="qQSiASMfA2e4RU_pDRsb-6" vertex="1">
+          <mxGeometry y="20" width="140" height="38" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

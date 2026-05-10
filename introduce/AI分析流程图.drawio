@@ -1,0 +1,178 @@
+<mxfile host="app.diagrams.net">
+  <diagram name="第 1 页" id="8CgpTZKsBbcy3n-bgjZZ">
+    <mxGraphModel dx="1201" dy="764" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="900" pageHeight="620" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=13;fontStyle=1;fontColor=#000000;" value="FPlayer Desktop AI 图像分析流程" vertex="1">
+          <mxGeometry height="22" width="400" x="250" y="8" as="geometry" />
+        </mxCell>
+        <mxCell id="zone_ui" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#999999;strokeWidth=1;dashed=1;dashPattern=4 4;" value="" vertex="1">
+          <mxGeometry height="510" width="240" x="25" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="lbl_ui" parent="1" style="text;html=1;strokeColor=none;fillColor=#F5F5F5;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;fontStyle=1;fontColor=#000000;" value="UI 交互" vertex="1">
+          <mxGeometry height="18" width="60" x="25" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="ui1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F5F5F5;strokeColor=#333333;fontColor=#000000;fontSize=9;align=center;strokeWidth=1;" value="用户打开 AiChatDialog" vertex="1">
+          <mxGeometry height="26" width="170" x="55" y="72" as="geometry" />
+        </mxCell>
+        <mxCell id="a1" edge="1" parent="1" style="endArrow=block;endFill=1;html=1;strokeColor=#333333;strokeWidth=1;" value="">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="140" y="98" as="sourcePoint" />
+            <mxPoint x="140" y="118" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ui2" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333;fontColor=#000000;fontSize=8;align=center;strokeWidth=1;" value="输入文本 + 选择图片&lt;br&gt;(拖拽/粘贴/文件对话框)" vertex="1">
+          <mxGeometry height="32" width="190" x="45" y="118" as="geometry" />
+        </mxCell>
+        <mxCell id="a2" edge="1" parent="1" style="endArrow=block;endFill=1;html=1;strokeColor=#333333;strokeWidth=1;" value="">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="140" y="150" as="sourcePoint" />
+            <mxPoint x="140" y="172" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ui3" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333;fontColor=#000000;fontSize=9;align=center;strokeWidth=1;" value="点击发送 → 显示用户气泡" vertex="1">
+          <mxGeometry height="26" width="170" x="55" y="172" as="geometry" />
+        </mxCell>
+        <mxCell id="a3" edge="1" parent="1" style="endArrow=block;endFill=1;html=1;strokeColor=#333333;strokeWidth=1;" value="">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="140" y="198" as="sourcePoint" />
+            <mxPoint x="140" y="220" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ui4" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333;fontColor=#000000;fontSize=9;align=center;strokeWidth=1;" value="显示加载状态" vertex="1">
+          <mxGeometry height="26" width="130" x="70" y="220" as="geometry" />
+        </mxCell>
+        <mxCell id="a4" edge="1" parent="1" style="endArrow=block;endFill=1;html=1;strokeColor=#333333;strokeWidth=1;" value="">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="140" y="246" as="sourcePoint" />
+            <mxPoint x="140" y="270" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ui5" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333;fontColor=#000000;fontSize=8;align=center;strokeWidth=1;" value="SSE 流式接收&lt;br&gt;ChatBubbleWidget 打字机渲染" vertex="1">
+          <mxGeometry height="32" width="190" x="45" y="270" as="geometry" />
+        </mxCell>
+        <mxCell id="a5" edge="1" parent="1" style="endArrow=block;endFill=1;html=1;strokeColor=#333333;strokeWidth=1;" value="">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="140" y="302" as="sourcePoint" />
+            <mxPoint x="140" y="330" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ui6" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F5F5F5;strokeColor=#333333;fontColor=#000000;fontSize=9;align=center;strokeWidth=1;" value="流结束 → 气泡完成" vertex="1">
+          <mxGeometry height="26" width="170" x="55" y="330" as="geometry" />
+        </mxCell>
+        <mxCell id="zone_svc" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#999999;strokeWidth=1;dashed=1;dashPattern=4 4;" value="" vertex="1">
+          <mxGeometry height="510" width="260" x="290" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="lbl_svc" parent="1" style="text;html=1;strokeColor=none;fillColor=#F5F5F5;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;fontStyle=1;fontColor=#000000;" value="AiService" vertex="1">
+          <mxGeometry height="18" width="60" x="290" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="svc1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F5F5F5;strokeColor=#333333;fontColor=#000000;fontSize=8;align=center;strokeWidth=1;" value="构建 OpenAI 兼容请求体&lt;br&gt;model + messages + stream: true" vertex="1">
+          <mxGeometry height="32" width="210" x="310" y="100" as="geometry" />
+        </mxCell>
+        <mxCell id="b1" edge="1" parent="1" style="endArrow=block;endFill=1;html=1;strokeColor=#333333;strokeWidth=1;" value="">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="415" y="132" as="sourcePoint" />
+            <mxPoint x="415" y="155" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="svc2" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333;fontColor=#000000;fontSize=8;align=center;strokeWidth=1;" value="图片 Base64 编码&lt;br&gt;嵌入 content (image_url 类型)" vertex="1">
+          <mxGeometry height="32" width="210" x="310" y="155" as="geometry" />
+        </mxCell>
+        <mxCell id="b2" edge="1" parent="1" style="endArrow=block;endFill=1;html=1;strokeColor=#333333;strokeWidth=1;" value="">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="415" y="187" as="sourcePoint" />
+            <mxPoint x="415" y="210" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="svc3" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333;fontColor=#000000;fontSize=8;align=center;strokeWidth=1;" value="QNetworkAccessManager::post()&lt;br&gt;Content-Type: application/json&lt;br&gt;Authorization: Bearer &amp;lt;key&amp;gt;" vertex="1">
+          <mxGeometry height="40" width="230" x="300" y="210" as="geometry" />
+        </mxCell>
+        <mxCell id="b3" edge="1" parent="1" style="endArrow=block;endFill=1;html=1;strokeColor=#333333;strokeWidth=1;" value="">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="415" y="250" as="sourcePoint" />
+            <mxPoint x="415" y="278" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="svc4" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333;fontColor=#000000;fontSize=8;align=center;strokeWidth=1;" value="QNetworkReply::readyRead&lt;br&gt;逐行解析 SSE 数据帧&lt;br&gt;提取 data: {...} JSON" vertex="1">
+          <mxGeometry height="40" width="230" x="300" y="278" as="geometry" />
+        </mxCell>
+        <mxCell id="b4" edge="1" parent="1" style="endArrow=block;endFill=1;html=1;strokeColor=#333333;strokeWidth=1;" value="">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="415" y="318" as="sourcePoint" />
+            <mxPoint x="415" y="340" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="svc5" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F5F5F5;strokeColor=#333333;fontColor=#000000;fontSize=9;align=center;strokeWidth=1;" value="emit tokenReceived(delta)&lt;br&gt;emit streamFinished()" vertex="1">
+          <mxGeometry height="34" width="190" x="320" y="340" as="geometry" />
+        </mxCell>
+        <mxCell id="zone_api" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#999999;strokeWidth=1;dashed=1;dashPattern=4 4;" value="" vertex="1">
+          <mxGeometry height="510" width="195" x="575" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="lbl_api" parent="1" style="text;html=1;strokeColor=none;fillColor=#F5F5F5;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;fontStyle=1;fontColor=#000000;" value="外部 API" vertex="1">
+          <mxGeometry height="18" width="60" x="575" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="api1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#E8E8E8;strokeColor=#333333;fontColor=#000000;fontSize=9;fontStyle=1;align=center;strokeWidth=1;" value="OpenAI 兼容服务端&lt;br&gt;/v1/chat/completions" vertex="1">
+          <mxGeometry height="34" width="155" x="595" y="150" as="geometry" />
+        </mxCell>
+        <mxCell id="api2" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333;fontColor=#000000;fontSize=8;align=center;strokeWidth=1;" value="SSE 流式响应&lt;br&gt;data: {&quot;choices&quot;:[{&quot;delta&quot;:{...}}]}&lt;br&gt;data: [DONE]" vertex="1">
+          <mxGeometry height="40" width="165" x="590" y="230" as="geometry" />
+        </mxCell>
+        <mxCell id="c1" edge="1" parent="1" style="endArrow=block;endFill=1;html=1;strokeColor=#333333;strokeWidth=1;" value="">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="672" y="184" as="sourcePoint" />
+            <mxPoint x="672" y="230" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="x1" edge="1" parent="1" style="endArrow=block;endFill=1;html=1;strokeColor=#333333;strokeWidth=1;" value="">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="235" y="248" as="sourcePoint" />
+            <mxPoint x="415" y="100" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="x1l" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=8;fontColor=#666666;" value="调用" vertex="1">
+          <mxGeometry height="14" width="30" x="280" y="160" as="geometry" />
+        </mxCell>
+        <mxCell id="x2" edge="1" parent="1" style="endArrow=block;endFill=1;html=1;strokeColor=#333333;strokeWidth=1;" value="">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="530" y="230" as="sourcePoint" />
+            <mxPoint x="595" y="167" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="x2l" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=8;fontColor=#666666;" value="HTTP POST" vertex="1">
+          <mxGeometry height="14" width="50" x="538" y="190" as="geometry" />
+        </mxCell>
+        <mxCell id="x3" edge="1" parent="1" style="endArrow=block;endFill=1;html=1;strokeColor=#333333;strokeWidth=1;" value="">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="595" y="270" as="sourcePoint" />
+            <mxPoint x="530" y="298" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="x3l" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=8;fontColor=#666666;" value="SSE" vertex="1">
+          <mxGeometry height="14" width="25" x="550" y="275" as="geometry" />
+        </mxCell>
+        <mxCell id="x4" edge="1" parent="1" style="endArrow=block;endFill=1;html=1;strokeColor=#333333;strokeWidth=1;" value="">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="415" y="357" as="sourcePoint" />
+            <mxPoint x="237" y="286" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="x4l" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=8;fontColor=#666666;" value="信号" vertex="1">
+          <mxGeometry height="14" width="25" x="290" y="312" as="geometry" />
+        </mxCell>
+        <mxCell id="cfg_box" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#333333;strokeWidth=1;" value="" vertex="1">
+          <mxGeometry height="50" width="550" x="120" y="420" as="geometry" />
+        </mxCell>
+        <mxCell id="cfg_title" parent="1" style="text;html=1;strokeColor=none;fillColor=#F5F5F5;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=9;fontStyle=1;fontColor=#000000;" value="配置" vertex="1">
+          <mxGeometry height="16" width="40" x="120" y="420" as="geometry" />
+        </mxCell>
+        <mxCell id="cfg_content" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=8;fontColor=#000000;" value="API Endpoint (base URL)  ·  API Key (Bearer Token)  ·  Model 名称&lt;br&gt;以上三项由 SystemSettingsRepository 持久化至 YAML，AiChatDialog 启动时读取" vertex="1">
+          <mxGeometry height="24" width="490" x="170" y="436" as="geometry" />
+        </mxCell>
+        <mxCell id="note" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=8;fontStyle=2;fontColor=#666666;" value="注: AiService 通过 QNetworkAccessManager 发送异步请求; SSE 数据帧以 readyRead 信号驱动逐 token 解析; ChatBubbleWidget 以 QPainter 自绘气泡, 通过定时器逐字追加实现打字机效果" vertex="1">
+          <mxGeometry height="16" width="750" x="80" y="480" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
