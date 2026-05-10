@@ -1,0 +1,185 @@
+<mxfile host="app.diagrams.net">
+  <diagram name="第 1 页" id="AMNhKAwWV5WCpb_Qtykb">
+    <mxGraphModel dx="1334" dy="849" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="750" background="#ffffff" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;fontFamily=Helvetica;" value="&lt;b style=&quot;font-size:26px&quot;&gt;fplayer-ff 项目功能与关系架构图&lt;/b&gt;" vertex="1">
+          <mxGeometry height="35" width="600" x="380" y="15" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;fontFamily=Helvetica;" value="&lt;span style=&quot;font-size:14px;color:#868e96&quot;&gt;推流 · 分发 · 播放 — 局域网流媒体全链路&lt;/span&gt;" vertex="1">
+          <mxGeometry height="22" width="520" x="420" y="52" as="geometry" />
+        </mxCell>
+        <mxCell id="zone-dt" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#a5d8ff;strokeColor=#1971c2;strokeWidth=1.5;opacity=15;fontFamily=Helvetica;" value="" vertex="1">
+          <mxGeometry height="510" width="380" x="30" y="90" as="geometry" />
+        </mxCell>
+        <mxCell id="hdr-dt" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1971c2;strokeColor=none;opacity=12;fontFamily=Helvetica;" value="" vertex="1">
+          <mxGeometry height="68" width="380" x="30" y="90" as="geometry" />
+        </mxCell>
+        <mxCell id="icon-dt" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#1971c2;strokeColor=none;fontFamily=Helvetica;" value="" vertex="1">
+          <mxGeometry height="48" width="48" x="192" y="108" as="geometry" />
+        </mxCell>
+        <mxCell id="icon-dt-txt" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontFamily=Helvetica;" value="&lt;b style=&quot;font-size:22px;color:#ffffff&quot;&gt;D&lt;/b&gt;" vertex="1">
+          <mxGeometry height="48" width="48" x="192" y="108" as="geometry" />
+        </mxCell>
+        <mxCell id="name-dt" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontFamily=Helvetica;" value="&lt;b style=&quot;font-size:18px;color:#1971c2&quot;&gt;fplayer-ff-desktop&lt;/b&gt;" vertex="1">
+          <mxGeometry height="26" width="240" x="100" y="168" as="geometry" />
+        </mxCell>
+        <mxCell id="tech-dt" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontFamily=Helvetica;" value="&lt;span style=&quot;font-size:12px;color:#868e96&quot;&gt;C++17 / Qt 6 / FFmpeg / WebRTC&lt;/span&gt;" vertex="1">
+          <mxGeometry height="18" width="280" x="80" y="196" as="geometry" />
+        </mxCell>
+        <mxCell id="box-dt-src" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#1971c2;strokeWidth=2;fontFamily=Helvetica;align=left;spacingLeft=16;verticalAlign=top;spacingTop=12;" value="&lt;b style=&quot;font-size:15px&quot;&gt;推流端  Source&lt;/b&gt;&lt;br&gt;&lt;br&gt;&lt;span style=&quot;font-size:13px&quot;&gt;屏幕采集 · 摄像头 · 文件推流&lt;br&gt;RTMP / RTSP 推流&lt;/span&gt;" vertex="1">
+          <mxGeometry height="105" width="340" x="50" y="230" as="geometry" />
+        </mxCell>
+        <mxCell id="box-dt-plr" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#1971c2;strokeWidth=2;fontFamily=Helvetica;align=left;spacingLeft=16;verticalAlign=top;spacingTop=12;" value="&lt;b style=&quot;font-size:15px&quot;&gt;播放端  Player&lt;/b&gt;&lt;br&gt;&lt;br&gt;&lt;span style=&quot;font-size:13px&quot;&gt;拉流播放 · 画布合成&lt;br&gt;HLS / HTTP-FLV 播放&lt;/span&gt;" vertex="1">
+          <mxGeometry height="105" width="340" x="50" y="360" as="geometry" />
+        </mxCell>
+        <mxCell id="box-dt-mode" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0f6ff;strokeColor=#1971c2;strokeWidth=1;dashed=1;fontFamily=Helvetica;align=center;verticalAlign=middle;" value="&lt;span style=&quot;font-size:13px;color:#495057&quot;&gt;工作模式：P2P 直连  |  服务端模式&lt;/span&gt;" vertex="1">
+          <mxGeometry height="55" width="340" x="50" y="490" as="geometry" />
+        </mxCell>
+        <mxCell id="zone-sv" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eebefa;strokeColor=#9c36b5;strokeWidth=1.5;opacity=15;fontFamily=Helvetica;" value="" vertex="1">
+          <mxGeometry height="510" width="380" x="470" y="90" as="geometry" />
+        </mxCell>
+        <mxCell id="hdr-sv" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#9c36b5;strokeColor=none;opacity=12;fontFamily=Helvetica;" value="" vertex="1">
+          <mxGeometry height="68" width="380" x="470" y="90" as="geometry" />
+        </mxCell>
+        <mxCell id="icon-sv" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#9c36b5;strokeColor=none;fontFamily=Helvetica;" value="" vertex="1">
+          <mxGeometry height="48" width="48" x="636" y="108" as="geometry" />
+        </mxCell>
+        <mxCell id="icon-sv-txt" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontFamily=Helvetica;" value="&lt;b style=&quot;font-size:22px;color:#ffffff&quot;&gt;S&lt;/b&gt;" vertex="1">
+          <mxGeometry height="48" width="48" x="636" y="108" as="geometry" />
+        </mxCell>
+        <mxCell id="name-sv" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontFamily=Helvetica;" value="&lt;b style=&quot;font-size:18px;color:#9c36b5&quot;&gt;fplayer-ff-service&lt;/b&gt;" vertex="1">
+          <mxGeometry height="26" width="230" x="545" y="168" as="geometry" />
+        </mxCell>
+        <mxCell id="tech-sv" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontFamily=Helvetica;" value="&lt;span style=&quot;font-size:12px;color:#868e96&quot;&gt;Go + ZLMediaKit + Electron&lt;/span&gt;" vertex="1">
+          <mxGeometry height="18" width="260" x="530" y="196" as="geometry" />
+        </mxCell>
+        <mxCell id="box-sv-media" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9c36b5;strokeWidth=2;fontFamily=Helvetica;align=left;spacingLeft=16;verticalAlign=top;spacingTop=12;" value="&lt;b style=&quot;font-size:15px&quot;&gt;ZLMediaKit 媒体服务器&lt;/b&gt;&lt;br&gt;&lt;br&gt;&lt;span style=&quot;font-size:13px&quot;&gt;接收推流 · 转封装分发&lt;br&gt;RTMP / RTSP / HLS / HTTP-FLV&lt;/span&gt;" vertex="1">
+          <mxGeometry height="105" width="340" x="490" y="230" as="geometry" />
+        </mxCell>
+        <mxCell id="box-sv-api" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9c36b5;strokeWidth=2;fontFamily=Helvetica;align=left;spacingLeft=16;verticalAlign=top;spacingTop=12;" value="&lt;b style=&quot;font-size:15px&quot;&gt;Gateway API (Go)&lt;/b&gt;&lt;br&gt;&lt;br&gt;&lt;span style=&quot;font-size:13px&quot;&gt;GET /api/v1/streams/resolve&lt;br&gt;GET /healthz · 动态端口管理&lt;/span&gt;" vertex="1">
+          <mxGeometry height="105" width="340" x="490" y="360" as="geometry" />
+        </mxCell>
+        <mxCell id="box-sv-ui" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#faf5fc;strokeColor=#9c36b5;strokeWidth=1;dashed=1;fontFamily=Helvetica;align=center;verticalAlign=middle;" value="&lt;span style=&quot;font-size:13px;color:#495057&quot;&gt;管理 UI (Electron)&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;流管理 · 状态监控&lt;/span&gt;" vertex="1">
+          <mxGeometry height="55" width="340" x="490" y="490" as="geometry" />
+        </mxCell>
+        <mxCell id="zone-mb" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b2f2bb;strokeColor=#2f9e44;strokeWidth=1.5;opacity=15;fontFamily=Helvetica;" value="" vertex="1">
+          <mxGeometry height="510" width="380" x="910" y="90" as="geometry" />
+        </mxCell>
+        <mxCell id="hdr-mb" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#2f9e44;strokeColor=none;opacity=12;fontFamily=Helvetica;" value="" vertex="1">
+          <mxGeometry height="68" width="380" x="910" y="90" as="geometry" />
+        </mxCell>
+        <mxCell id="icon-mb" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#2f9e44;strokeColor=none;fontFamily=Helvetica;" value="" vertex="1">
+          <mxGeometry height="48" width="48" x="1076" y="108" as="geometry" />
+        </mxCell>
+        <mxCell id="icon-mb-txt" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontFamily=Helvetica;" value="&lt;b style=&quot;font-size:22px;color:#ffffff&quot;&gt;M&lt;/b&gt;" vertex="1">
+          <mxGeometry height="48" width="48" x="1076" y="108" as="geometry" />
+        </mxCell>
+        <mxCell id="name-mb" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontFamily=Helvetica;" value="&lt;b style=&quot;font-size:18px;color:#2f9e44&quot;&gt;fplayer-ff-mobile&lt;/b&gt;" vertex="1">
+          <mxGeometry height="26" width="230" x="985" y="168" as="geometry" />
+        </mxCell>
+        <mxCell id="tech-mb" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontFamily=Helvetica;" value="&lt;span style=&quot;font-size:12px;color:#868e96&quot;&gt;Flutter / Dart / media_kit (libmpv)&lt;/span&gt;" vertex="1">
+          <mxGeometry height="18" width="280" x="960" y="196" as="geometry" />
+        </mxCell>
+        <mxCell id="box-mb-plr" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#2f9e44;strokeWidth=2;fontFamily=Helvetica;align=left;spacingLeft=16;verticalAlign=top;spacingTop=12;" value="&lt;b style=&quot;font-size:15px&quot;&gt;播放器  Player&lt;/b&gt;&lt;br&gt;&lt;br&gt;&lt;span style=&quot;font-size:13px&quot;&gt;HLS / HTTP-FLV / RTMP 播放&lt;br&gt;基于 media_kit (libmpv)&lt;/span&gt;" vertex="1">
+          <mxGeometry height="105" width="340" x="930" y="230" as="geometry" />
+        </mxCell>
+        <mxCell id="box-mb-mode" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#2f9e44;strokeWidth=2;fontFamily=Helvetica;align=left;spacingLeft=16;verticalAlign=top;spacingTop=12;" value="&lt;b style=&quot;font-size:15px&quot;&gt;连接模式&lt;/b&gt;&lt;br&gt;&lt;br&gt;&lt;span style=&quot;font-size:13px&quot;&gt;服务地址模式 · 直接 URL 模式&lt;/span&gt;" vertex="1">
+          <mxGeometry height="105" width="340" x="930" y="360" as="geometry" />
+        </mxCell>
+        <mxCell id="box-mb-plat" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f4faf6;strokeColor=#2f9e44;strokeWidth=1;dashed=1;fontFamily=Helvetica;align=center;verticalAlign=middle;" value="&lt;span style=&quot;font-size:13px;color:#495057&quot;&gt;平台支持：Android · iOS · Web · Desktop&lt;/span&gt;" vertex="1">
+          <mxGeometry height="55" width="340" x="930" y="490" as="geometry" />
+        </mxCell>
+        <mxCell id="arr-push" edge="1" parent="1" source="box-dt-src" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#e8590c;strokeWidth=3;endArrow=block;endFill=1;fontFamily=Helvetica;fontSize=13;fontColor=#e8590c;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="box-sv-media">
+          <mxGeometry relative="1" width="50" as="geometry">
+            <mxPoint x="390" y="280" as="sourcePoint" />
+            <mxPoint x="490" y="280" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lbl-push" connectable="0" parent="arr-push" style="edgeLabel;html=1;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=12;fontColor=#e8590c;labelBackgroundColor=#ffffff;" value="推流 RTMP / RTSP" vertex="1">
+          <mxGeometry relative="1" x="-0.2" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="arr-pull-mb" edge="1" parent="1" source="box-sv-media" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#2f9e44;strokeWidth=3;endArrow=block;endFill=1;fontFamily=Helvetica;fontSize=13;fontColor=#2f9e44;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="box-mb-plr">
+          <mxGeometry relative="1" width="50" as="geometry">
+            <mxPoint x="830" y="280" as="sourcePoint" />
+            <mxPoint x="930" y="280" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lbl-pull-mb" connectable="0" parent="arr-pull-mb" style="edgeLabel;html=1;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=12;fontColor=#2f9e44;labelBackgroundColor=#ffffff;" value="拉流 HLS / HTTP-FLV" vertex="1">
+          <mxGeometry relative="1" x="-0.2" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="arr-pull-dt" edge="1" parent="1" source="box-sv-media" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#2f9e44;strokeWidth=3;endArrow=block;endFill=1;fontFamily=Helvetica;fontSize=13;fontColor=#2f9e44;exitX=0;exitY=0.7;exitDx=0;exitDy=0;entryX=1;entryY=0.3;entryDx=0;entryDy=0;" target="box-dt-plr">
+          <mxGeometry relative="1" width="50" as="geometry">
+            <mxPoint x="490" y="355" as="sourcePoint" />
+            <mxPoint x="390" y="355" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lbl-pull-dt" connectable="0" parent="arr-pull-dt" style="edgeLabel;html=1;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=12;fontColor=#2f9e44;labelBackgroundColor=#ffffff;" value="拉流 HLS / HTTP-FLV" vertex="1">
+          <mxGeometry relative="1" x="-0.2" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="arr-api-dt" edge="1" parent="1" source="box-dt-plr" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#1971c2;strokeWidth=2;dashed=1;endArrow=block;endFill=1;fontFamily=Helvetica;fontSize=13;fontColor=#1971c2;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="box-sv-api">
+          <mxGeometry relative="1" width="50" as="geometry">
+            <mxPoint x="390" y="415" as="sourcePoint" />
+            <mxPoint x="490" y="415" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lbl-api-dt" connectable="0" parent="arr-api-dt" style="edgeLabel;html=1;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=12;fontColor=#1971c2;labelBackgroundColor=#ffffff;" value="REST 解析流地址" vertex="1">
+          <mxGeometry relative="1" x="-0.2" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="arr-api-mb" edge="1" parent="1" source="box-mb-mode" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#1971c2;strokeWidth=2;dashed=1;endArrow=block;endFill=1;fontFamily=Helvetica;fontSize=13;fontColor=#1971c2;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.7;entryDx=0;entryDy=0;" target="box-sv-api">
+          <mxGeometry relative="1" width="50" as="geometry">
+            <mxPoint x="930" y="415" as="sourcePoint" />
+            <mxPoint x="830" y="415" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lbl-api-mb" connectable="0" parent="arr-api-mb" style="edgeLabel;html=1;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=12;fontColor=#1971c2;labelBackgroundColor=#ffffff;" value="REST 解析流地址" vertex="1">
+          <mxGeometry relative="1" x="-0.2" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="legend-bg" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8f9fa;strokeColor=#dee2e6;strokeWidth=1;fontFamily=Helvetica;" value="" vertex="1">
+          <mxGeometry height="55" width="740" x="280" y="620" as="geometry" />
+        </mxCell>
+        <mxCell id="legend-title" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontFamily=Helvetica;" value="&lt;b style=&quot;font-size:14px;color:#495057&quot;&gt;图例&lt;/b&gt;" vertex="1">
+          <mxGeometry height="20" width="70" x="605" y="624" as="geometry" />
+        </mxCell>
+        <mxCell id="leg-push-line" edge="1" parent="1" style="endArrow=block;endFill=1;html=1;strokeColor=#e8590c;strokeWidth=3;fontFamily=Helvetica;" value="">
+          <mxGeometry relative="1" width="50" as="geometry">
+            <mxPoint x="335" y="650" as="sourcePoint" />
+            <mxPoint x="390" y="650" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="leg-push-lbl" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontFamily=Helvetica;" value="&lt;span style=&quot;font-size:12px;color:#495057&quot;&gt;推流 RTMP / RTSP&lt;/span&gt;" vertex="1">
+          <mxGeometry height="18" width="125" x="398" y="641" as="geometry" />
+        </mxCell>
+        <mxCell id="leg-pull-line" edge="1" parent="1" style="endArrow=block;endFill=1;html=1;strokeColor=#2f9e44;strokeWidth=3;fontFamily=Helvetica;" value="">
+          <mxGeometry relative="1" width="50" as="geometry">
+            <mxPoint x="555" y="650" as="sourcePoint" />
+            <mxPoint x="610" y="650" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="leg-pull-lbl" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontFamily=Helvetica;" value="&lt;span style=&quot;font-size:12px;color:#495057&quot;&gt;拉流 HLS / HTTP-FLV&lt;/span&gt;" vertex="1">
+          <mxGeometry height="18" width="140" x="618" y="641" as="geometry" />
+        </mxCell>
+        <mxCell id="leg-api-line" edge="1" parent="1" style="endArrow=block;endFill=1;html=1;strokeColor=#1971c2;strokeWidth=2;dashed=1;fontFamily=Helvetica;" value="">
+          <mxGeometry relative="1" width="50" as="geometry">
+            <mxPoint x="790" y="650" as="sourcePoint" />
+            <mxPoint x="845" y="650" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="leg-api-lbl" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontFamily=Helvetica;" value="&lt;span style=&quot;font-size:12px;color:#495057&quot;&gt;REST API&lt;/span&gt;" vertex="1">
+          <mxGeometry height="18" width="80" x="853" y="641" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
