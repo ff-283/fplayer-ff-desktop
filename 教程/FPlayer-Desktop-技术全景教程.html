@@ -1,0 +1,951 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FPlayer Desktop — 技术全景教程</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<style>
+:root {
+  --primary: #cc785c; --primary-active: #a9583e;
+  --ink: #141413; --body: #3d3d3a; --body-strong: #252523;
+  --muted: #6c6a64; --muted-soft: #8e8b82;
+  --hairline: #e6dfd8; --hairline-soft: #ebe6df;
+  --canvas: #faf9f5; --surface-soft: #f5f0e8; --surface-card: #efe9de;
+  --surface-dark: #181715; --on-dark: #faf9f5; --on-dark-soft: #a09d96;
+  --font-display: "Tiempos Headline", "Cormorant Garamond", "EB Garamond", "Garamond", "Times New Roman", "PingFang SC", "Microsoft YaHei", serif;
+  --font-body: "Inter", "PingFang SC", "Microsoft YaHei", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", "SF Mono", "Cascadia Code", ui-monospace, monospace;
+  --radius-md: 8px; --radius-lg: 12px; --radius-pill: 9999px;
+  --spacing-xs: 8px; --spacing-sm: 12px; --spacing-md: 16px;
+  --spacing-lg: 24px; --spacing-xl: 32px; --spacing-xxl: 48px; --spacing-section: 96px;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth;font-size:16px;-webkit-font-smoothing:antialiased}
+body{font-family:var(--font-body);font-weight:400;line-height:1.55;color:var(--body);background:var(--canvas)}
+.global-nav{position:fixed;top:0;left:0;right:0;z-index:100;height:64px;background:var(--canvas);border-bottom:1px solid var(--hairline);display:flex;align-items:center;justify-content:center}
+.global-nav-inner{width:100%;max-width:1200px;padding:0 var(--spacing-xl);display:flex;align-items:center;justify-content:space-between}
+.nav-logo{font-size:14px;font-weight:500;color:var(--ink);text-decoration:none}
+.nav-links{display:flex;gap:24px;list-style:none}
+.nav-links a{font-size:14px;font-weight:500;color:var(--muted);text-decoration:none;transition:color 0.2s}
+.nav-links a:hover,.nav-links a.active{color:var(--ink)}
+.sub-nav{position:fixed;top:64px;left:0;right:0;z-index:99;height:48px;background:rgba(250,249,245,0.88);backdrop-filter:saturate(180%) blur(16px);display:flex;align-items:center;justify-content:center;border-bottom:1px solid var(--hairline-soft)}
+.sub-nav-inner{max-width:1200px;padding:0 var(--spacing-xl);display:flex;align-items:center;gap:24px}
+.sub-nav-title{font-family:var(--font-display);font-size:18px;font-weight:400;color:var(--ink);letter-spacing:-0.3px}
+.sub-nav-tabs{display:flex;gap:2px;list-style:none}
+.sub-nav-tabs a{display:inline-block;padding:6px 14px;font-size:14px;font-weight:500;color:var(--muted);text-decoration:none;border-radius:var(--radius-md);transition:all 0.2s}
+.sub-nav-tabs a:hover{color:var(--ink)}.sub-nav-tabs a.active{color:var(--ink);background:var(--surface-card)}
+.hero{margin-top:112px;padding:var(--spacing-section) var(--spacing-xl);background:var(--canvas);text-align:center}
+.hero-eyebrow{display:inline-block;font-size:12px;font-weight:500;letter-spacing:1.5px;text-transform:uppercase;color:var(--primary);margin-bottom:var(--spacing-lg)}
+.hero h1{font-family:var(--font-display);font-size:64px;font-weight:400;line-height:1.05;letter-spacing:-1.5px;margin-bottom:var(--spacing-lg);color:var(--ink)}
+.hero .tagline{font-size:18px;font-weight:400;line-height:1.4;color:var(--body);max-width:600px;margin:0 auto var(--spacing-xl)}
+.hero-meta{display:flex;flex-wrap:wrap;justify-content:center;gap:24px;font-size:14px;color:var(--muted)}
+.hero-meta span strong{color:var(--ink);font-weight:600}
+.section{padding:var(--spacing-section) var(--spacing-xl)}
+.section-inner{max-width:960px;margin:0 auto}
+.section-eyebrow{font-size:12px;font-weight:500;letter-spacing:1.5px;text-transform:uppercase;color:var(--primary);margin-bottom:var(--spacing-sm)}
+.section h2{font-family:var(--font-display);font-size:48px;font-weight:400;line-height:1.1;letter-spacing:-1px;margin-bottom:var(--spacing-lg);color:var(--ink)}
+.section h3{font-family:var(--font-display);font-size:36px;font-weight:400;line-height:1.15;letter-spacing:-0.5px;margin:var(--spacing-section) 0 var(--spacing-md);color:var(--ink)}
+.section h4{font-size:18px;font-weight:500;line-height:1.4;margin:var(--spacing-xxl) 0 var(--spacing-sm);color:var(--ink)}
+.section p{margin-bottom:var(--spacing-md);color:var(--body);line-height:1.7}
+.section .lead{font-size:18px;font-weight:500;line-height:1.4;color:var(--body-strong);margin-bottom:var(--spacing-xl)}
+.section ul,.section ol{margin:var(--spacing-md) 0 var(--spacing-md) var(--spacing-xl);color:var(--body);line-height:2}
+.surface-white{background:var(--canvas)}.surface-stone{background:var(--surface-soft)}.surface-pale-blue{background:var(--surface-card)}
+.card-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:var(--spacing-lg);margin:var(--spacing-xl) 0}
+.card{background:var(--surface-card);border:1px solid var(--hairline-soft);border-radius:var(--radius-lg);padding:var(--spacing-xl)}
+.card-icon{font-size:28px;margin-bottom:var(--spacing-sm);display:block}
+.card h5{font-size:18px;font-weight:500;line-height:1.4;margin-bottom:var(--spacing-xs);color:var(--ink)}
+.card p{font-size:14px;line-height:1.55;color:var(--body);margin:0}
+.concept-box{border-radius:var(--radius-lg);padding:var(--spacing-xl);margin:var(--spacing-lg) 0 var(--spacing-xl);background:var(--surface-card);border:1px solid var(--hairline)}
+.concept-box h5{font-size:16px;font-weight:600;margin-bottom:var(--spacing-xs);color:var(--ink)}
+.concept-box p{margin:0;font-size:15px;color:var(--body);line-height:1.7}
+.concept-box ul{margin:var(--spacing-sm) 0 0 var(--spacing-lg);font-size:15px;color:var(--body);line-height:1.9}
+.info-box{border-radius:var(--radius-lg);padding:var(--spacing-xl);margin:var(--spacing-xl) 0;border-left:3px solid var(--primary);background:rgba(204,120,92,0.06)}
+.info-box h5{font-size:16px;font-weight:600;margin-bottom:var(--spacing-xs);color:var(--ink)}
+.info-box p{margin:0;font-size:15px;color:var(--body);line-height:1.6}
+.fun-fact{border-radius:var(--radius-lg);padding:var(--spacing-xl);margin:var(--spacing-xl) 0;background:#fcf7f0;border:1px solid var(--hairline)}
+.fun-fact h5{font-size:16px;font-weight:600;margin-bottom:var(--spacing-xs);color:#8b5e3c}
+.fun-fact p{margin:0;font-size:15px;color:#5c3d28;line-height:1.7}
+.fun-fact a{color:var(--primary);font-weight:500}
+.quote-box{border-radius:var(--radius-lg);padding:var(--spacing-xxl);margin:var(--spacing-xl) 0;background:var(--surface-dark);color:var(--on-dark);text-align:center}
+.quote-box blockquote{font-family:var(--font-display);font-size:22px;font-weight:400;line-height:1.45;font-style:italic;margin-bottom:var(--spacing-sm);letter-spacing:-0.3px}
+.quote-box cite{font-size:13px;color:var(--on-dark-soft);font-style:normal}
+.diagram-container{margin:var(--spacing-xl) 0;padding:var(--spacing-xl);background:var(--canvas);border-radius:var(--radius-lg);border:1px solid var(--hairline);overflow-x:auto}
+.diagram-container .diagram-label{font-family:var(--font-mono);font-size:12px;font-weight:400;letter-spacing:0.5px;text-transform:uppercase;color:var(--muted-soft);margin-bottom:var(--spacing-md)}
+.compare-table{width:100%;border-collapse:collapse;margin:var(--spacing-xl) 0;font-size:14px}
+.compare-table th{text-align:left;padding:var(--spacing-sm) var(--spacing-md);font-size:12px;font-weight:500;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);border-bottom:2px solid var(--hairline)}
+.compare-table td{padding:var(--spacing-sm) var(--spacing-md);border-bottom:1px solid var(--hairline-soft);color:var(--body);line-height:1.55}
+.compare-table tr:last-child td{border-bottom:none}
+.compare-table .highlight-col{font-weight:600;color:var(--ink)}
+.step-list{list-style:none;counter-reset:step;margin:var(--spacing-xl) 0}
+.step-list li{counter-increment:step;position:relative;padding-left:48px;margin-bottom:var(--spacing-xl)}
+.step-list li::before{content:counter(step);position:absolute;left:0;top:0;width:32px;height:32px;background:var(--ink);color:var(--on-dark);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:500}
+.step-list h5{font-size:16px;font-weight:600;margin-bottom:var(--spacing-xxs)}
+.step-list p{font-size:14px;color:var(--body);margin:0;line-height:1.6}
+.tech-tag{display:inline-block;padding:4px 12px;font-size:12px;font-weight:500;letter-spacing:1.5px;text-transform:uppercase;color:var(--primary);background:var(--surface-card);border-radius:var(--radius-pill);margin:2px}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:var(--spacing-xl);margin:var(--spacing-xl) 0;align-items:start}
+@media(max-width:768px){.two-col{grid-template-columns:1fr}}
+.footer{background:var(--surface-dark);padding:64px var(--spacing-xl);color:var(--on-dark-soft);font-size:14px;line-height:1.55}
+.footer-inner{max-width:960px;margin:0 auto}
+.footer-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:var(--spacing-xxl);margin-bottom:var(--spacing-section)}
+.footer-col h6{font-size:14px;font-weight:500;margin-bottom:var(--spacing-sm);color:var(--on-dark)}
+.footer-col a{display:block;font-size:14px;line-height:2.2;color:var(--on-dark-soft);text-decoration:none}
+.footer-col a:hover{color:var(--on-dark)}
+.footer-bottom{border-top:1px solid rgba(255,255,255,0.08);padding-top:var(--spacing-lg);display:flex;justify-content:space-between;flex-wrap:wrap;gap:var(--spacing-sm)}
+.text-muted{color:var(--muted);font-size:13px}
+.inline-img{display:block;width:100%;height:auto;max-width:100%;margin:var(--spacing-xl) auto;border-radius:var(--radius-lg);border:1px solid var(--hairline)}
+.inline-img-sm{display:block;width:100%;height:auto;max-width:560px;margin:var(--spacing-lg) auto;border-radius:var(--radius-lg);border:1px solid var(--hairline)}
+.img-caption{text-align:center;font-size:12px;color:var(--muted);margin-top:-12px;margin-bottom:var(--spacing-xl)}
+.progress-bar{position:fixed;top:112px;left:0;height:2px;background:var(--primary);z-index:101;transition:width 0.1s linear}
+@media(max-width:1024px){.hero h1{font-size:48px}.section h2{font-size:36px}.nav-links{display:none}.section{padding:var(--spacing-section) var(--spacing-md)}.card-grid{grid-template-columns:1fr}}
+@media(max-width:640px){.hero h1{font-size:36px}.section h2{font-size:28px}.hero{padding:var(--spacing-xxl) var(--spacing-md)}}
+</style>
+</head>
+<body>
+
+<nav class="global-nav">
+  <div class="global-nav-inner">
+    <a href="#" class="nav-logo">FPlayer Desktop</a>
+    <ul class="nav-links">
+      <li><a href="#capture">画面采集</a></li>
+      <li><a href="#compose">画面组合</a></li>
+      <li><a href="#streaming">推流编码</a></li>
+      <li><a href="#architecture">工程架构</a></li>
+      <li><a href="#server">服务端</a></li>
+    </ul>
+  </div>
+</nav>
+
+<div class="sub-nav">
+  <div class="sub-nav-inner">
+    <span class="sub-nav-title">技术全景教程</span>
+    <div class="sub-nav-tabs">
+      <a href="#capture" class="active">画面采集</a>
+      <a href="#compose">画面组合</a>
+      <a href="#streaming">推流编码</a>
+      <a href="#architecture">工程架构</a>
+      <a href="#server">服务端</a>
+    </div>
+  </div>
+</div>
+<div class="progress-bar" id="progressBar"></div>
+
+<header class="hero">
+  <div class="section-inner">
+    <div class="hero-eyebrow">Technical Overview</div>
+    <h1>FPlayer Desktop</h1>
+    <p class="tagline">跨平台局域网流媒体采集与推流软件。把屏幕、摄像头、视频文件组合成一路视频流，供同一网络下的其他设备实时观看。</p>
+    <div class="hero-meta">
+      <span>语言 <strong>C++17</strong></span>
+      <span>界面 <strong>Qt 6.10</strong></span>
+      <span>媒体引擎 <strong>FFmpeg 8.1</strong></span>
+      <span>代码量 <strong>~25,000 行</strong></span>
+    </div>
+  </div>
+</header>
+
+<!-- ==================== 一、画面采集 ==================== -->
+<section class="section surface-white" id="capture">
+  <div class="section-inner">
+    <div class="section-eyebrow">Chapter 01</div>
+    <h2>画面从哪来</h2>
+    <p class="lead">FPlayer 支持三种画面来源：本地视频文件、摄像头、电脑屏幕。每一种都有不同的技术实现路径。</p>
+
+    <!-- ===== 数字画面是什么 ===== -->
+    <h3>先理解：电脑是怎么"看到"画面的</h3>
+    <p>在深入三种采集方式之前，需要先讲清楚一个最基本的问题：<strong>一幅画面在电脑里到底长什么样？</strong></p>
+    <p>电脑屏幕上显示的每一幅画面，都是由大量小方块组成的。每一个小方块叫做一个<strong>像素</strong>。如果你凑近屏幕仔细看，甚至能看到一个个像素的格子。1920×1080 的分辨率，就是宽 1920 个像素、高 1080 个像素——总共约 207 万个像素排列成一个巨大的矩阵。</p>
+    <p>每个像素只做一件事：发出一种颜色。而所有颜色都可以用三个数字来描述——<strong>红（R）、绿（G）、蓝（B）</strong>。这不是随便选的：人眼视网膜上恰好有三种感知颜色的细胞，分别对红光、绿光、蓝光最敏感。所以用红绿蓝三种光的混合，就能模拟出人能看到的几乎所有颜色。电脑屏幕上的每一个像素，其实就是三个超微型灯泡——一个红的、一个绿的、一个蓝的，靠调节各自的亮度来混合出不同颜色。</p>
+    <p>每个数字的范围是 0 到 255。0 表示"这个颜色完全不发光"，255 表示"开到最亮"。举个例子：纯红色 = (255, 0, 0)，纯白色 = 三色全开到 255 = (255, 255, 255)，纯黑色 = 三色全关 = (0, 0, 0)，灰色 = 三色等量一半 = (128, 128, 128)。</p>
+    <p>所以一幅 1920×1080 的静态图片，在电脑内部的存储形式就是 207 万组 (R, G, B) 数字。每秒连续播放 30 张这样图片，就是 30fps 的视频。画面采集——无论是读视频文件、拿摄像头数据、还是抓取屏幕——本质上都是<strong>获取这些 (R, G, B) 数值</strong>的过程。</p>
+    <svg class="inline-img-sm" viewBox="0 0 480 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="RGB像素结构示意">
+      <title>RGB像素结构：每个像素由红绿蓝三个子像素组成</title>
+      <rect width="480" height="200" fill="#faf9f5" rx="8"/>
+      <!-- 单个放大的像素 -->
+      <rect x="30" y="30" width="120" height="120" rx="2" fill="#141413"/>
+      <rect x="34" y="34" width="36" height="112" rx="1" fill="#c64545"/><text x="52" y="130" text-anchor="middle" font-size="11" font-family="Inter,sans-serif" fill="#fff">R</text>
+      <rect x="72" y="34" width="36" height="112" rx="1" fill="#5db872"/><text x="90" y="130" text-anchor="middle" font-size="11" font-family="Inter,sans-serif" fill="#fff">G</text>
+      <rect x="110" y="34" width="36" height="112" rx="1" fill="#4c6ee6"/><text x="128" y="130" text-anchor="middle" font-size="11" font-family="Inter,sans-serif" fill="#fff">B</text>
+      <text x="90" y="20" text-anchor="middle" font-size="12" font-family="Inter,sans-serif" fill="#6c6a64">1 个像素（放大）</text>
+      <!-- 像素阵列 -->
+      <g transform="translate(200, 20)">
+        <text x="130" y="10" text-anchor="middle" font-size="12" font-family="Inter,sans-serif" fill="#6c6a64">1920×1080 像素矩阵</text>
+        <rect x="0" y="18" width="260" height="150" fill="#141413" rx="1"/>
+        <!-- Row 1 -->
+        <rect x="2" y="20" width="8" height="12" fill="#c64545"/><rect x="10" y="20" width="8" height="12" fill="#5db872"/><rect x="18" y="20" width="8" height="12" fill="#4c6ee6"/>
+        <rect x="30" y="20" width="8" height="12" fill="#e8a55a"/><rect x="38" y="20" width="8" height="12" fill="#a0d8a0"/><rect x="46" y="20" width="8" height="12" fill="#88a8f0"/>
+        <rect x="54" y="20" width="8" height="12" fill="#c64545"/><rect x="62" y="20" width="8" height="12" fill="#5db872"/><rect x="70" y="20" width="8" height="12" fill="#4c6ee6"/>
+        <rect x="78" y="20" width="8" height="12" fill="#f0d0b0"/><rect x="86" y="20" width="8" height="12" fill="#90e090"/><rect x="94" y="20" width="8" height="12" fill="#7090f8"/>
+        <rect x="102" y="20" width="8" height="12" fill="#c64545"/><rect x="110" y="20" width="8" height="12" fill="#5db872"/><rect x="118" y="20" width="8" height="12" fill="#4c6ee6"/>
+        <rect x="126" y="20" width="8" height="12" fill="#e8a55a"/><rect x="134" y="20" width="8" height="12" fill="#a0d8a0"/><rect x="142" y="20" width="8" height="12" fill="#88a8f0"/>
+        <rect x="150" y="20" width="8" height="12" fill="#c64545"/><rect x="158" y="20" width="8" height="12" fill="#5db872"/><rect x="166" y="20" width="8" height="12" fill="#4c6ee6"/>
+        <rect x="174" y="20" width="8" height="12" fill="#f0d0b0"/><rect x="182" y="20" width="8" height="12" fill="#90e090"/><rect x="190" y="20" width="8" height="12" fill="#7090f8"/>
+        <rect x="198" y="20" width="8" height="12" fill="#c64545"/><rect x="206" y="20" width="8" height="12" fill="#5db872"/><rect x="214" y="20" width="8" height="12" fill="#4c6ee6"/>
+        <rect x="222" y="20" width="8" height="12" fill="#e8a55a"/><rect x="230" y="20" width="8" height="12" fill="#a0d8a0"/><rect x="238" y="20" width="8" height="12" fill="#88a8f0"/>
+        <rect x="246" y="20" width="8" height="12" fill="#c64545"/><rect x="254" y="20" width="8" height="12" fill="#5db872"/>
+        <!-- Row 2 -->
+        <rect x="2" y="36" width="8" height="12" fill="#e8a55a"/><rect x="10" y="36" width="8" height="12" fill="#a0d8a0"/><rect x="18" y="36" width="8" height="12" fill="#88a8f0"/>
+        <rect x="30" y="36" width="8" height="12" fill="#f0d0b0"/><rect x="38" y="36" width="8" height="12" fill="#90e090"/><rect x="46" y="36" width="8" height="12" fill="#7090f8"/>
+        <rect x="54" y="36" width="8" height="12" fill="#c64545"/><rect x="62" y="36" width="8" height="12" fill="#5db872"/><rect x="70" y="36" width="8" height="12" fill="#4c6ee6"/>
+        <rect x="78" y="36" width="8" height="12" fill="#e8a55a"/><rect x="86" y="36" width="8" height="12" fill="#a0d8a0"/><rect x="94" y="36" width="8" height="12" fill="#88a8f0"/>
+        <rect x="102" y="36" width="8" height="12" fill="#c64545"/><rect x="110" y="36" width="8" height="12" fill="#5db872"/><rect x="118" y="36" width="8" height="12" fill="#4c6ee6"/>
+        <rect x="126" y="36" width="8" height="12" fill="#f0d0b0"/><rect x="134" y="36" width="8" height="12" fill="#90e090"/><rect x="142" y="36" width="8" height="12" fill="#7090f8"/>
+        <rect x="150" y="36" width="8" height="12" fill="#c64545"/><rect x="158" y="36" width="8" height="12" fill="#5db872"/><rect x="166" y="36" width="8" height="12" fill="#4c6ee6"/>
+        <rect x="174" y="36" width="8" height="12" fill="#e8a55a"/><rect x="182" y="36" width="8" height="12" fill="#a0d8a0"/><rect x="190" y="36" width="8" height="12" fill="#88a8f0"/>
+        <rect x="198" y="36" width="8" height="12" fill="#c64545"/><rect x="206" y="36" width="8" height="12" fill="#5db872"/><rect x="214" y="36" width="8" height="12" fill="#4c6ee6"/>
+        <rect x="222" y="36" width="8" height="12" fill="#f0d0b0"/><rect x="230" y="36" width="8" height="12" fill="#90e090"/><rect x="238" y="36" width="8" height="12" fill="#7090f8"/>
+        <rect x="246" y="36" width="8" height="12" fill="#c64545"/><rect x="254" y="36" width="8" height="12" fill="#5db872"/>
+        <!-- Arrows -->
+        <line x1="195" y1="88" x2="245" y2="144" stroke="#cc785c" stroke-width="2" marker-end="url(#arrow)"/>
+        <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#cc785c"/></marker></defs>
+        <!-- Legend -->
+        <text x="130" y="185" text-anchor="middle" font-size="11" font-family="Inter,sans-serif" fill="#6c6a64">每个格子是一个像素 = 一组(R,G,B)数值</text>
+      </g>
+    </svg>
+    <p class="img-caption">▲ 左：一个像素放大后的 RGB 三色子像素结构。右：1920×1080 画面 = 207 万个像素组成的大矩阵，每个像素存储一组 (R,G,B) 数值。</p>
+
+    <!-- ===== 采集一：文件播放 ===== -->
+    <h3>采集方式一：播放本地视频文件</h3>
+    <p>这是最直观的方式——从硬盘上打开一个 .mp4 或 .mkv 文件，把里面的画面一帧帧读出来。</p>
+    <p>但实际做起来不简单，因为<strong>视频文件里的数据是压缩过的</strong>。我们刚才算过，1920×1080、每秒 30 帧的原始画面，一秒钟就是 186MB，一分钟超过 10GB。你的硬盘根本存不下几部电影，网络也传不动。所以存储和传输之前，视频必须被压缩——这个压缩的过程叫<strong>编码</strong>。播放时要做的第一件事就是<strong>解码</strong>——把压缩数据还原成可以显示的画面。</p>
+
+    <div class="concept-box">
+      <h5>补充知识：视频是怎么被压缩的？</h5>
+      <p>视频压缩的核心思路是：<strong>相邻的两帧画面之间，绝大部分内容是一样的</strong>。比如一段访谈节目，背景的墙壁、桌子、灯光从头到尾不变，只有主持人的嘴巴和手势在动。如果每一帧都完整存一遍"墙壁是什么颜色、桌子是什么颜色……"，那绝大多数的存储空间都被浪费在重复内容上了。<br><br>
+      编码器很聪明：它<strong>只记录"从上一帧到这一帧，哪些像素变了、变成了什么"</strong>。一帧画面中，可能只有 1% 的像素真的发生了变化。解码的时候，解码器拿着上一帧的完整画面，再加上这 1% 的"变化量"，就能算出当前帧的完整画面。这就是为什么视频可以压缩几百倍、画质却几乎看不出差别。</p>
+      <svg class="inline-img" viewBox="0 0 560 240" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="视频帧间压缩：I帧完整 P帧只存差异">
+        <title>视频帧间压缩原理：I帧完整存储，P帧只存与上一帧的差异</title>
+        <rect width="560" height="240" fill="#faf9f5" rx="8"/>
+        <text x="280" y="24" text-anchor="middle" font-size="13" font-family="Inter,sans-serif" font-weight="600" fill="#141413">帧间预测压缩原理</text>
+        <!-- Frame 1: I-frame -->
+        <g transform="translate(20,40)">
+          <rect width="120" height="80" rx="4" fill="#efe9de" stroke="#e6dfd8" stroke-width="1"/>
+          <text x="60" y="20" text-anchor="middle" font-size="11" font-family="Inter,sans-serif" fill="#6c6a64">I 帧（关键帧）</text>
+          <rect x="20" y="28" width="80" height="42" rx="3" fill="#141413" opacity="0.08"/>
+          <circle cx="60" cy="49" r="14" fill="#cc785c" opacity="0.8"/>
+          <text x="60" y="53" text-anchor="middle" font-size="9" font-family="Inter,sans-serif" fill="#fff">完整</text>
+          <text x="60" y="95" text-anchor="middle" font-size="10" font-family="Inter,sans-serif" fill="#6c6a64">存储全部像素</text>
+        </g>
+        <!-- Arrow 1 -->
+        <text x="155" y="90" text-anchor="middle" font-size="20" fill="#cc785c">→</text>
+        <!-- Frame 2: P-frame -->
+        <g transform="translate(175,40)">
+          <rect width="120" height="80" rx="4" fill="#efe9de" stroke="#e6dfd8" stroke-width="1"/>
+          <text x="60" y="20" text-anchor="middle" font-size="11" font-family="Inter,sans-serif" fill="#6c6a64">P 帧（预测帧）</text>
+          <rect x="20" y="28" width="80" height="42" rx="3" fill="#141413" opacity="0.03"/>
+          <circle cx="70" cy="49" r="14" fill="#cc785c" opacity="0.15" stroke="#cc785c" stroke-width="1.5" stroke-dasharray="3"/>
+          <circle cx="70" cy="49" r="4" fill="#cc785c"/>
+          <text x="60" y="95" text-anchor="middle" font-size="10" font-family="Inter,sans-serif" fill="#6c6a64">只存"圆右移了10px"</text>
+        </g>
+        <!-- Arrow 2 -->
+        <text x="310" y="90" text-anchor="middle" font-size="20" fill="#cc785c">→</text>
+        <!-- Frame 3: P-frame -->
+        <g transform="translate(330,40)">
+          <rect width="120" height="80" rx="4" fill="#efe9de" stroke="#e6dfd8" stroke-width="1"/>
+          <text x="60" y="20" text-anchor="middle" font-size="11" font-family="Inter,sans-serif" fill="#6c6a64">P 帧（预测帧）</text>
+          <rect x="20" y="28" width="80" height="42" rx="3" fill="#141413" opacity="0.03"/>
+          <circle cx="80" cy="49" r="14" fill="#cc785c" opacity="0.15" stroke="#cc785c" stroke-width="1.5" stroke-dasharray="3"/>
+          <circle cx="80" cy="49" r="4" fill="#cc785c"/>
+          <text x="60" y="95" text-anchor="middle" font-size="10" font-family="Inter,sans-serif" fill="#6c6a64">只存"又右移了10px"</text>
+        </g>
+        <!-- Bottom explanation -->
+        <rect x="20" y="155" width="520" height="75" rx="5" fill="#fcf7f0" stroke="#e6dfd8" stroke-width="1"/>
+        <text x="40" y="175" font-size="11" font-family="Inter,sans-serif" fill="#141413">
+          <tspan font-weight="600">I 帧</tspan>：独立存储完整画面，是解码的锚点。通常每隔 1~2 秒出现一次。</text>
+        <text x="40" y="195" font-size="11" font-family="Inter,sans-serif" fill="#141413">
+          <tspan font-weight="600">P 帧</tspan>：只存储与前一帧的差异（"圆向右移了 10 个像素"）。数据量通常只有 I 帧的 1/10~1/50。</text>
+        <text x="40" y="215" font-size="11" font-family="Inter,sans-serif" fill="#141413">
+          <tspan font-weight="600">解码时</tspan>：播放器拿到 I 帧 → 还原完整画面；拿到 P 帧 → 用上一帧 + 差异量算出当前帧。</text>
+      </svg>
+      <p class="img-caption">▲ I 帧存完整画面（大），P 帧只存变化量（小）。这就是视频能压缩几百倍的核心原理。</p>
+    </div>
+
+    <p>解码之后还有一个问题：<strong>怎么让声音和画面对上？</strong>视频文件里的画面数据和音频数据是分开存的（因为它们的压缩方式完全不同）。播放时需要根据每段数据上的<strong>时间戳</strong>——就是记录"这一帧画面应该在视频的第几秒第几毫秒出现""这一段音频应该在什么时刻播放"的标记——来同步画面和声音。如果时间戳没处理好，就会出现"画面比声音慢半拍"的情况，这叫做"音画不同步"。</p>
+
+    <p>FPlayer 的文件播放功能有两套实现：</p>
+    <ul>
+      <li><strong>FFmpeg 后端</strong>：自研播放器，约 1265 行代码。内部把工作拆成三个可以同时进行的任务——一个专门从文件里读取压缩数据，一个专门把压缩数据还原为画面，一个专门处理音频——让它们互不等候、各跑各的。这种"几个任务同时做"的安排叫做<strong>多线程</strong>，本章后面会详细解释。这个后端支持精确到毫秒的进度跳转、0.5 到 2 倍速播放（音频也会同步变速）、循环播放等精细控制。</li>
+      <li><strong>Qt 6 后端</strong>：直接调用 Qt 框架自带的播放器。代码简单，但功能受限——能播什么格式取决于操作系统装了哪些解码器。Windows 自带了一些常见格式的解码器，但如果遇到小众格式可能就播不了。</li>
+    </ul>
+
+    <p>这里出现了两个名字——<strong>FFmpeg</strong> 和 <strong>Qt</strong>。FFmpeg 是一个开源工具集。"开源"的意思是代码是公开的，任何人都可以免费使用和修改。它几乎能处理所有音视频格式、支持所有流媒体协议、还能利用显卡做硬件加速。Qt 是一个做桌面软件界面的工具箱——它提供按钮、窗口、菜单这些"界面零件"，让开发者不需要从零画一个按钮出来。Qt 也顺带提供了一些媒体播放和摄像头访问的能力。FPlayer 同时用这两套工具来实现同一个功能（播放文件），这就是"多后端"的由来——第四章会展开讲这种设计。</p>
+
+    <!-- ===== 采集二：摄像头 ===== -->
+    <h3>采集方式二：摄像头</h3>
+    <p>摄像头的工作原理不复杂：镜头把环境光汇聚到感光芯片上 → 感光芯片把光信号转为电信号 → 芯片内部电路把电信号转为数字像素数据 → 通过 USB 线把数据传给电脑。</p>
+    <p>FPlayer 拿到摄像头数据之前需要做三件事：</p>
+    <ul>
+      <li><strong>列出设备</strong>：电脑上可能连着多个摄像头——笔记本内置的、USB 外接的、甚至虚拟摄像头软件（比如 OBS 可以把自己模拟成一个摄像头，这样其他软件就能把 OBS 的画面当作摄像头画面来用）。FPlayer 自动搜索所有可用的摄像头，列出来给你选。在 Windows 上，它是通过微软提供的一套叫 DirectShow 的系统接口来搜索的；在 Linux 上，用的是 Linux 内核自带的 Video4Linux2（简称 v4l2）驱动框架。</li>
+      <li><strong>协商参数</strong>：每个摄像头都支持多种分辨率和帧率的组合。比如一个摄像头可能同时支持 1080p 每秒 30 帧、720p 每秒 60 帧、480p 每秒 120 帧。FPlayer 向摄像头询问"你能支持哪些模式"，然后列出让你选。这个"询问-应答"的过程叫"格式协商"。</li>
+      <li><strong>持续读取</strong>：选定格式后，FPlayer 持续从摄像头读取画面帧。采集到的原始数据通常是 YUV 格式（一种比 RGB 更省空间的颜色表示方式，第三章会详细解释），被放入帧总线——一个各模块之间共享画面数据的中转区——然后再分两路走：一路送去屏幕给你看（预览），一路供推流或组合模式使用。</li>
+    </ul>
+
+    <!-- ===== 采集三：屏幕捕获 ===== -->
+    <h3>采集方式三：屏幕捕获</h3>
+    <p>屏幕捕获就是把"显示器上正在显示的内容"作为画面来源。这比摄像头复杂，因为要抓的画面<strong>已经存在显卡里面了</strong>——关键不是去哪找画面，而是怎么最高效地拿出来。</p>
+
+    <div class="concept-box">
+      <h5>前置概念：显卡和显存是什么？它们和 CPU、系统内存有什么区别？</h5>
+      <p>你的电脑里有两个"大脑"：<strong>CPU</strong>（中央处理器）和 <strong>GPU</strong>（图形处理器，也就是显卡的核心芯片）。它们各自配有自己专用的存储空间——CPU 用的是插在主板上的<strong>内存条</strong>（系统内存），GPU 用的是焊在显卡电路板上的<strong>显存</strong>（VRAM）。<br><br>
+      CPU 和 GPU 的分工很明确：CPU 擅长做复杂但数量少的工作——逻辑判断、任务调度、网络通信，一次同时处理几十件事。GPU 擅长做简单但数量极多的工作——画面渲染、像素计算，几千个计算核心同时开工。所以显示器的画面是 GPU 算出来的，结果存在显存里。CPU 如果想碰这个画面数据，就需要通过一条叫 PCIe 总线的通道从显存把数据搬到系统内存——这条通道虽然很快，但比显存内部的数据搬运速度还是慢了很多。<br><br>
+      这就引出了一个关键的性能问题：如果屏幕捕获的方式是"先把画面从显存搬到系统内存，CPU 处理一下，再搬回显存去做编码"，那数据就在这条慢通道上走了两个来回，白白浪费时间和电量。最好的方式是什么？<strong>让数据从头到尾别离开显存。</strong></p>
+      <svg class="inline-img" viewBox="0 0 560 230" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="CPU vs GPU 架构对比">
+        <title>CPU（少量大核心）vs GPU（大量小核心）架构对比</title>
+        <rect width="560" height="230" fill="#faf9f5" rx="8"/>
+        <!-- CPU Side -->
+        <g transform="translate(20,20)">
+          <text x="120" y="16" text-anchor="middle" font-size="14" font-family="Inter,sans-serif" font-weight="600" fill="#141413">CPU（中央处理器）</text>
+          <rect x="30" y="28" width="180" height="40" rx="4" fill="#141413"/>
+          <text x="120" y="53" text-anchor="middle" font-size="11" font-family="Inter,sans-serif" fill="#faf9f5">4~16 个核心</text>
+          <text x="120" y="85" text-anchor="middle" font-size="10" font-family="Inter,sans-serif" fill="#6c6a64">每个核心很聪明，能处理复杂逻辑</text>
+          <!-- 4 big cores -->
+          <rect x="30" y="95" width="38" height="30" rx="3" fill="#cc785c" opacity="0.7"/><text x="49" y="114" text-anchor="middle" font-size="9" font-family="Inter,sans-serif" fill="#fff">核1</text>
+          <rect x="78" y="95" width="38" height="30" rx="3" fill="#cc785c" opacity="0.7"/><text x="97" y="114" text-anchor="middle" font-size="9" font-family="Inter,sans-serif" fill="#fff">核2</text>
+          <rect x="126" y="95" width="38" height="30" rx="3" fill="#cc785c" opacity="0.7"/><text x="145" y="114" text-anchor="middle" font-size="9" font-family="Inter,sans-serif" fill="#fff">核3</text>
+          <rect x="174" y="95" width="38" height="30" rx="3" fill="#cc785c" opacity="0.7"/><text x="193" y="114" text-anchor="middle" font-size="9" font-family="Inter,sans-serif" fill="#fff">核4</text>
+          <text x="120" y="148" text-anchor="middle" font-size="10" font-family="Inter,sans-serif" fill="#141413" font-weight="600">适合：流程控制、逻辑判断</text>
+        </g>
+        <!-- Divider -->
+        <line x1="260" y1="35" x2="260" y2="195" stroke="#e6dfd8" stroke-width="2"/>
+        <!-- GPU Side -->
+        <g transform="translate(280,20)">
+          <text x="120" y="16" text-anchor="middle" font-size="14" font-family="Inter,sans-serif" font-weight="600" fill="#141413">GPU（图形处理器）</text>
+          <rect x="30" y="28" width="180" height="40" rx="4" fill="#141413"/>
+          <text x="120" y="53" text-anchor="middle" font-size="11" font-family="Inter,sans-serif" fill="#faf9f5">数百~数千个核心</text>
+          <text x="120" y="85" text-anchor="middle" font-size="10" font-family="Inter,sans-serif" fill="#6c6a64">每个核心只会简单运算，但数量极多</text>
+          <!-- Grid of small cores -->
+          <g transform="translate(20,95)">
+            <rect x="0" y="0" width="10" height="10" rx="1.5" fill="#5db8a6" opacity="0.6"/><rect x="13" y="0" width="10" height="10" rx="1.5" fill="#5db8a6" opacity="0.6"/><rect x="26" y="0" width="10" height="10" rx="1.5" fill="#5db8a6" opacity="0.6"/><rect x="39" y="0" width="10" height="10" rx="1.5" fill="#5db8a6" opacity="0.6"/><rect x="52" y="0" width="10" height="10" rx="1.5" fill="#5db8a6" opacity="0.6"/><rect x="65" y="0" width="10" height="10" rx="1.5" fill="#5db8a6" opacity="0.6"/>
+            <rect x="0" y="14" width="10" height="10" rx="1.5" fill="#5db8a6" opacity="0.6"/><rect x="13" y="14" width="10" height="10" rx="1.5" fill="#5db8a6" opacity="0.6"/><rect x="26" y="14" width="10" height="10" rx="1.5" fill="#5db8a6" opacity="0.6"/><rect x="39" y="14" width="10" height="10" rx="1.5" fill="#5db8a6" opacity="0.6"/><rect x="52" y="14" width="10" height="10" rx="1.5" fill="#5db8a6" opacity="0.6"/><rect x="65" y="14" width="10" height="10" rx="1.5" fill="#5db8a6" opacity="0.6"/>
+            <rect x="0" y="28" width="10" height="10" rx="1.5" fill="#5db8a6" opacity="0.6"/><rect x="13" y="28" width="10" height="10" rx="1.5" fill="#5db8a6" opacity="0.6"/><rect x="26" y="28" width="10" height="10" rx="1.5" fill="#5db8a6" opacity="0.6"/><rect x="39" y="28" width="10" height="10" rx="1.5" fill="#5db8a6" opacity="0.6"/><rect x="52" y="28" width="10" height="10" rx="1.5" fill="#5db8a6" opacity="0.6"/><rect x="65" y="28" width="10" height="10" rx="1.5" fill="#5db8a6" opacity="0.6"/>
+            <rect x="0" y="42" width="10" height="10" rx="1.5" fill="#5db8a6" opacity="0.6"/><rect x="13" y="42" width="10" height="10" rx="1.5" fill="#5db8a6" opacity="0.6"/><rect x="26" y="42" width="10" height="10" rx="1.5" fill="#5db8a6" opacity="0.6"/><rect x="39" y="42" width="10" height="10" rx="1.5" fill="#5db8a6" opacity="0.6"/><rect x="52" y="42" width="10" height="10" rx="1.5" fill="#5db8a6" opacity="0.6"/><rect x="65" y="42" width="10" height="10" rx="1.5" fill="#5db8a6" opacity="0.6"/>
+          </g>
+          <text x="70" y="170" text-anchor="middle" font-size="10" font-family="Inter,sans-serif" fill="#141413" font-weight="600">适合：大量像素同时运算</text>
+        </g>
+      </svg>
+      <p class="img-caption">▲ CPU 核心少但每个都强（复杂逻辑），GPU 核心极多但每个只做简单运算（大量像素同时处理）。</p>
+    </div>
+
+    <p>FPlayer 有三套屏幕捕获方案，性能和平台适配各有侧重：</p>
+    <ul>
+      <li><strong>Qt 6 方案</strong>：用 Qt 框架自带的 QScreenCapture。代码最简单，但在 Windows 上性能不是最优的——数据还是要经过 CPU 内存。</li>
+      <li><strong>FFmpeg 方案</strong>：在 Windows 上用 gdigrab（微软最早期的图形设备接口——GDI——提供的屏幕抓取方式），在 Linux 上用 x11grab（Linux 上最常用的图形系统 X11 的抓屏工具）。兼容性非常好——几乎所有 Windows 和 Linux 系统都能用，但性能一般，数据必须从显存搬到系统内存。</li>
+      <li><strong>DXGI 方案</strong>（仅 Windows）：DXGI 是 DirectX Graphics Infrastructure 的缩写，属于微软 DirectX 图形技术栈的一部分。它允许程序<strong>直接在显存里访问 GPU 渲染好的画面</strong>，不需要把数据搬到系统内存。采集、缩放、编码全部在显卡内部完成——数据从头到尾没离开过显存。结果就是 CPU 占用几乎为零，帧率更高、延迟更低。这是 Windows 上抓屏的最优方案。</li>
+    </ul>
+
+    <p>三套方案都支持：选择多个显示器中的某一个、自定义捕获哪个矩形区域、控制每秒抓多少帧、选择是否在画面中包含鼠标光标。</p>
+
+    <div class="diagram-container">
+      <div class="diagram-label">图 1 · 三种采集方式与数据流</div>
+      <pre class="mermaid">
+flowchart TD
+    subgraph 来源["三种画面来源"]
+        FILE["视频文件 .mp4/.mkv"]; CAM["摄像头 USB/内置"]; SCR["屏幕 显示器画面"]
+    end
+    subgraph 后端["两种后端实现"]
+        FF["FFmpeg 后端"]; QT["Qt 6 后端"]
+    end
+    subgraph 输出["统一输出"]
+        YUV["转为 YUV 格式"]
+    end
+    FILE-->FF; FILE-->QT; CAM-->FF; CAM-->QT; SCR-->FF; SCR-->QT
+    FF-->YUV; QT-->YUV
+    style YUV fill:#cc785c,stroke:#cc785c,color:#fff
+      </pre>
+    </div>
+    <p class="text-muted">▲ 不论来源是什么、用哪个后端实现，最终都统一输出 YUV 格式画面帧。这是系统最重要的设计约定——让后续所有处理（编码、组合、推流）只面对一种数据格式。</p>
+
+    <!-- ===== 采集之后 ===== -->
+    <h3>采集之后：一帧画面同时做两件事</h3>
+    <p>采集到的每一帧画面会同时走两条路：</p>
+    <ul>
+      <li><strong>预览路径</strong>：画面被送到一个叫 FGLWidget 的显示控件。这个控件内部使用 <strong>OpenGL</strong>——一种让程序直接指挥显卡做图形计算的技术标准。OpenGL 让显卡把 YUV 格式的画面数据实时转换成 RGB 格式显示在屏幕上。显卡有几千个核心，可以同时处理几百上千万像素的转换，速度极快而且不占用 CPU 的计算时间。</li>
+      <li><strong>数据路径</strong>：画面被放入帧总线（FrameBus）。帧总线是程序中不同任务之间传递画面数据的一块共享存储区。采集任务把画面放进去，编码任务（如果正在推流的话）从里面取走。这个放入和取出的过程不是随意的——帧总线内部有一个叫<strong>锁</strong>的保护机制：一个任务正在往里写的时候，另一个任务不能同时读取；反之亦然。这就保证不会出现"读了一半数据就被覆盖"的坏数据情况。</li>
+    </ul>
+    <p>两条路同时运转。即使你只是在预览画面（没有推流），采集、格式转换、显卡渲染这一整套流程也已经在运行了。</p>
+
+    <div class="info-box">
+      <h5>第一章要点</h5>
+      <p>✓ 数字画面 = 像素矩阵 × (R, G, B) 三色数值。视频 = 连续播放的静态画面<br>
+      ✓ 视频文件里的数据是压缩过的，播放需要先解码。压缩靠"帧间预测"——只记录相邻帧之间的变化<br>
+      ✓ 摄像头通过 USB 把像素数据发给电脑，FPlayer 负责列出设备、协商参数、持续读取<br>
+      ✓ 屏幕捕获有三种方案：Qt（简单）、FFmpeg（通用）、DXGI（最快——数据不离开显存）<br>
+      ✓ 显卡有独立显存，PCIe 总线搬运数据比显存内部慢很多。DXGI 的高效来自数据全程留在显存里<br>
+      ✓ 采集到的每一帧同时走预览（送去屏幕显示）和数据（放入帧总线）两条路</p>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== 二、画面组合 ==================== -->
+<section class="section surface-stone" id="compose">
+  <div class="section-inner">
+    <div class="section-eyebrow">Chapter 02</div>
+    <h2>多画面怎么叠成一路</h2>
+    <p class="lead">组合模式是 FPlayer 最具差异化的功能。多个画面来源在同一个画布上自由布局，最终合成一路视频流推出去。</p>
+
+    <!-- ===== 线程 ===== -->
+    <h3>先理解：一个程序怎么能同时做好几件事？</h3>
+    <p>一个普通的程序默认是一步一步执行的：做完第一步，再做第二步，然后第三步。但在处理视频时，这种方式会导致严重的问题。</p>
+    <p>因为有三件事需要同时进行：<strong>采集画面</strong>（每秒必须抓满 30 帧，每 33 毫秒就要抓到一帧，不能耽搁）、<strong>编码压缩</strong>（每一帧都要做大量数学运算来压缩，计算量大）、<strong>网络发送</strong>（网速不确定，随时可能堵）。如果排队做，会变成"采集一帧 → 等编码完 → 等发送完 → 再采集下一帧"。采集线程本应该每 33 毫秒抓一帧，但编码可能要 20 毫秒、发送再要 10 毫秒——等全部做完，下一帧的抓取时间早过了。结果就是帧率根本达不到 30fps，画面卡顿。</p>
+
+    <div class="concept-box">
+      <h5>什么是"线程"？</h5>
+      <p>解决这个问题的方法是让程序内部创建多个<strong>"线程"</strong>。一个线程就是程序内部的一条独立执行路线。一个程序可以同时有多个线程在跑，每个线程各做各的事，操作系统会快速地在它们之间切换（快到人感觉不到切换），让它们看起来像在同时运行。<br><br>
+      所以 FPlayer 把采集、编码、发送拆成三个线程：采集线程只管不停地抓画面；编码线程只管不停地压缩；发送线程只管不停地发数据。三条线各跑各的，快的不用等慢的。</p>
+      <svg class="inline-img" viewBox="0 0 560 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="单线程顺序执行 vs 多线程并行执行对比">
+        <title>单线程（排队做）vs 多线程（同时做）</title>
+        <rect width="560" height="200" fill="#faf9f5" rx="8"/>
+        <!-- Sequential (bad) -->
+        <g transform="translate(15,16)">
+          <text x="120" y="0" text-anchor="middle" font-size="12" font-family="Inter,sans-serif" font-weight="600" fill="#c64545">单线程（排队做）— 慢</text>
+          <rect x="0" y="10" width="80" height="36" rx="4" fill="#f5f0e8" stroke="#e6dfd8"/>
+          <text x="40" y="33" text-anchor="middle" font-size="10" font-family="Inter,sans-serif" fill="#141413">采集第1帧</text>
+          <text x="90" y="33" font-size="14" fill="#6c6a64">→</text>
+          <rect x="100" y="10" width="80" height="36" rx="4" fill="#f5f0e8" stroke="#e6dfd8"/>
+          <text x="140" y="33" text-anchor="middle" font-size="10" font-family="Inter,sans-serif" fill="#141413">编码第1帧</text>
+          <text x="190" y="33" font-size="14" fill="#6c6a64">→</text>
+          <rect x="200" y="10" width="70" height="36" rx="4" fill="#f5f0e8" stroke="#e6dfd8"/>
+          <text x="235" y="33" text-anchor="middle" font-size="10" font-family="Inter,sans-serif" fill="#141413">发送…</text>
+          <text x="40" y="65" font-size="11" font-family="Inter,sans-serif" fill="#6c6a64">采集要等编码完、编码要等发送完…帧率根本达不了标</text>
+        </g>
+        <!-- Parallel (good) -->
+        <g transform="translate(15,105)">
+          <text x="120" y="0" text-anchor="middle" font-size="12" font-family="Inter,sans-serif" font-weight="600" fill="#5db872">多线程（同时做）— 快</text>
+          <rect x="0" y="10" width="75" height="36" rx="4" fill="#cc785c" opacity="0.15" stroke="#cc785c"/>
+          <text x="37" y="33" text-anchor="middle" font-size="10" font-family="Inter,sans-serif" fill="#141413">采集线程</text>
+          <rect x="85" y="10" width="75" height="36" rx="4" fill="#cc785c" opacity="0.15" stroke="#cc785c"/>
+          <text x="122" y="33" text-anchor="middle" font-size="10" font-family="Inter,sans-serif" fill="#141413">编码线程</text>
+          <rect x="170" y="10" width="70" height="36" rx="4" fill="#cc785c" opacity="0.15" stroke="#cc785c"/>
+          <text x="205" y="33" text-anchor="middle" font-size="10" font-family="Inter,sans-serif" fill="#141413">发送线程</text>
+          <text x="260" y="33" font-size="11" font-family="Inter,sans-serif" fill="#141413">三条路同时跑，互不等候</text>
+        </g>
+      </svg>
+      <p class="img-caption">▲ 上：单线程排队做，每一步都要等上一步完成。下：三个线程各干各的，谁也不等谁。</p>
+    </div>
+
+    <div class="concept-box">
+      <h5>多线程带来一个新问题：怎么防止数据被"抢坏"？</h5>
+      <p>两个线程如果同时操作同一块数据就会出问题。假设采集线程正在往内存里写"这一帧第 100 万个像素是红色"，写了一半；编码线程正好也开始从同一个位置读这一帧——它读到的前一半是旧数据（还没被覆盖），后一半是新数据（刚写的红色）。结果就是编码线程拿到一帧"半新半旧"的垃圾数据。<br><br>
+      解决办法是<strong>"锁"</strong>（Mutex，互斥锁的缩写）。它的逻辑很简单：在读写共享数据之前，先去拿锁。如果锁是开着的，就锁上它，然后安全地读写数据，读完了解锁。如果锁已经被别人锁上了，就在旁边等着，等到解锁了再抢锁。这样一次只有一个线程在操作这段数据。<br><br>
+      帧总线内部就大量使用了锁——每次采集线程往里写帧、或编码线程来取帧，都先上锁再操作。</p>
+      <svg class="inline-img-sm" viewBox="0 0 480 170" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="锁机制示意">
+        <title>Mutex 锁的工作机制</title>
+        <rect width="480" height="170" fill="#faf9f5" rx="8"/>
+        <!-- Thread A with lock -->
+        <g transform="translate(20,16)">
+          <text x="70" y="0" text-anchor="middle" font-size="11" font-family="Inter,sans-serif" font-weight="600" fill="#5db872">采集线程（写数据）</text>
+          <rect x="10" y="10" width="120" height="44" rx="4" fill="#efe9de" stroke="#e6dfd8"/>
+          <text x="70" y="30" text-anchor="middle" font-size="10" font-family="Inter,sans-serif" fill="#141413">🔒 先上锁</text>
+          <text x="70" y="47" text-anchor="middle" font-size="10" font-family="Inter,sans-serif" fill="#141413">✏️ 写入帧数据</text>
+        </g>
+        <!-- Thread B waiting -->
+        <g transform="translate(200,16)">
+          <text x="75" y="0" text-anchor="middle" font-size="11" font-family="Inter,sans-serif" font-weight="600" fill="#c64545">编码线程（想读数据）</text>
+          <rect x="10" y="10" width="140" height="44" rx="4" fill="#fcf7f0" stroke="#e6dfd8"/>
+          <text x="80" y="30" text-anchor="middle" font-size="10" font-family="Inter,sans-serif" fill="#6c6a64">⏳ 锁被占了，等着…</text>
+          <text x="80" y="47" text-anchor="middle" font-size="10" font-family="Inter,sans-serif" fill="#6c6a64">不能读（会被抢坏）</text>
+        </g>
+        <!-- After A releases -->
+        <g transform="translate(20,85)">
+          <text x="70" y="14" text-anchor="middle" font-size="11" font-family="Inter,sans-serif" font-weight="600" fill="#5db872">采集线程（写完了）</text>
+          <rect x="10" y="22" width="120" height="30" rx="4" fill="#efe9de" stroke="#e6dfd8"/>
+          <text x="70" y="42" text-anchor="middle" font-size="10" font-family="Inter,sans-serif" fill="#141413">🔓 解锁 → 去抓下一帧</text>
+        </g>
+        <g transform="translate(200,85)">
+          <text x="75" y="14" text-anchor="middle" font-size="11" font-family="Inter,sans-serif" font-weight="600" fill="#cc785c">编码线程（等到了）</text>
+          <rect x="10" y="22" width="140" height="30" rx="4" fill="#cc785c" opacity="0.12" stroke="#cc785c"/>
+          <text x="80" y="42" text-anchor="middle" font-size="10" font-family="Inter,sans-serif" fill="#141413">🔒 抢到锁 → 📖 安全读取</text>
+        </g>
+        <line x1="160" y1="38" x2="200" y2="38" stroke="#e6dfd8" stroke-width="1.5"/>
+        <line x1="160" y1="110" x2="200" y2="110" stroke="#e6dfd8" stroke-width="1.5"/>
+      </svg>
+      <p class="img-caption">▲ 左：采集线程先上锁再写数据。右：编码线程发现锁被占了，在外面等。写完后解锁，编码线程抢到锁后再读取。</p>
+    </div>
+
+    <!-- ===== 帧总线 ===== -->
+    <h3>帧总线：采集和合成之间怎么交接</h3>
+    <p>采集线程每抓到一帧画面，就放进<strong>帧总线</strong>（FrameBus）——一块被多个线程共享的存储区。然后采集线程立刻回去抓下一帧，不等任何人。需要用到画面帧的其他线程（比如组合模式的合成线程，或者推流的编码线程）定期来帧总线查看：有没有新帧？有就取走，没有就过一会儿再来。</p>
+    <p>帧总线的设计有三个要点：</p>
+    <ul>
+      <li><strong>编号机制</strong>：每一帧都有一个不断增加的编号——采集线程每放一帧进来就编号加 1（第 42 帧、第 43 帧……）。取帧的线程会记住自己上次取到的是第几帧。下次来看的时候，如果编号没变（还是 42），说明没新帧，就不用白费力气。如果编号变了（现在是 43），说明新帧来了，取走。这个设计避免了重复处理同一帧。</li>
+      <li><strong>多个独立通道</strong>：帧总线内部不是只有一个大箱子，而是有多个独立的"通道"——每个画面来源分一个专属通道。摄像头帧放 1 号通道，屏幕帧放 2 号通道，视频文件帧放 3 号通道。不同通道的数据完全隔离——往 1 号通道写入不会影响 2 号通道的数据。后面要讲的组合模式，合成线程会同时从多个通道取帧。</li>
+      <li><strong>线程安全</strong>：帧总线里每个通道都有一把锁。采集线程往里写之前先锁住那个通道，写完了解锁。取帧的线程也是先锁住、再读取、再解锁。锁的"粒度"很细——只在真正读写的那一瞬间锁定（通常只有几微秒），锁完了立刻释放。所以基本不会出现"一个线程干等着另一个线程"的情况。</li>
+    </ul>
+
+    <div class="diagram-container">
+      <div class="diagram-label">图 2 · 采集线程和合成线程通过帧总线交接</div>
+      <pre class="mermaid">
+sequenceDiagram
+    participant CAP as 采集线程
+    participant BUS as 帧总线（多通道+锁）
+    participant COMP as 合成线程
+    CAP->>CAP: 抓一帧 YUV 画面
+    CAP->>BUS: 锁通道1 → 写入（编号42）→ 解锁
+    Note over BUS: 通道1的新帧覆盖旧帧
+    CAP->>CAP: 立刻去抓下一帧
+    COMP->>BUS: 锁通道1 → 编号42 > 上次41？→ 拷贝 → 解锁
+    BUS-->>COMP: 拿到编号42的帧
+    COMP->>COMP: 用这帧参与合成
+  </pre>
+    </div>
+
+    <!-- ===== 组合 ===== -->
+    <h3>组合模式：一层一层往上叠</h3>
+    <p>组合模式专门有一个<strong>"合成线程"</strong>。它做的是：</p>
+    <ol>
+      <li>同时从帧总线的多个通道取最新的一帧——1 号通道的摄像头帧、2 号通道的屏幕帧、3 号通道的文件帧</li>
+      <li>按图层的上下关系——也就是谁压在谁上面、谁被谁挡住——从最底层到最顶层，一层层把像素写到画布上。上层像素会盖住下层的</li>
+      <li>每一层不一定铺满整个画布：可能摄像头画面只占左下角一小块、屏幕画面铺满背景、文件画面在右上角。合成线程根据每层的位置参数，准确地把像素写到画布的对应坐标</li>
+      <li>全叠完之后，得到一张完整画面——这就是最终要推流出去的画面</li>
+      <li>把这帧送去编码压缩，再走 RTMP 协议推送到服务器</li>
+    </ol>
+    <p><strong>每个素材源是完全独立控制的。</strong>如果你暂停了视频文件的播放，只是它对应的帧总线通道不再更新——编号停了，合成线程来取帧时发现编号没变，就不取这一路。这一路画面就"冻结"在最后一帧。摄像头和屏幕完全不受影响，继续正常更新帧。如果你替换掉一个素材源，只是把对应通道换成了另一个来源——其他通道完全不感知。这种"各管各的"独立设计，让组合模式的扩展性很强——未来要叠加字幕、水印、还是过渡效果，都是加一个新通道的事，不需要动任何现有通道的逻辑。</p>
+
+    <div class="diagram-container">
+      <div class="diagram-label">图 3 · 组合模式：三源合成一路</div>
+      <pre class="mermaid">
+flowchart LR
+    subgraph 来源["独立来源"]
+        P1["视频文件"]; C1["摄像头"]; S1["屏幕"]
+    end
+    subgraph 通道["帧总线通道"]
+        CH1["通道1"]; CH2["通道2"]; CH3["通道3"]
+    end
+    subgraph 合成["合成线程"]
+        COMP["从底到顶逐层叠像素<br/>→ 生成完整画面<br/>→ 编码 → 推流"]
+    end
+    P1-->CH1; C1-->CH2; S1-->CH3
+    CH1-->COMP; CH2-->COMP; CH3-->COMP
+    style COMP fill:#cc785c,stroke:#cc785c,color:#fff
+    style CH1 fill:#efe9de,stroke:#e6dfd8,color:#141413
+    style CH2 fill:#efe9de,stroke:#e6dfd8,color:#141413
+    style CH3 fill:#efe9de,stroke:#e6dfd8,color:#141413
+      </pre>
+    </div>
+
+    <div class="info-box">
+      <h5>第二章要点</h5>
+      <p>✓ 线程 = 程序内部的一条独立执行路线。多线程让采集、编码、发送同时跑，互不等候<br>
+      ✓ 锁 = 保护共享数据的机制，一次只让一个线程操作，防止读出半新半旧的垃圾数据<br>
+      ✓ 帧总线 = 多线程共享的画面中转区：采集线程往里放，合成/编码线程来取<br>
+      ✓ 递增编号防止重复处理，多通道让不同画面源互不干扰<br>
+      ✓ 组合 = 合成线程从多通道同时取帧 → 按图层顺序从底到顶叠像素 → 生成完整画面</p>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== 三、推流与编码 ==================== -->
+<section class="section surface-white" id="streaming">
+  <div class="section-inner">
+    <div class="section-eyebrow">Chapter 03</div>
+    <h2>画面怎么到达观众</h2>
+    <p class="lead">画面采集好了、组合好了，接下来要压缩编码，然后通过网络发送出去。这是整个链路中计算量最大的环节。</p>
+
+    <h3>推流和拉流</h3>
+    <p><strong>推流</strong>：一台设备持续地把编码压缩后的视频数据发送给另一台设备或服务器。FPlayer 桌面端做的是推流——把采集到的（或组合好的）画面压缩后发出去。<strong>拉流</strong>：一台设备从服务器持续拉取视频数据，然后解码播放。FPlayer 手机端做的是拉流。</p>
+    <p>两者的关键区别在于<strong>谁发起传输</strong>：推流是发送方主动发，拉流是接收方主动要。</p>
+
+    <!-- ===== 协议 ===== -->
+    <h3>数据在网络上是按什么规矩传的？</h3>
+    <p>两台设备要在网络上传输数据，必须事先约定好一套规矩——数据包长什么样、谁先发谁后发、传错了怎么补救。这套规矩就叫<strong>协议</strong>。</p>
+
+    <div class="concept-box">
+      <h5>前置知识：数据在网络上是怎样传输的？</h5>
+      <p>网络上传输的任何数据——网页、视频、文件——都会被拆成一个个<strong>"数据包"</strong>来发送。每个数据包就像是快递包裹：有寄件人地址（源 IP 地址）、收件人地址（目标 IP 地址）、还有包裹内容（数据本身）。IP 地址就是一串数字，用来在网络中标定一台设备——就像每栋房子有唯一的门牌号，每台连网的设备也有唯一的 IP 地址。<br><br>
+      数据包到了目标设备之后，还需要知道"这个包是给哪个程序处理的？"——因为一台设备上可能同时开着浏览器、微信、FPlayer 等多个在联网的程序。这时候就需要<strong>端口号</strong>——一个数字标签，用来区分同一台设备上的不同程序。比如网页服务器通常用 80 端口（HTTP）或 443 端口（HTTPS），FPlayer 推流用的 RTMP 协议默认用 1935 端口。<br><br>
+      所以一个完整的网络地址 = IP 地址（找到哪台机器）+ 端口号（找到哪个程序）。</p>
+      <svg class="inline-img-sm" viewBox="0 0 560 210" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="数据包封装结构示意">
+        <title>网络数据包逐层封装结构</title>
+        <rect width="560" height="210" fill="#faf9f5" rx="8"/>
+        <text x="280" y="22" text-anchor="middle" font-size="13" font-family="Inter,sans-serif" font-weight="600" fill="#141413">数据包的层层封装（发送时从内向外封装，接收时从外向内拆封）</text>
+        <!-- Outermost layer -->
+        <rect x="30" y="38" width="500" height="28" rx="4" fill="#efe9de" stroke="#cc785c" stroke-width="1.5"/>
+        <text x="280" y="57" text-anchor="middle" font-size="11" font-family="Inter,sans-serif" fill="#141413">第4层 · TCP 头：序号、校验码（保证数据顺序正确、不出错）</text>
+        <!-- Layer 3 -->
+        <rect x="60" y="72" width="440" height="28" rx="4" fill="#f5f0e8" stroke="#e8a55a" stroke-width="1"/>
+        <text x="280" y="91" text-anchor="middle" font-size="11" font-family="Inter,sans-serif" fill="#141413">第3层 · IP 头：源 IP 地址（发件人）、目标 IP 地址（收件人）</text>
+        <!-- Layer 2 -->
+        <rect x="90" y="106" width="380" height="28" rx="4" fill="#fcf7f0" stroke="#5db8a6" stroke-width="1"/>
+        <text x="280" y="125" text-anchor="middle" font-size="11" font-family="Inter,sans-serif" fill="#141413">第2层 · HTTP/RTMP 头：协议类型、内容长度、请求路径（/live/stream001）</text>
+        <!-- Innermost -->
+        <rect x="120" y="140" width="320" height="32" rx="4" fill="#cc785c" opacity="0.15" stroke="#cc785c" stroke-width="1.5"/>
+        <text x="280" y="161" text-anchor="middle" font-size="11" font-family="Inter,sans-serif" fill="#141413">第1层 · 实际数据：压缩后的音视频画面数据</text>
+        <!-- Labels -->
+        <text x="545" y="57" font-size="10" font-family="Inter,sans-serif" fill="#6c6a64">← 端口号</text>
+        <text x="520" y="91" font-size="10" font-family="Inter,sans-serif" fill="#6c6a64">← 地址</text>
+        <text x="490" y="125" font-size="10" font-family="Inter,sans-serif" fill="#6c6a64">← 协议</text>
+        <text x="460" y="161" font-size="10" font-family="Inter,sans-serif" fill="#6c6a64">← 内容</text>
+      </svg>
+      <p class="img-caption">▲ 数据发送时，从内到外逐层封装（加信封）；接收时从外到内逐层拆封。每层协议解决不同的问题。</p>
+    </div>
+
+    <p>流媒体领域常用三种协议：</p>
+    <ul>
+      <li><strong>RTMP</strong>：Adobe 公司十几年前设计的一种传输方式。它在推流端和服务器之间建立一条<strong>TCP 连接</strong>——TCP 是网络上两种主要传输方式之一（另一种叫 UDP），它的特点是保证数据一定送到、顺序一定不乱、如果中途丢了一个包会自动重发。相当于"挂号信"——寄到了才罢休。RTMP 靠这条 TCP 连接持续传视频数据，端到端延迟大约 1~3 秒，目前仍是推流的主力协议。缺点是使用 1935 端口，有些公司防火墙会拦截非标准端口。</li>
+      <li><strong>HTTP-FLV</strong>：把 RTMP 格式的视频数据包装在 HTTP 格式里传输。HTTP 就是浏览器上网用的那个协议——你在地址栏输入网址时前面那个 "http://" 或 "https://"。所有防火墙都放行 HTTP（否则网页就上不了了），所以 HTTP-FLV 的网络穿透性比纯 RTMP 好，延迟同样在 1~3 秒。</li>
+      <li><strong>HLS</strong>：Apple 公司设计的一种方式。它不传输持续的数据流，而是把视频切成一段一段几秒钟长的小文件（.ts 文件），然后用一个播放列表（.m3u8 文件）把这些小文件串起来。播放端就像下载普通文件一样，依次下载这些分片并按顺序播放。这种方式延迟最高（5~15 秒，因为必须攒够一个分片才能开始播），但有一个巨大的好处：<strong>兼容性极好</strong>——几乎所有手机、平板、浏览器都能直接播；而且这些分片文件可以被 CDN 缓存。CDN 是分布在世界各地的文件缓存服务器——把热门内容提前存放在离用户最近的服务器上，这样用户不用每次都去源服务器下载，速度快很多。</li>
+    </ul>
+    <p>FPlayer 推流用 RTMP，拉流三种都支持，根据播放端的能力自动选择最合适的。在服务器模式下，ZLMediaKit（服务端的媒体处理核心）会自动把收到的 RTMP 流转成 HTTP-FLV 和 HLS 两种格式同时输出。</p>
+
+    <!-- ===== 编码 ===== -->
+    <h3>先理解 YUV —— 画面在 FPlayer 内部的"通用语言"</h3>
+    <p>在第一章讲 RGB 时我们说过，每个像素用 (R, G, B) 三个数值来表示颜色。但 FPlayer 内部不用 RGB 来存储和传输画面，而是用 <strong>YUV</strong>。为什么？</p>
+    <p>RGB 把每个像素的红、绿、蓝都完整存下来。一个 1920×1080 的画面，每个像素 3 个值，共约 <strong>6.2MB</strong>。YUV 的做法不同：它把"亮度"和"颜色"拆开了——<strong>Y 通道专门存亮度（明暗），U 和 V 通道存颜色信息</strong>。关键来了：在 YUV420 格式中，Y 每个像素都存，但 <strong>U 和 V 每 4 个像素才存一组</strong>。这样一帧只需要约 <strong>3.1MB</strong>——比 RGB 直接省了一半。</p>
+    <p>能这么省是因为<strong>人眼的生理特性</strong>：人眼视网膜上感知亮度的细胞（约 1.2 亿个视杆细胞）数量是感知颜色细胞（约 600 万个视锥细胞）的将近 20 倍。我们对"明暗"的敏感度远高于对"颜色细节"的敏感度。所以把颜色信息压缩到四分之一，人眼几乎看不出来。</p>
+
+    <svg class="inline-img" viewBox="0 0 560 180" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="RGB vs YUV 数据量对比">
+      <title>RGB 和 YUV420 存储方式对比</title>
+      <rect width="560" height="180" fill="#faf9f5" rx="8"/>
+      <!-- RGB -->
+      <g transform="translate(15,16)">
+        <text x="100" y="0" text-anchor="middle" font-size="12" font-family="Inter,sans-serif" font-weight="600" fill="#c64545">RGB：每个像素存满 (R,G,B)</text>
+        <rect x="0" y="10" width="24" height="24" rx="2" fill="#c64545"/><text x="12" y="28" text-anchor="middle" font-size="8" font-family="Inter,sans-serif" fill="#fff">R1</text>
+        <rect x="26" y="10" width="24" height="24" rx="2" fill="#5db872"/><text x="38" y="28" text-anchor="middle" font-size="8" font-family="Inter,sans-serif" fill="#fff">G1</text>
+        <rect x="52" y="10" width="24" height="24" rx="2" fill="#4c6ee6"/><text x="64" y="28" text-anchor="middle" font-size="8" font-family="Inter,sans-serif" fill="#fff">B1</text>
+        <rect x="82" y="10" width="24" height="24" rx="2" fill="#c64545"/><text x="94" y="28" text-anchor="middle" font-size="8" font-family="Inter,sans-serif" fill="#fff">R2</text>
+        <rect x="108" y="10" width="24" height="24" rx="2" fill="#5db872"/><text x="120" y="28" text-anchor="middle" font-size="8" font-family="Inter,sans-serif" fill="#fff">G2</text>
+        <rect x="134" y="10" width="24" height="24" rx="2" fill="#4c6ee6"/><text x="146" y="28" text-anchor="middle" font-size="8" font-family="Inter,sans-serif" fill="#fff">B2</text>
+        <rect x="160" y="10" width="24" height="24" rx="2" fill="#c64545"/><text x="172" y="28" text-anchor="middle" font-size="8" font-family="Inter,sans-serif" fill="#fff">R3</text>
+        <text x="100" y="53" text-anchor="middle" font-size="11" font-family="Inter,sans-serif" fill="#6c6a64">每个像素 = 3 个值，一帧 1920×1080 ≈ 6.2MB</text>
+      </g>
+      <!-- YUV -->
+      <g transform="translate(15,85)">
+        <text x="250" y="0" text-anchor="middle" font-size="12" font-family="Inter,sans-serif" font-weight="600" fill="#5db872">YUV420：颜色每 4 个像素才存一组</text>
+        <!-- 4 pixels share 1 set of UV -->
+        <rect x="0" y="10" width="24" height="24" rx="2" fill="#141413"/><text x="12" y="28" text-anchor="middle" font-size="8" font-family="Inter,sans-serif" fill="#faf9f5">Y1</text>
+        <rect x="26" y="10" width="24" height="24" rx="2" fill="#141413"/><text x="38" y="28" text-anchor="middle" font-size="8" font-family="Inter,sans-serif" fill="#faf9f5">Y2</text>
+        <rect x="52" y="10" width="52" height="24" rx="2" fill="#e8a55a" opacity="0.6"/><text x="78" y="28" text-anchor="middle" font-size="8" font-family="Inter,sans-serif" fill="#141413">U+V（4像素共用）</text>
+        <rect x="110" y="10" width="24" height="24" rx="2" fill="#141413"/><text x="122" y="28" text-anchor="middle" font-size="8" font-family="Inter,sans-serif" fill="#faf9f5">Y3</text>
+        <rect x="136" y="10" width="24" height="24" rx="2" fill="#141413"/><text x="148" y="28" text-anchor="middle" font-size="8" font-family="Inter,sans-serif" fill="#faf9f5">Y4</text>
+        <text x="100" y="60" text-anchor="middle" font-size="11" font-family="Inter,sans-serif" fill="#6c6a64">Y 每像素存（亮度），UV 每 4 像素存（颜色）</text>
+        <text x="100" y="78" text-anchor="middle" font-size="11" font-family="Inter,sans-serif" font-weight="600" fill="#141413">一帧 1920×1080 ≈ 3.1MB（省一半）</text>
+      </g>
+    </svg>
+    <p class="img-caption">▲ RGB 每像素存满 3 个值；YUV420 中 Y（亮度）每个都存，UV（颜色）4 个像素共用一组。利用人眼对亮度比颜色敏感 20 倍的生理特性，省一半空间而不影响观看体验。</p>
+
+    <h3>怎么把海量数据压到能传得动？</h3>
+    <p>YUV 格式已经比 RGB 省了一半——1080p 30fps 大约 93MB/秒。但这还是太大，局域网里勉强跑，互联网上传不动。必须用编码再压缩几百倍。</p>
+    <p>FPlayer 支持两种编码标准：<strong>H.264</strong>（目前最通用，所有设备都支持，压缩比约 100:1 ~ 200:1）和 <strong>H.265</strong>（也叫 HEVC，H.264 的升级版，相同画质下码率能再省约一半，但编码更费计算力，只有较新的设备才支持硬件解码）。</p>
+
+    <p>编码有两种实现途径：</p>
+    <p><strong>硬件编码</strong>：显卡芯片上有一块<strong>专用的硬件电路</strong>，只做视频压缩这一件事，别的什么都不干。因为压缩算法被直接刻在了电路上（不是靠软件一步步执行），所以速度极快、功耗极低，而且不占 CPU 和 GPU 的通用计算资源。这块专用电路在不同品牌的显卡上有不同名字——NVIDIA 的叫做 <strong>NVENC</strong>，AMD 的叫做 <strong>AMF</strong>，Intel 核显的叫做 <strong>QSV</strong>（Quick Sync Video）。缺点是参数调节的灵活度不如软件编码——比如码率范围、某些高级画质参数可能调不了。</p>
+    <p><strong>软件编码</strong>：用 CPU 运行一个编码程序。因为编码算法是软件代码，所有参数都可以自由调节，画质上限更高。但缺点也明显——CPU 要同时处理操作系统、FPlayer 界面、网络通信等一堆事情，再来一个极高负载的编码任务，很容易占满 CPU，导致整个电脑变慢。FPlayer 用的软件编码器是 <strong>libx264</strong>——H.264 标准的一个开源软件实现，是全世界应用最广的软件编码器之一。</p>
+
+    <p>FPlayer 启动推流时，会<strong>自动按优先级探测</strong>可用的编码器：</p>
+    <div class="diagram-container">
+      <div class="diagram-label">图 4 · 编码器自动选择</div>
+      <pre class="mermaid">
+flowchart TD
+    START["需要编码"] --> NV{"有 NVIDIA 显卡？"}
+    NV -->|"有"| NVENC["NVENC 硬件编码"]
+    NV -->|"无"| AMD{"有 AMD 显卡？"}
+    AMD -->|"有"| AMF["AMF 硬件编码"]
+    AMD -->|"无"| INTEL{"有 Intel 核显？"}
+    INTEL -->|"有"| QSV["QSV 硬件编码"]
+    INTEL -->|"无"| SW["libx264 CPU 软件编码<br/>任何电脑都能用"]
+    style NVENC fill:#cc785c,stroke:#cc785c,color:#fff
+    style AMF fill:#cc785c,stroke:#cc785c,color:#fff
+    style QSV fill:#cc785c,stroke:#cc785c,color:#fff
+    style SW fill:#e8e0d2,stroke:#d9d0c0,color:#141413
+      </pre>
+    </div>
+    <p>这套策略对用户完全透明——你不需要知道自己电脑是什么显卡，软件自动找最好的方案。好显卡用硬件加速，没有独显用核显，连核显都没有就老老实实用 CPU——保证在任何电脑上都能正常推流。</p>
+
+    <!-- ===== 六种推流路径 ===== -->
+    <h3>推流的六种内部处理路径</h3>
+    <p>FPlayer 的推流模块收到推流指令后，根据画面来源自动选择内部处理方式：</p>
+    <table class="compare-table">
+      <thead><tr><th style="width:24%">画面来源</th><th style="width:38%">怎么处理</th><th style="width:38%">什么时候用</th></tr></thead>
+      <tbody>
+        <tr><td class="highlight-col">视频文件（不需调参数）</td><td><strong>流拷贝</strong>：不解码不重新编码，直接把文件中的压缩数据原封不动搬运到网络流。速度最快，画质无损。</td><td>快速分享原画质视频</td></tr>
+        <tr><td class="highlight-col">视频文件（需调参数）</td><td><strong>转码</strong>：完全解码 → 重新设分辨率/码率 → 重新编码 → 推送。灵活但慢。</td><td>文件太大需降画质</td></tr>
+        <tr><td class="highlight-col">摄像头</td><td>直接从设备取流 → 编码 → 推送</td><td>纯摄像头直播</td></tr>
+        <tr><td class="highlight-col">屏幕</td><td>直接从屏幕抓取画面 → 编码 → 推送</td><td>桌面演示</td></tr>
+        <tr><td class="highlight-col">摄像头/屏幕（已在预览中）</td><td>不重复开设备（摄像头不能同时被两个程序占用），从帧总线取预览帧 → 编码 → 推送</td><td>预览已在运行，直接复用</td></tr>
+        <tr><td class="highlight-col">组合模式</td><td>从帧总线多通道同时取帧 → 合成 → 编码 → 推送</td><td>多画面混合直播</td></tr>
+      </tbody>
+    </table>
+
+    <p>"流拷贝"（行业内叫 remux）和"转码"（行业内叫 transcode）有本质区别：流拷贝只换"外包装"——视频容器格式从 .mp4 变成 RTMP 网络流——但里面的压缩数据完全没动。所以速度只受硬盘读取速度限制，画质完全无损。转码则要把压缩数据完全解开再重新压缩——可以改变分辨率、码率、编码格式，但每次重新压缩都会有质量损失（就像反复保存 JPEG 图片，每次都会更模糊一点）。</p>
+
+    <!-- ===== 音频 ===== -->
+    <h3>声音是怎么处理的</h3>
+    <p>推流不只有画面。FPlayer 处理声音的整个流程叫<strong>"音频管线"</strong>——"管线"在编程中的意思是数据经过的一系列按顺序排列的加工步骤。音频管线分五步：</p>
+    <ol>
+      <li><strong>采集</strong>：在 Windows 上使用 WASAPI 接口直接捕获电脑正在播放的声音。WASAPI 是 Windows Vista 以后内置在操作系统里的音频子系统——相当于操作系统替你做了一套"录音"的底层机制，应用程序只需要调用它提供的接口，不需要自己去跟声卡硬件打交道。同时可以采集麦克风输入。</li>
+      <li><strong>混音</strong>：如果同时开了系统声音和麦克风，在这一步把两路混合成一路。需要处理音量平衡（系统声音和麦克风音量可能相差很大）、采样率不一致（系统声音可能是 48000Hz、麦克风是 44100Hz）的问题。Hz 即赫兹，表示每秒对声音波形取多少次样——数值越高声音越保真。</li>
+      <li><strong>格式统一</strong>：不同来源的音频可能有不同的声道数（单声道 vs 立体声）和采样率，在这一步统一成编码器需要的格式。</li>
+      <li><strong>AAC 编码</strong>：把原始音频压缩成 AAC 格式。AAC（Advanced Audio Coding，高级音频编码）是目前最通用的音频压缩格式，所有手机、电脑、浏览器都支持。</li>
+      <li><strong>音视频交错</strong>：这是防止"音画不同步"的关键一步。音频帧和视频帧各自都带着时间戳，发送时不是"先把画面全发完再发声音"（那样播放端就会先看到画面没声音、然后突然有声音没画面），而是按时间戳交替排列：视频帧1 → 音频帧1 → 音频帧2 → 视频帧2 → 音频帧3 → 视频帧3。交错发送后，播放端按时间戳把画面和声音配对还原，就得到了同步的视听体验。</li>
+    </ol>
+
+    <svg class="inline-img" viewBox="0 0 560 160" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="音频管线五步流程">
+      <title>音频管线：声音数据经过的五步处理</title>
+      <rect width="560" height="160" fill="#faf9f5" rx="8"/>
+      <g transform="translate(8,16)">
+        <rect x="0" y="0" width="90" height="50" rx="6" fill="#cc785c" opacity="0.15" stroke="#cc785c"/>
+        <text x="45" y="20" text-anchor="middle" font-size="10" font-family="Inter,sans-serif" font-weight="600" fill="#141413">① 采集</text>
+        <text x="45" y="38" text-anchor="middle" font-size="9" font-family="Inter,sans-serif" fill="#6c6a64">系统音+麦克风</text>
+        <text x="100" y="30" font-size="16" fill="#cc785c">→</text>
+        <rect x="115" y="0" width="90" height="50" rx="6" fill="#cc785c" opacity="0.15" stroke="#cc785c"/>
+        <text x="160" y="20" text-anchor="middle" font-size="10" font-family="Inter,sans-serif" font-weight="600" fill="#141413">② 混音</text>
+        <text x="160" y="38" text-anchor="middle" font-size="9" font-family="Inter,sans-serif" fill="#6c6a64">多路合一路</text>
+        <text x="215" y="30" font-size="16" fill="#cc785c">→</text>
+        <rect x="230" y="0" width="90" height="50" rx="6" fill="#cc785c" opacity="0.15" stroke="#cc785c"/>
+        <text x="275" y="20" text-anchor="middle" font-size="10" font-family="Inter,sans-serif" font-weight="600" fill="#141413">③ 格式统一</text>
+        <text x="275" y="38" text-anchor="middle" font-size="9" font-family="Inter,sans-serif" fill="#6c6a64">采样率+声道</text>
+        <text x="330" y="30" font-size="16" fill="#cc785c">→</text>
+        <rect x="345" y="0" width="90" height="50" rx="6" fill="#cc785c" opacity="0.15" stroke="#cc785c"/>
+        <text x="390" y="20" text-anchor="middle" font-size="10" font-family="Inter,sans-serif" font-weight="600" fill="#141413">④ AAC编码</text>
+        <text x="390" y="38" text-anchor="middle" font-size="9" font-family="Inter,sans-serif" fill="#6c6a64">压缩音频</text>
+        <text x="445" y="30" font-size="16" fill="#cc785c">→</text>
+        <rect x="460" y="0" width="90" height="50" rx="6" fill="#cc785c" opacity="0.15" stroke="#cc785c"/>
+        <text x="505" y="20" text-anchor="middle" font-size="10" font-family="Inter,sans-serif" font-weight="600" fill="#141413">⑤ 交错发送</text>
+        <text x="505" y="38" text-anchor="middle" font-size="9" font-family="Inter,sans-serif" fill="#6c6a64">防音画不同步</text>
+      </g>
+      <!-- Interleave example -->
+      <g transform="translate(8,80)">
+        <text x="275" y="0" text-anchor="middle" font-size="11" font-family="Inter,sans-serif" font-weight="600" fill="#141413">交错发送顺序（按时间戳排列）</text>
+        <rect x="0" y="12" width="52" height="30" rx="4" fill="#4c6ee6" opacity="0.15" stroke="#4c6ee6"/>
+        <text x="26" y="32" text-anchor="middle" font-size="10" font-family="Inter,sans-serif" fill="#141413">视频帧1</text>
+        <rect x="60" y="12" width="52" height="30" rx="4" fill="#5db872" opacity="0.15" stroke="#5db872"/>
+        <text x="86" y="32" text-anchor="middle" font-size="10" font-family="Inter,sans-serif" fill="#141413">音频1</text>
+        <rect x="120" y="12" width="52" height="30" rx="4" fill="#5db872" opacity="0.15" stroke="#5db872"/>
+        <text x="146" y="32" text-anchor="middle" font-size="10" font-family="Inter,sans-serif" fill="#141413">音频2</text>
+        <rect x="180" y="12" width="52" height="30" rx="4" fill="#4c6ee6" opacity="0.15" stroke="#4c6ee6"/>
+        <text x="206" y="32" text-anchor="middle" font-size="10" font-family="Inter,sans-serif" fill="#141413">视频帧2</text>
+        <rect x="240" y="12" width="52" height="30" rx="4" fill="#5db872" opacity="0.15" stroke="#5db872"/>
+        <text x="266" y="32" text-anchor="middle" font-size="10" font-family="Inter,sans-serif" fill="#141413">音频3</text>
+        <rect x="300" y="12" width="52" height="30" rx="4" fill="#4c6ee6" opacity="0.15" stroke="#4c6ee6"/>
+        <text x="326" y="32" text-anchor="middle" font-size="10" font-family="Inter,sans-serif" fill="#141413">视频帧3</text>
+        <rect x="360" y="12" width="52" height="30" rx="4" fill="#5db872" opacity="0.15" stroke="#5db872"/>
+        <text x="386" y="32" text-anchor="middle" font-size="10" font-family="Inter,sans-serif" fill="#141413">音频4</text>
+        <rect x="420" y="12" width="52" height="30" rx="4" fill="#4c6ee6" opacity="0.15" stroke="#4c6ee6"/>
+        <text x="446" y="32" text-anchor="middle" font-size="10" font-family="Inter,sans-serif" fill="#141413">视频帧4</text>
+        <rect x="480" y="12" width="52" height="30" rx="4" fill="#5db872" opacity="0.15" stroke="#5db872"/>
+        <text x="506" y="32" text-anchor="middle" font-size="10" font-family="Inter,sans-serif" fill="#141413">音频5</text>
+      </g>
+    </svg>
+    <p class="img-caption">▲ 上：音频管线的五个处理步骤。下：音视频交错发送的顺序——视频帧和音频帧按时间戳交替排列，蓝色=视频，绿色=音频。</p>
+
+    <div class="info-box">
+      <h5>第三章要点</h5>
+      <p>✓ 协议 = 网络传输的规矩。RTMP 低延迟推流；HLS 兼容性最好但延迟高（切片方式）；HTTP-FLV 介于两者<br>
+      ✓ 数据在网络上以数据包形式传输，IP 地址找机器、端口号找程序<br>
+      ✓ 硬件编码 = 显卡上的专用电路做压缩，快且省电；软件编码 = CPU 跑程序，灵活但慢<br>
+      ✓ 编码器自动降级：NVENC → AMF → QSV → libx264，有好的先用好的<br>
+      ✓ 六种推流路径，流拷贝 vs 转码：不碰压缩数据（快且无损）vs 重新压缩（灵活但有损）<br>
+      ✓ 音频管线五步：采集 → 混音 → 格式统一 → AAC 编码 → 音视频交错（防不同步）</p>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== 四、工程架构 ==================== -->
+<section class="section surface-white" id="architecture">
+  <div class="section-inner">
+    <div class="section-eyebrow">Chapter 04</div>
+    <h2>代码是怎么组织的</h2>
+    <p class="lead">整个桌面端的代码分成 7 层，只遵循一条核心规则：只有 runtime 层知道所有后端的存在。</p>
+
+    <!-- ===== 接口与后端 ===== -->
+    <h3>先讲清楚两个概念</h3>
+    <h4>接口 —— 一份"功能清单"</h4>
+    <p>写程序就像盖房子。如果你把厨房、卧室、电线、水管全部混在一起砌——以后想换一个水龙头，就得砸墙。所以盖房子要分成结构、水电、装修等不同工种，每个工种只按规定的方式和其他工种对接。软件也是一样——要分模块，模块之间通过<strong>接口</strong>对接。</p>
+    <p>接口是什么？就是一份<strong>"你必须能做什么"的清单</strong>。比如"播放器接口"可能写：必须有播放、暂停、快进、调音量四个功能。至于这四个功能具体怎么实现——是用 FFmpeg 解码再渲染，还是调用系统自带的播放器——接口不管。接口只管"有没有"。</p>
+    <p>定义接口的好处：<strong>使用播放器的那些代码，只依赖这份清单，不依赖清单是怎么被实现的</strong>。以后想换一种播放方式，只要新的实现也满足接口的要求，所有使用它的代码一行都不用改。这种做法的核心价值是<strong>"解耦"</strong>——让软件的不同部分彼此不知道对方内部的细节，从而可以独立修改和替换。</p>
+    <p>FPlayer 定义了四个核心接口：IPlayer（播放器）、ICamera（摄像头）、IScreenCapture（屏幕捕获）、IStream（推拉流）。</p>
+
+    <h4>后端 —— 接口的多种实现</h4>
+    <p>同一个接口可以有多个<strong>后端</strong>——就是对于同一份"功能清单"，有几种不同的实现方式。FPlayer 的"播放器"接口就有两个后端：用 FFmpeg 自己写的（功能最强、支持格式最全）和用 Qt 自带的（代码最简单、集成最方便）。</p>
+    <p>你要一个播放器的时候，拿到的只是一个"实现了 IPlayer 接口的对象"——你可以调它的播放、暂停、快进，但它内部到底是 FFmpeg 还是 Qt，你不知道，也不需要知道。这种设计叫<strong>"策略模式"</strong>：同一个功能有多种实现策略，可以在运行时按配置选用哪一种。FPlayer 为什么要多后端？因为不同场景的最优解不一样——随手放个视频用 Qt 够简单，要全格式支持和精准控制用 FFmpeg，Windows 上高速抓屏用 DXGI。</p>
+
+    <!-- ===== 七层 ===== -->
+    <h3>七层架构</h3>
+    <div class="diagram-container">
+      <div class="diagram-label">图 5 · 七层架构</div>
+      <pre class="mermaid">
+graph TD
+    APP["app/ 启动层"]; WIDGET["widget/ 界面层"]; SERVICE["service/ 业务层"]
+    RUNTIME["runtime/ 工厂层<br/>← 唯一切换点"]
+    BACKEND["backend/ 后端层<br/>FFmpeg | Qt6 | DXGI"]
+    API["api/ 接口层"]; COMMON["common/ 工具层"]
+    APP-->WIDGET; WIDGET-->SERVICE; SERVICE-->RUNTIME
+    RUNTIME-->BACKEND; BACKEND-->API; API-->COMMON
+    WIDGET-->API; SERVICE-->API
+    style RUNTIME fill:#cc785c,stroke:#cc785c,color:#fff
+    style BACKEND fill:#e8e0d2,stroke:#d9d0c0,color:#141413
+    style API fill:#efe9de,stroke:#e6dfd8,color:#141413
+      </pre>
+    </div>
+
+    <ol class="step-list">
+      <li><h5><span class="tech-tag">app/</span> 启动层 — ~50 行</h5>
+      <p>程序的入口。做的事：初始化环境 → 读命令行参数确定用哪个后端 → 创建主窗口 → 启动<strong>事件循环</strong>。事件循环是桌面程序运行的基础：程序启动后进入一个循环，不断问"有人点按钮了吗？有新画面帧到了吗？有网络数据来了吗？"——每发现一件事就调用对应的处理代码。这就是为什么你点按钮程序能立刻响应——事件循环一直在那等着。</p></li>
+      <li><h5><span class="tech-tag">widget/</span> 界面层 — ~4100 行</h5>
+      <p>所有你看得到的按钮、弹窗、菜单、视频画面。核心组件：CaptureWindow（主窗口，管理三种采集模式切换 + 组合模式布局 + 推流设置）、FVideoView（视频显示控件，内部根据后端类型自动选择用 OpenGL 渲染还是 Qt 原生控件显示）、AiChatDialog（AI 对话窗口）、ImagePoolSidebar（截图管理侧栏）。</p></li>
+      <li><h5><span class="tech-tag">service/</span> 业务层 — ~726 行</h5>
+      <p>不做具体音视频处理，只做决策。比如你点"开始推流"，这一层判断：推的是摄像头还是屏幕还是文件还是组合画面？→ 组织推流参数 → 找 runtime 创建对应的推流对象 → 启动推流。</p></li>
+      <li><h5><span class="tech-tag">runtime/</span> 工厂层 — 最关键</h5>
+      <p>整个项目<strong>唯一知道所有后端存在</strong>的一层。它根据配置决定创建 FFmpeg 后端还是 Qt 后端还是 DXGI 后端。以后想加一个新后端——比如 WebRTC——只需要在这一层加一行分支，其他层完全不用动。这就是"把创建决策集中在一个地方"的价值。</p></li>
+      <li><h5><span class="tech-tag">backend/</span> 后端层 — 真正干活</h5>
+      <p>五个子模块：media_ffmpeg（FFmpeg 播放/采集）、media_qt6（Qt 播放/采集）、stream_ffmpeg（推拉流，最复杂）、desktopcapture_dxgi（显卡直接抓屏，仅 Windows）、net_qt6（局域网设备发现，目前是骨架）。</p></li>
+      <li><h5><span class="tech-tag">api/</span> 接口层</h5>
+      <p>只有四个头文件（.h 文件——在 C++ 中用来声明"有哪些东西可以用"而不写具体实现的文件），每个定义一个纯接口。刻意不引用任何 FFmpeg 或 Qt 的内部头文件——保持接口"纯净"。因为如果接口层依赖了 FFmpeg，所有使用接口的层也会被间接传染依赖 FFmpeg，那就失去了可替换后端的意义。</p></li>
+      <li><h5><span class="tech-tag">common/</span> 工具层</h5>
+      <p>FGLWidget（OpenGL 渲染画面）、FrameBus（线程间传递帧数据）、DesignTokens（统一视觉配色）。</p></li>
+    </ol>
+
+    <!-- ===== 技术选型 ===== -->
+    <h3>技术选型：为什么选这几样</h3>
+    <table class="compare-table">
+      <thead><tr><th style="width:16%">技术</th><th style="width:40%">它是什么</th><th style="width:44%">为什么用它</th></tr></thead>
+      <tbody>
+        <tr><td class="highlight-col">C++17</td><td><strong>编译型语言</strong>。写好的代码不是直接运行，而是先由一个叫"编译器"的程序把代码翻译成 CPU 能直接执行的机器指令。这个过程叫编译。编译后的程序运行速度极快，因为 CPU 不需要边运行边翻译——指令已经是它的母语了。</td><td>音视频每秒钟要处理几百万个像素的数据，计算量极大，必须用效率最高的方式。FFmpeg 和 Qt 本身也是 C++ 写的，三者之间调用无任何翻译开销。</td></tr>
+        <tr><td class="highlight-col">Qt 6.10</td><td><strong>跨平台桌面开发框架</strong>。框架比"库"更进一步——它不仅提供现成的功能，还规定了程序的结构。你按它的结构来写代码，它帮你处理大量底层细节。跨平台的意思是：同一套代码编译后可以在 Windows 和 Linux 上得到功能相同的程序。</td><td>不需要分别为 Windows 和 Linux 写两套界面代码。内置信号槽机制：一个组件发生了一件事（比如按钮被点击），可以自动通知关心这件事的其他组件。这比"不断轮询检查按钮有没有被点"高效得多。</td></tr>
+        <tr><td class="highlight-col">FFmpeg 8.1</td><td><strong>开源音视频工具集</strong>。开源意味着代码公开、免费使用。覆盖编解码、流媒体协议、采集设备、显卡硬件加速等一切音视频相关能力。</td><td>行业事实标准——VLC 播放器、OBS 推流、剪映转码都在用它。用 FFmpeg 意味着不需要从零写编解码器和协议——这些是极复杂的工作，全世界只有极少数团队能做好。</td></tr>
+        <tr><td class="highlight-col">CMake</td><td><strong>构建系统</strong>。管理"源代码 → 可运行程序"的全流程——编译每个文件、把编译结果链接成完整程序、复制需要的资源文件、打包成安装包。</td><td>C++ 生态的标准工具。一条命令生成 Windows 安装包（.exe/.msi）或 Linux 安装包（.deb），不用为不同平台写不同脚本。</td></tr>
+      </tbody>
+    </table>
+
+    <div class="info-box">
+      <h5>第四章要点</h5>
+      <p>✓ 接口 = 功能清单（"必须有什么功能"），后端 = 清单的实现（"功能怎么做的"）<br>
+      ✓ 解耦 = 让代码的不同部分不知道彼此的细节，从而可以独立修改和替换<br>
+      ✓ 七层架构中，只有 runtime 知道所有后端存在——"创建什么"的决策集中在一个地方<br>
+      ✓ C++ 是编译型语言（先翻译再运行，快）；Qt 是跨平台框架；FFmpeg 是音视频行业标准</p>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== 五、服务端 ==================== -->
+<section class="section surface-stone" id="server">
+  <div class="section-inner">
+    <div class="section-eyebrow">Chapter 05</div>
+    <h2>服务端在做什么</h2>
+    <p class="lead">FPlayer 可以脱离服务器独立使用——推流端直接把画面发给拉流端。但加上服务端后，就能一对多分发、自动转格式、统一管理地址。</p>
+
+    <h3>为什么需要一个服务器？</h3>
+    <p>直连模式（不经过服务器）有三个局限：</p>
+    <ul>
+      <li>只能一对一——每个观众都需要推流端亲自发一份</li>
+      <li>不能自动转格式——推流端发的是 RTMP，如果观众想用 HLS 在手机上播，推流端做不了这个转换</li>
+      <li>没有地址管理——观众必须知道推流端的精确 IP 地址和端口号。推流端的 IP 一旦变了（比如 DHCP 重新分配了地址），观众就连不上了</li>
+    </ul>
+    <p>服务端做的事情就是：<strong>推流端只管"把画面发给服务器"，剩下的——拷贝给多个观众、转换格式、管理播放地址——全部由服务器负责</strong>。</p>
+
+    <h3>两个独立组件：Gateway 和 ZLMediaKit</h3>
+    <p>FPlayer 的服务端由两个完全独立运行的程序组成，分工明确：</p>
+
+    <h4>Gateway：管"谁在播、去哪看"</h4>
+    <p>Go 语言编写的一个 HTTP 接口服务。它完全<strong>不碰音视频数据</strong>，只管理"元数据"——也就是关于流的信息（谁在播、叫什么名字、观众应该去哪看）。"元"的意思是"关于数据的数据"——就像图书馆的索引卡片不是书本身，而是告诉你书在哪个书架上。</p>
+    <p>它的工作流程：</p>
+    <ul>
+      <li>推流端来请求："我要推流了，叫 live/stream001" → Gateway 在内存里记下这条记录，然后返回推流用的 RTMP 地址和观众用的播放地址</li>
+      <li>拉流端来请求："我想看 live/stream001" → Gateway 查到这条记录，返回播放地址列表</li>
+      <li>推流结束 → 通知 Gateway → 标记会话已停</li>
+    </ul>
+    <p>Gateway 用<strong>内存</strong>来存会话数据，没有用数据库。优点是部署简单——不需要额外安装数据库软件；代价是服务重启后之前的记录会丢失。这是一项有目的的技术取舍：先跑通核心功能快速验证价值，持久化可以等以后需要时再加（比如引入 Redis 这类内存数据库，或 MySQL 这类传统数据库）。</p>
+
+    <h4>ZLMediaKit：管"把流转成不同格式发给不同人"</h4>
+    <p>C++ 编写的高性能流媒体服务器。它的核心能力是<strong>协议转换</strong>——端进来一路 RTMP 推流，同时输出 RTMP、HTTP-FLV、HLS 三种格式。观众根据自己的设备和网络条件选择最合适的格式来拉流。</p>
+    <p>ZLMediaKit 使用<strong>动态端口分配</strong>——启动时不写死端口号，而是问操作系统"哪些端口现在没人用？"，选一个空闲的来用。为什么这样做？因为同一台机器上可能同时跑着多个程序都在用网络端口，如果写死了端口号，很容易跟别人的端口冲突——就像一个小区不能有两家用同样的门牌号。动态探测空闲端口就能避免这个冲突。这也使得多个 ZLMediaKit 实例可以并行运行在同一台机器上。</p>
+
+    <div class="diagram-container">
+      <div class="diagram-label">图 6 · 服务端：控制面和数据面分离</div>
+      <pre class="mermaid">
+flowchart TD
+    subgraph 控制面["控制面（Gateway · Go）"]
+        API1["创建/查询/停止会话"]
+    end
+    subgraph 数据面["数据面（ZLMediaKit · C++）"]
+        CONVERT["收 RTMP → 转 FLV/HLS → 输出"]
+    end
+    PUSH["桌面端推流"] -->|"① 申请会话"| API1
+    API1 -->|"② 返回推流地址"| PUSH
+    PUSH -->|"③ 推送画面"| CONVERT
+    PLAY["观众拉流"] -->|"④ 查询地址"| API1
+    API1 -->|"⑤ 返回播放地址"| PLAY
+    PLAY -->|"⑥ 拉取画面"| CONVERT
+    style API1 fill:#cc785c,stroke:#cc785c,color:#fff
+    style CONVERT fill:#e8e0d2,stroke:#d9d0c0,color:#141413
+      </pre>
+    </div>
+    <p class="text-muted">▲ Gateway（控制面）只管"元数据"，不碰一帧视频。ZLMediaKit（数据面）只管"媒体数据"，不关心谁在管理这些流。两者独立运行、独立升级、故障互不影响。</p>
+
+    <p>这种"把管理和执行分开"的设计叫<strong>"控制面与数据面分离"</strong>，在大型系统中非常常见。一个日常例子：你上网时，DNS 服务器（把域名翻译成 IP 地址的服务）就是"控制面"——它只告诉你去哪个 IP 找网站；真正的网页数据是从那个 IP 的 Web 服务器（数据面）直接传给你的。DNS 挂了不影响已经打开的网页；网页服务器挂了影响不到 DNS 的翻译功能。FPlayer 的服务端借鉴了这个成熟的设计模式。</p>
+
+    <div class="info-box">
+      <h5>被问到"为什么不用 WebRTC？"——可以这样答</h5>
+      <p>"架构里已经给 WebRTC 留好了位置——代码目录建好了、编译开关设好了、接口定义好了，目前默认关闭。现阶段 RTMP 在局域网 1~3 秒延迟完全够用，而且 FFmpeg 对 RTMP 的支持经过了十几年验证。WebRTC 的核心优势在于公网 NAT 穿透和亚秒级延迟——未来扩展到公网或需要互动连麦时，在预留目录里实现 IStream 接口就行，上层代码不动。"<br><br>
+      （NAT 穿透：家庭和公司网络通常用 NAT 技术让多台设备共享一个公网 IP 上网。好处是节省 IP 地址，坏处是外网无法主动连接内网设备——别人找不到你。WebRTC 内置了一套复杂的协议来解决"怎么让两台都在内网里的设备互相找到对方并建立连接"这个问题。）</p>
+    </div>
+
+    <div class="info-box">
+      <h5>第五章要点</h5>
+      <p>✓ 服务端的价值：一对多分发、协议自动转换、播放地址统一管理<br>
+      ✓ Gateway：管元数据（谁在播、去哪看），不碰媒体数据。用内存存储降低部署复杂度<br>
+      ✓ ZLMediaKit：管媒体数据（转格式、分发），动态端口分配避免冲突<br>
+      ✓ 控制面与数据面分离：独立运行、独立升级、故障隔离<br>
+      ✓ WebRTC 已预留完整扩展位置，当前 RTMP 够用，未来需要时无缝切换</p>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== 总结 ==================== -->
+<section class="section surface-pale-blue" id="summary">
+  <div class="section-inner">
+    <div class="section-eyebrow">Wrap-up</div>
+    <h2>可以用这些话介绍 FPlayer</h2>
+    <div class="quote-box">
+      <blockquote>"FPlayer 是一个局域网流媒体系统。桌面端用 C++ 和 FFmpeg 做采集、合成和推流；服务端用 Go 管会话、用 ZLMediaKit 做多协议分发；手机端做拉流播放。整套系统可以纯局域网运行，不依赖互联网。"</blockquote>
+      <cite>—— 30 秒介绍</cite>
+    </div>
+    <div class="quote-box">
+      <blockquote>"桌面端最有意思的是多后端架构——同一个功能有三套实现，都遵循同一套接口，可以随时切换。内部用多通道帧总线在采集线程和编码线程之间交接画面数据——各干各的，互不阻塞。这让组合模式成为可能：多个画面源独立运行、最后合成一路推出去。服务端做了控制面与数据面分离——Gateway 管会话、ZLMediaKit 管分发，两边独立运作。架构还给 WebRTC 留好了完整扩展点，未来上公网低延迟只需填代码。"</blockquote>
+      <cite>—— 2 分钟介绍</cite>
+    </div>
+
+    <h3>三个可以主动提出的战略观点</h3>
+    <div class="card-grid">
+      <div class="card"><h5>多后端架构是扩展的基础</h5><p>WebRTC 目录、开关、接口全预留。做公网低延迟或互动连麦只需填代码，上层零改动。</p></div>
+      <div class="card"><h5>组合模式的通道架构可扩展性很强</h5><p>每个源独立通道，控制完全解耦。加字幕、水印、过渡效果就是加一个新通道，不动现有逻辑。</p></div>
+      <div class="card"><h5>"不完整"是有目的的产品取舍</h5><p>内存存会话、网络发现还是骨架、WebRTC 默认关——先跑通核心链路验证价值，再逐步加固。</p></div>
+    </div>
+  </div>
+</section>
+
+<footer class="footer">
+  <div class="footer-inner">
+    <div class="footer-grid">
+      <div class="footer-col"><h6>教程章节</h6><a href="#capture">画面采集</a><a href="#compose">画面组合</a><a href="#streaming">推流与编码</a><a href="#architecture">工程架构</a><a href="#server">服务端</a></div>
+      <div class="footer-col"><h6>核心主题</h6><a href="#capture">采集与后端</a><a href="#compose">帧总线</a><a href="#streaming">编码与协议</a><a href="#architecture">接口与分层</a></div>
+      <div class="footer-col"><h6>相关项目</h6><a href="#">fplayer-ff-desktop</a><a href="#">fplayer-ff-service</a><a href="#">fplayer-ff-mobile</a></div>
+    </div>
+    <div class="footer-bottom">
+      <span>FPlayer Desktop 技术全景教程 · 为零基础的产品经理而写</span>
+      <span>2026 年 5 月</span>
+    </div>
+  </div>
+</footer>
+
+<script>
+mermaid.initialize({ startOnLoad: true, theme: 'default', securityLevel: 'loose', flowchart: { useMaxWidth: true, htmlLabels: true, curve: 'basis' } });
+document.querySelectorAll('.sub-nav-tabs a, .nav-links a').forEach(link => {
+  link.addEventListener('click', function(e) {
+    e.preventDefault();
+    const target = document.querySelector(this.getAttribute('href'));
+    if (target) window.scrollTo({ top: target.getBoundingClientRect().top + window.pageYOffset - 120, behavior: 'smooth' });
+  });
+});
+window.addEventListener('scroll', () => {
+  const pct = document.documentElement.scrollHeight > window.innerHeight ? (window.scrollY / (document.documentElement.scrollHeight - window.innerHeight)) * 100 : 0;
+  document.getElementById('progressBar').style.width = pct + '%';
+  const ids = ['capture','compose','streaming','architecture','server','summary'];
+  const tabs = document.querySelectorAll('.sub-nav-tabs a, .nav-links a');
+  let cur = ids[0];
+  ids.forEach(id => { const el = document.getElementById(id); if (el && window.scrollY >= el.offsetTop - 150) cur = id; });
+  tabs.forEach(t => { t.classList.remove('active'); if (t.getAttribute('href')==='#'+cur) t.classList.add('active'); });
+});
+</script>
+</body>
+</html>
