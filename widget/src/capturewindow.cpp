@@ -958,6 +958,18 @@ protected:
 			if (auto* sub = subWindow())
 			{
 				sub->setGeometry(m_dragRubberBand->geometry());
+				// 拉伸后强制刷新内部控件尺寸，避免视频渲染区域与窗口尺寸不一致导致内容不显示。
+				resize(sub->contentsRect().size());
+				if (layout())
+				{
+					layout()->update();
+					layout()->activate();
+				}
+				if (m_view)
+				{
+					m_view->update();
+					m_view->repaint();
+				}
 			}
 			m_dragRubberBand->hide();
 		}
@@ -1771,12 +1783,26 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		this->m_service->playerStop();
 		this->m_service->playerSetPlaybackRate(1.0);
 		this->m_speedCombo->setCurrentIndex(0);
+		m_currentFileTitle.clear();
+		m_currentFilePath.clear();
+		if (m_titleMarqueeTimer)
+		{
+			m_titleMarqueeTimer->stop();
+		}
+		updateTitleMarqueeText();
 		this->ui->wgtView->setBackendType(m_cameraBackendType);
 		this->m_service->bindCameraPreview(this->ui->wgtView);
 		this->refreshCameraDeviceUi();
 		if (this->ui->cmbDevices->count() > 0)
 		{
 			this->ui->cmbDevices->setCurrentIndex(0);
+			// 手动填充分辨率列表：因 refreshCameraDeviceUi 内部阻塞信号添加设备项时，
+			// Qt 可能已自动选中索引 0，导致后续 setCurrentIndex(0) 不触发信号，
+			// cmbFormats 仍为空。
+			const auto formats = this->m_service->getCameraFormats(0);
+			this->ui->cmbFormats->clear();
+			this->ui->cmbFormats->addItems(formats);
+			this->ui->cmbFormats->setCurrentIndex(0);
 		}
 		this->ui->btnPlay->setIcon(QIcon(fplayer::tokens::themedIconPath(static_cast<fplayer::tokens::Theme>(m_theme),
 			this->m_service->cameraIsPlaying() ? QStringLiteral("pause") : QStringLiteral("play"))));
@@ -1819,6 +1845,13 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		this->m_debugStatsLabel->setVisible(false);
 		this->m_fileProgressTimer->stop();
 		this->m_debugStatsTimer->stop();
+		m_currentFileTitle.clear();
+		m_currentFilePath.clear();
+		if (m_titleMarqueeTimer)
+		{
+			m_titleMarqueeTimer->stop();
+		}
+		updateTitleMarqueeText();
 		this->ui->wgtDevices->setVisible(true);
 		this->ui->cmbFormats->setVisible(false);
 		this->ui->chkCaptureCursor->setVisible(true);
@@ -1906,11 +1939,7 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		                            &dlg);
 		lblInputMode->setWordWrap(true);
 		lblInputMode->setMinimumHeight(lblInputMode->fontMetrics().lineSpacing() * 2 + 6);
-		auto* lblInputValue = new QLabel(&dlg);
-		lblInputValue->setWordWrap(true);
-		lblInputValue->setTextInteractionFlags(Qt::TextSelectableByMouse);
-		lblInputValue->setText(m_currentFilePath.trimmed().isEmpty() ? tr("未打开文件") : m_currentFilePath.trimmed());
-		auto* cmbOutput = new QComboBox(&dlg);
+auto* cmbOutput = new QComboBox(&dlg);
 		cmbOutput->setEditable(true);
 		{
 			QStringList outputItems = m_recentPushOutputs;
@@ -2195,7 +2224,7 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		lblPushParams->setWordWrap(true);
 		lblPushParams->setTextInteractionFlags(Qt::TextSelectableByMouse);
 		lblPushParams->setMinimumHeight(lblPushParams->fontMetrics().lineSpacing() * 4 + 8);
-		auto refreshPushParams = [this, lblPushParams, lblInputValue, fileScene, screenScene, composeScene]() {
+		auto refreshPushParams = [this, lblPushParams, fileScene, screenScene, composeScene]() {
 			if (!lblPushParams)
 			{
 				return;
@@ -2217,7 +2246,7 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 			}
 			if (fileScene)
 			{
-				const QString input = lblInputValue ? lblInputValue->text().trimmed() : QString();
+				const QString input = m_currentFilePath.trimmed().isEmpty() ? QString() : QFileInfo(m_currentFilePath).fileName();
 				lblPushParams->setText(tr("模式：文件\n来源：%1\n策略：默认 copy；设置参数时转码\n编码：copy/重编码（按参数）")
 				                       .arg(input.isEmpty() ? tr("未指定") : input));
 				return;
@@ -2260,8 +2289,7 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		layout->addRow(lblInputMode);
 		if (fileScene && !composeScene)
 		{
-			layout->addRow(tr("输入源"), lblInputValue);
-		}
+			}
 		layout->addRow(tr("当前参数"), lblPushParams);
 		layout->addRow(tr("帧率"), spFps);
 		layout->addRow(tr("尺寸"), cmbSize);
