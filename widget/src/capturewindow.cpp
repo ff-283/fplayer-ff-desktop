@@ -3020,10 +3020,6 @@ auto* cmbOutput = new QComboBox(&dlg);
 				m_pullRecordService->streamStop();
 			}
 			m_pullRecording = false;
-			if (m_pullRecordTimer)
-			{
-				m_pullRecordTimer->stop();
-			}
 			addRecent(m_recentPullInputs, pullInput);
 			applyPullUiRunningState(true);
 			dlg->setProperty("pullPreviewAutoOpened", false);

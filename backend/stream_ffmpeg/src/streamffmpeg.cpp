@@ -897,12 +897,15 @@ void fplayer::StreamFFmpeg::remuxLoop(const QString& inputUrl, const QString& ou
 			av_packet_unref(pkt);
 			continue;
 		}
-		if (previewDecCtx && previewDecFrame && previewYuvFrame && pkt->stream_index == previewVideoStreamIndex && !m_previewPaused.load(std::memory_order_relaxed) && (++previewVideoDecodedFrames & 1))
+		if (previewDecCtx && previewDecFrame && previewYuvFrame && pkt->stream_index == previewVideoStreamIndex)
 		{
 			if (avcodec_send_packet(previewDecCtx, pkt) == 0)
 			{
 				while (avcodec_receive_frame(previewDecCtx, previewDecFrame) == 0)
-				{
+					{
+					// 始终解码维持参考帧链，仅隔帧渲染以节省 CPU
+					const bool render = !m_previewPaused.load(std::memory_order_relaxed) && ((++previewVideoDecodedFrames & 1) == 0);
+					if (!render) continue;
 					if (!previewSws ||
 						previewYuvFrame->width != previewDecFrame->width ||
 						previewYuvFrame->height != previewDecFrame->height)
@@ -1099,10 +1102,13 @@ void fplayer::StreamFFmpeg::remuxLoop(const QString& inputUrl, const QString& ou
 		{
 			recPkt = av_packet_clone(pkt);
 		}
-		AVStream* outStr = ofmt->streams[pkt->stream_index];
-		av_packet_rescale_ts(pkt, inStr->time_base, outStr->time_base);
-		pkt->pos = -1;
-		ret = av_interleaved_write_frame(ofmt, pkt);
+		if (!previewOnlyMode)
+		{
+			AVStream* outStr = ofmt->streams[pkt->stream_index];
+			av_packet_rescale_ts(pkt, inStr->time_base, outStr->time_base);
+			pkt->pos = -1;
+			ret = av_interleaved_write_frame(ofmt, pkt);
+		}
 		av_packet_unref(pkt);
 		if (ret < 0)
 		{
