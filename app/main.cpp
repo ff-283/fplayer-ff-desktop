@@ -3,7 +3,10 @@
 #include <QCoreApplication>
 #include <QDir>
 #include <QLibraryInfo>
+#include <QPainter>
+#include <QSplashScreen>
 #include <QSurfaceFormat>
+#include <QTimer>
 #include <exception>
 
 #ifdef Q_OS_WIN
@@ -100,8 +103,34 @@ int main(int argc, char* argv[])
 	// 传递转换后的枚举类型
 	try
 	{
+		// 构建启动画面：紫色磨砂圆角矩形 + 居中图标
+		QPixmap splashPixmap(320, 320);
+		splashPixmap.fill(Qt::transparent);
+		{
+			QPainter p(&splashPixmap);
+			p.setRenderHint(QPainter::Antialiasing);
+			p.setBrush(QColor(120, 80, 200, 200));
+			p.setPen(Qt::NoPen);
+			p.drawRoundedRect(QRectF(40, 40, 240, 240), 32, 32);
+			QPixmap icon(":/icon/icon.png");
+			const int iconSz = 100;
+			QPixmap scaled = icon.scaled(iconSz, iconSz, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+			p.drawPixmap((320 - iconSz) / 2, (320 - iconSz) / 2, scaled);
+		}
+		QSplashScreen splash(splashPixmap, Qt::WindowStaysOnTopHint | Qt::FramelessWindowHint);
+		splash.setAttribute(Qt::WA_TranslucentBackground);
+		splash.show();
+		QApplication::processEvents();
+
 		CaptureWindow main(nullptr, backendType);
 		main.show();
+
+		// 延迟初始化非必要模块，加速首帧显示
+		QTimer::singleShot(0, &main, [&main, &splash]() {
+			main.performDeferredInit();
+			splash.finish(&main);
+		});
+
 		app.exec();
 		return 0;
 	}
