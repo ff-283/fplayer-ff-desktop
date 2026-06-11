@@ -10,6 +10,7 @@ extern "C" {
 
 #include <mutex>
 #include <cstdlib>
+#include <QDateTime>
 #include <QSet>
 #include <QStringList>
 
@@ -90,9 +91,26 @@ fplayer::CameraDescriptionFetcher& fplayer::CameraDescriptionFetcher::instance()
 	return instance;
 }
 
+void fplayer::CameraDescriptionFetcher::forceRefresh()
+{
+	instance().m_lastEnumerateMs = 0;
+}
+
 QList<fplayer::CameraDescription> fplayer::CameraDescriptionFetcher::getDescriptions()
 {
-	// 每次刷新先清空并重建，保证 UI 获取的是“当前系统快照”。
+	auto& self = instance();
+	const qint64 now = QDateTime::currentMSecsSinceEpoch();
+	if (self.m_lastEnumerateMs > 0 && (now - self.m_lastEnumerateMs) < kCacheTtlMs)
+	{
+		return self.m_cachedDescriptions;
+	}
+	self.m_cachedDescriptions = self.enumerateDescriptions();
+	self.m_lastEnumerateMs = now;
+	return self.m_cachedDescriptions;
+}
+
+QList<fplayer::CameraDescription> fplayer::CameraDescriptionFetcher::enumerateDescriptions()
+{
 	m_cameraFormats.clear();
 	QList<fplayer::CameraDescription> descriptions;
 

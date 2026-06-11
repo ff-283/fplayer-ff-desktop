@@ -217,6 +217,7 @@ private:
 	QString m_pushAudioOutput;
 	bool m_pushKeepAspect = true;
 	bool m_closeToTrayOnClose = true;
+	bool m_composeDragUseRubberBand = false;
 	QString m_composeOutputSize;
 	QString m_aiEndpoint;
 	QString m_aiApiKey;
@@ -279,6 +280,8 @@ private:
 		int formatIndex = 0;
 		int screenFps = 30;
 		bool screenCaptureCursor = false;
+		bool visible = true;
+		QRect lastGeometry;
 	};
 	QList<ComposeSourceItem> m_composeSources;
 	int m_composeSelectedIndex = -1;
@@ -293,6 +296,7 @@ private:
 
 signals:
 	void screenshotSaved(const QString& filePath);
+	void composeSourceRemoved();
 };
 
 

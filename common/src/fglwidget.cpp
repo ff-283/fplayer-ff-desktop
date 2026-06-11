@@ -121,7 +121,7 @@ namespace fplayer
 		}
 	)";
 
-	FGLWidget::FGLWidget(QWidget* parent) : QOpenGLWidget(parent), QOpenGLFunctions()
+	FGLWidget::FGLWidget(QWidget* parent) : QOpenGLWidget(parent)
 	{
 	// Linux/X11 下 QOpenGLWidget 若走部分更新或背景擦除，易出现持续闪烁/抖动。
 	setUpdateBehavior(QOpenGLWidget::NoPartialUpdate);
@@ -140,28 +140,13 @@ namespace fplayer
 	FGLWidget::~FGLWidget()
 	{
 		makeCurrent();
-		
-		if (m_texY)
-		{
-			delete m_texY;
-			m_texY = nullptr;
-		}
-		if (m_texU)
-		{
-			delete m_texU;
-			m_texU = nullptr;
-		}
-		if (m_texV)
-		{
-			delete m_texV;
-			m_texV = nullptr;
-		}
-		if (m_program)
-		{
-			delete m_program;
-			m_program = nullptr;
-		}
-		
+		if (m_pboY[0]) { glDeleteBuffers(2, m_pboY); }
+		if (m_pboU[0]) { glDeleteBuffers(2, m_pboU); }
+		if (m_pboV[0]) { glDeleteBuffers(2, m_pboV); }
+		delete m_texY; m_texY = nullptr;
+		delete m_texU; m_texU = nullptr;
+		delete m_texV; m_texV = nullptr;
+		delete m_program; m_program = nullptr;
 		doneCurrent();
 	}
 
@@ -169,6 +154,7 @@ namespace fplayer
 	{
 		initializeOpenGLFunctions();
 		glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+		glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 		setupShaders();
 		m_initialized = true;
 	}
@@ -182,13 +168,8 @@ namespace fplayer
 	{
 		glClear(GL_COLOR_BUFFER_BIT);
 
-		if (!m_program)
+		if (!m_program || m_posLocation < 0)
 		{
-			static int noProgramLogCounter = 0;
-			if (++noProgramLogCounter % 300 == 0)
-			{
-				qDebug() << "[FGLWidget::paintGL] No shader program";
-			}
 			return;
 		}
 
@@ -219,33 +200,58 @@ namespace fplayer
 		glActiveTexture(GL_TEXTURE2);
 		m_texV->bind();
 
-		// 每帧按当前窗口/图像比例计算顶点，实现 contain 等比显示（黑边而非拉伸）。
-		GLfloat vertices[16];
-		calculateVertices(vertices, width(), height(), frameSnap.width, frameSnap.height);
+		calculateVertices(m_vertices, width(), height(), frameSnap.width, frameSnap.height);
 
-		GLint positionLocation = m_program->attributeLocation("position");
-		GLint texCoordLocation = m_program->attributeLocation("texCoord");
-		GLint texYLocation = m_program->uniformLocation("texY");
-		GLint texULocation = m_program->uniformLocation("texU");
-		GLint texVLocation = m_program->uniformLocation("texV");
+		glVertexAttribPointer(m_posLocation, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(GLfloat), m_vertices);
+		glEnableVertexAttribArray(m_posLocation);
+		glVertexAttribPointer(m_texCoordLocation, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(GLfloat), m_vertices + 2);
+		glEnableVertexAttribArray(m_texCoordLocation);
 
-		glVertexAttribPointer(positionLocation, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(GLfloat), vertices);
-		glEnableVertexAttribArray(positionLocation);
-		glVertexAttribPointer(texCoordLocation, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(GLfloat), vertices + 2);
-		glEnableVertexAttribArray(texCoordLocation);
-
-		m_program->setUniformValue(texYLocation, 0);
-		m_program->setUniformValue(texULocation, 1);
-		m_program->setUniformValue(texVLocation, 2);
-		m_program->setUniformValue("uColorMatrix", m_isBT709 ? 1 : 0);
-		m_program->setUniformValue("uFullRange", m_isFullRange);
+		m_program->setUniformValue(m_texYLocation, 0);
+		m_program->setUniformValue(m_texULocation, 1);
+		m_program->setUniformValue(m_texVLocation, 2);
+		m_program->setUniformValue(m_colorMatrixLocation, m_isBT709 ? 1 : 0);
+		m_program->setUniformValue(m_fullRangeLocation, m_isFullRange);
 
 		glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
 
-		glDisableVertexAttribArray(positionLocation);
-		glDisableVertexAttribArray(texCoordLocation);
+		glDisableVertexAttribArray(m_posLocation);
+		glDisableVertexAttribArray(m_texCoordLocation);
 
 		m_program->release();
+	}
+
+	void FGLWidget::uploadViaPBO(GLuint* pbo, int& pboIdx, int& pboSize, QOpenGLTexture* tex,
+	                         const void* data, int width, int height)
+	{
+		const int bytes = width * height;
+		if (!pbo[0])
+		{
+			glGenBuffers(2, pbo);
+		}
+		if (bytes != pboSize)
+		{
+			for (int i = 0; i < 2; ++i)
+			{
+				glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbo[i]);
+				glBufferData(GL_PIXEL_UNPACK_BUFFER, bytes, nullptr, GL_STREAM_DRAW);
+			}
+			glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+			pboSize = bytes;
+		}
+		pboIdx = (pboIdx + 1) & 1;
+		GLuint buf = pbo[pboIdx];
+		glBindBuffer(GL_PIXEL_UNPACK_BUFFER, buf);
+		void* dst = glMapBufferRange(GL_PIXEL_UNPACK_BUFFER, 0, bytes,
+		                             GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT | GL_MAP_UNSYNCHRONIZED_BIT);
+		if (dst)
+		{
+			memcpy(dst, data, bytes);
+			glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER);
+			tex->bind();
+			glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_RED, GL_UNSIGNED_BYTE, nullptr);
+		}
+		glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
 	}
 
 	void FGLWidget::updateYUVTextures(const YUVData& src)
@@ -255,93 +261,78 @@ namespace fplayer
 			return;
 		}
 
-		// YUV420P: Y 平面全分辨率，U/V 平面各为 1/2 宽高。
-		int yWidth = src.width;
-		int yHeight = src.height;
-		int uvWidth = (yWidth + 1) / 2;
-		int uvHeight = (yHeight + 1) / 2;
+		const int yWidth = src.width;
+		const int yHeight = src.height;
+		const int uvWidth = (yWidth + 1) / 2;
+		const int uvHeight = (yHeight + 1) / 2;
 
-		// 创建或更新 Y 纹理
-		if (!m_texY || m_texY->width() != yWidth || m_texY->height() != yHeight)
+		auto ensureTex = [](QOpenGLTexture*& tex, int w, int h) {
+			if (!tex || tex->width() != w || tex->height() != h)
+			{
+				delete tex;
+				tex = new QOpenGLTexture(QOpenGLTexture::Target2D);
+				tex->setMinificationFilter(QOpenGLTexture::Linear);
+				tex->setMagnificationFilter(QOpenGLTexture::Linear);
+				tex->setWrapMode(QOpenGLTexture::ClampToEdge);
+				tex->setFormat(QOpenGLTexture::R8_UNorm);
+				tex->setSize(w, h);
+				tex->allocateStorage();
+			}
+		};
+		ensureTex(m_texY, yWidth, yHeight);
+		ensureTex(m_texU, uvWidth, uvHeight);
+		ensureTex(m_texV, uvWidth, uvHeight);
+
+		const int yStrideEffective = src.yStride > 0 ? src.yStride : yWidth;
+		const int uStrideEffective = src.uStride > 0 ? src.uStride : uvWidth;
+		const int vStrideEffective = src.vStride > 0 ? src.vStride : uvWidth;
+		const bool yTight = (yStrideEffective == yWidth);
+		const bool uTight = (uStrideEffective == uvWidth);
+		const bool vTight = (vStrideEffective == uvWidth);
+
+		if (canUseUnpackRowLength() && !yTight)
 		{
-			delete m_texY;
-			m_texY = new QOpenGLTexture(QOpenGLTexture::Target2D);
-			m_texY->setMinificationFilter(QOpenGLTexture::Linear);
-			m_texY->setMagnificationFilter(QOpenGLTexture::Linear);
-			m_texY->setWrapMode(QOpenGLTexture::ClampToEdge);
-			m_texY->setFormat(QOpenGLTexture::R8_UNorm);
-			m_texY->setSize(yWidth, yHeight);
-			m_texY->allocateStorage();
-		}
-
-		// 创建或更新 U 纹理
-		if (!m_texU || m_texU->width() != uvWidth || m_texU->height() != uvHeight)
-		{
-			delete m_texU;
-			m_texU = new QOpenGLTexture(QOpenGLTexture::Target2D);
-			m_texU->setMinificationFilter(QOpenGLTexture::Linear);
-			m_texU->setMagnificationFilter(QOpenGLTexture::Linear);
-			m_texU->setWrapMode(QOpenGLTexture::ClampToEdge);
-			m_texU->setFormat(QOpenGLTexture::R8_UNorm);
-			m_texU->setSize(uvWidth, uvHeight);
-			m_texU->allocateStorage();
-		}
-
-		// 创建或更新 V 纹理
-		if (!m_texV || m_texV->width() != uvWidth || m_texV->height() != uvHeight)
-		{
-			delete m_texV;
-			m_texV = new QOpenGLTexture(QOpenGLTexture::Target2D);
-			m_texV->setMinificationFilter(QOpenGLTexture::Linear);
-			m_texV->setMagnificationFilter(QOpenGLTexture::Linear);
-			m_texV->setWrapMode(QOpenGLTexture::ClampToEdge);
-			m_texV->setFormat(QOpenGLTexture::R8_UNorm);
-			m_texV->setSize(uvWidth, uvHeight);
-			m_texV->allocateStorage();
-		}
-
-		// 单通道纹理上传时，使用 1 字节对齐避免行对齐导致的错位。
-		glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-		const bool useRowLength = canUseUnpackRowLength();
-
-		const QByteArray yTight = useRowLength ? QByteArray() : repackPlaneTight(src.yBuffer, yWidth, yHeight, src.yStride > 0 ? src.yStride : yWidth);
-		const QByteArray uTight = useRowLength ? QByteArray() : repackPlaneTight(src.uBuffer, uvWidth, uvHeight, src.uStride > 0 ? src.uStride : uvWidth);
-		const QByteArray vTight = useRowLength ? QByteArray() : repackPlaneTight(src.vBuffer, uvWidth, uvHeight, src.vStride > 0 ? src.vStride : uvWidth);
-
-		m_texY->bind();
-		if (useRowLength)
-		{
-			glPixelStorei(GL_UNPACK_ROW_LENGTH, src.yStride > 0 ? src.yStride : yWidth);
+			m_texY->bind();
+			glPixelStorei(GL_UNPACK_ROW_LENGTH, yStrideEffective);
 			glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, yWidth, yHeight, GL_RED, GL_UNSIGNED_BYTE, src.yBuffer.constData());
 			glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
 		}
 		else
 		{
-			glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, yWidth, yHeight, GL_RED, GL_UNSIGNED_BYTE, yTight.constData());
+			const void* yData = yTight ? src.yBuffer.constData()
+			                           : repackPlaneTight(src.yBuffer, yWidth, yHeight, yStrideEffective).constData();
+			if (yTight) { uploadViaPBO(m_pboY, m_pboIndex, m_pboYSize, m_texY, yData, yWidth, yHeight); }
+			else { m_texY->bind(); glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, yWidth, yHeight, GL_RED, GL_UNSIGNED_BYTE, yData); }
 		}
 
-		m_texU->bind();
-		if (useRowLength)
+		if (canUseUnpackRowLength() && !uTight)
 		{
-			glPixelStorei(GL_UNPACK_ROW_LENGTH, src.uStride > 0 ? src.uStride : uvWidth);
+			m_texU->bind();
+			glPixelStorei(GL_UNPACK_ROW_LENGTH, uStrideEffective);
 			glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, uvWidth, uvHeight, GL_RED, GL_UNSIGNED_BYTE, src.uBuffer.constData());
 			glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
 		}
 		else
 		{
-			glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, uvWidth, uvHeight, GL_RED, GL_UNSIGNED_BYTE, uTight.constData());
+			const void* uData = uTight ? src.uBuffer.constData()
+			                           : repackPlaneTight(src.uBuffer, uvWidth, uvHeight, uStrideEffective).constData();
+			if (uTight) { uploadViaPBO(m_pboU, m_pboIndex, m_pboUSize, m_texU, uData, uvWidth, uvHeight); }
+			else { m_texU->bind(); glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, uvWidth, uvHeight, GL_RED, GL_UNSIGNED_BYTE, uData); }
 		}
 
-		m_texV->bind();
-		if (useRowLength)
+		if (canUseUnpackRowLength() && !vTight)
 		{
-			glPixelStorei(GL_UNPACK_ROW_LENGTH, src.vStride > 0 ? src.vStride : uvWidth);
+			m_texV->bind();
+			glPixelStorei(GL_UNPACK_ROW_LENGTH, vStrideEffective);
 			glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, uvWidth, uvHeight, GL_RED, GL_UNSIGNED_BYTE, src.vBuffer.constData());
 			glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
 		}
 		else
 		{
-			glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, uvWidth, uvHeight, GL_RED, GL_UNSIGNED_BYTE, vTight.constData());
+			const void* vData = vTight ? src.vBuffer.constData()
+			                           : repackPlaneTight(src.vBuffer, uvWidth, uvHeight, vStrideEffective).constData();
+			if (vTight) { uploadViaPBO(m_pboV, m_pboIndex, m_pboVSize, m_texV, vData, uvWidth, uvHeight); }
+			else { m_texV->bind(); glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, uvWidth, uvHeight, GL_RED, GL_UNSIGNED_BYTE, vData); }
 		}
 	}
 
@@ -444,6 +435,13 @@ namespace fplayer
 		}
 		else
 		{
+			m_posLocation = m_program->attributeLocation("position");
+			m_texCoordLocation = m_program->attributeLocation("texCoord");
+			m_texYLocation = m_program->uniformLocation("texY");
+			m_texULocation = m_program->uniformLocation("texU");
+			m_texVLocation = m_program->uniformLocation("texV");
+			m_colorMatrixLocation = m_program->uniformLocation("uColorMatrix");
+			m_fullRangeLocation = m_program->uniformLocation("uFullRange");
 			qDebug() << "[FGLWidget] YUV shaders compiled successfully";
 		}
 	}

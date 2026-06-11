@@ -19,10 +19,10 @@ void fplayer::ScreenFrameBus::publish(const QByteArray& y, const QByteArray& u, 
 		it = m_channels.insert(sid, Channel{});
 	}
 	Channel& ch = it.value();
-	// 发布方会复用同一块预览缓冲区；浅拷贝会导致与采集线程并发读写同一 QByteArray 数据区。
-	ch.frame.y = QByteArray(y.constData(), y.size());
-	ch.frame.u = QByteArray(u.constData(), u.size());
-	ch.frame.v = QByteArray(v.constData(), v.size());
+	// COW 隐式共享：浅拷贝仅增引用计数；发布方下次 resize() 自动 detach，旧缓冲区保持有效。
+	ch.frame.y = y;
+	ch.frame.u = u;
+	ch.frame.v = v;
 	ch.frame.width = width;
 	ch.frame.height = height;
 	ch.frame.yStride = yStride;

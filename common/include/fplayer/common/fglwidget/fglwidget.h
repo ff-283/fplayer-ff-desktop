@@ -10,7 +10,7 @@
 
 #include <fplayer/common/export.h>
 #include <QtOpenGLWidgets/QOpenGLWidget>
-#include <QOpenGLFunctions>
+#include <QOpenGLExtraFunctions>
 #include <QOpenGLShaderProgram>
 #include <QOpenGLTexture>
 #include <QMutex>
@@ -18,7 +18,7 @@
 
 namespace fplayer
 {
-	class FPLAYER_COMMON_EXPORT FGLWidget : public QOpenGLWidget, protected QOpenGLFunctions
+	class FPLAYER_COMMON_EXPORT FGLWidget : public QOpenGLWidget, protected QOpenGLExtraFunctions
 	{
 		Q_OBJECT
 	public:
@@ -51,13 +51,32 @@ namespace fplayer
 		void setupShaders();
 		void calculateVertices(float* vertices, int windowWidth, int windowHeight, int imageWidth, int imageHeight);
 		void updateYUVTextures(const YUVData& src);
+		void uploadViaPBO(GLuint* pbo, int& pboIdx, int& pboSize, QOpenGLTexture* tex,
+		                  const void* data, int width, int height);
 
 		// OpenGL 资源
 		QOpenGLShaderProgram* m_program = nullptr;
 		QOpenGLTexture* m_texY = nullptr;
 		QOpenGLTexture* m_texU = nullptr;
 		QOpenGLTexture* m_texV = nullptr;
+		GLuint m_pboY[2] = {0, 0};
+		GLuint m_pboU[2] = {0, 0};
+		GLuint m_pboV[2] = {0, 0};
+		int m_pboIndex = 0;
+		int m_pboYSize = 0;
+		int m_pboUSize = 0;
+		int m_pboVSize = 0;
 
+		// Cached uniform/attribute locations
+		GLint m_posLocation = -1;
+		GLint m_texCoordLocation = -1;
+		GLint m_texYLocation = -1;
+		GLint m_texULocation = -1;
+		GLint m_texVLocation = -1;
+		GLint m_colorMatrixLocation = -1;
+		GLint m_fullRangeLocation = -1;
+
+		GLfloat m_vertices[16];
 		YUVData m_yuvData;
 		QMutex m_mutex;
 		bool m_initialized = false;

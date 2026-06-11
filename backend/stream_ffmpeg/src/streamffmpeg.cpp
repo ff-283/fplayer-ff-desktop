@@ -103,12 +103,8 @@ fplayer::StreamFFmpeg::StreamFFmpeg(QObject* parent) : QObject(parent)
 		// 重定向到项目 Logger。StreamFFmpeg 始终被创建，确保任意后端下均生效。
 		av_log_set_callback([](void*, int level, const char* fmt, va_list vl) {
 			if (level > av_log_get_level()) return;
-			static char buf[2048];
-			static std::mutex mtx;
-			{
-				std::lock_guard<std::mutex> lock(mtx);
-				vsnprintf(buf, sizeof(buf), fmt, vl);
-			}
+			thread_local char buf[2048];
+			vsnprintf(buf, sizeof(buf), fmt, vl);
 			std::string str(buf);
 			if (!str.empty() && str.back() == '\n') str.pop_back();
 			// 过滤第三方虚拟设备噪音（如 e2eSoft VCam 缓冲区告警）
@@ -430,8 +426,8 @@ bool fplayer::StreamFFmpeg::isPullRecording() const
 
 void fplayer::StreamFFmpeg::appendLogLine(const QString& line)
 {
-	QMutexLocker locker(&m_mutex);
 	const QString withNewline = line + QLatin1Char('\n');
+	QMutexLocker locker(&m_mutex);
 	appendLimited(m_recentLog, withNewline);
 	if (m_activeLogTarget == LogTarget::Push)
 	{
@@ -469,6 +465,7 @@ void fplayer::StreamFFmpeg::remuxLoop(const QString& inputUrl, const QString& ou
 	QAudioSink* previewAudioSink = nullptr;
 	QIODevice* previewAudioIo = nullptr;
 #endif
+	int previewVideoDecodedFrames = 0;
 	bool previewAudioReady = false;
 	int previewAudioDecodedFrames = 0;
 	int previewAudioResampledSamples = 0;
@@ -900,7 +897,7 @@ void fplayer::StreamFFmpeg::remuxLoop(const QString& inputUrl, const QString& ou
 			av_packet_unref(pkt);
 			continue;
 		}
-		if (previewDecCtx && previewDecFrame && previewYuvFrame && pkt->stream_index == previewVideoStreamIndex)
+		if (previewDecCtx && previewDecFrame && previewYuvFrame && pkt->stream_index == previewVideoStreamIndex && !m_previewPaused.load(std::memory_order_relaxed) && (++previewVideoDecodedFrames & 1))
 		{
 			if (avcodec_send_packet(previewDecCtx, pkt) == 0)
 			{
@@ -1566,14 +1563,18 @@ void fplayer::StreamFFmpeg::pushComposeSceneLoop(const QString& outputUrl, const
 					av_opt_set(encCtx->priv_data, "tune", "ll", 0);
 					av_opt_set(encCtx->priv_data, "rc", "cbr", 0);
 					av_opt_set(encCtx->priv_data, "zerolatency", "1", 0);
+					av_opt_set(encCtx->priv_data, "rc-lookahead", "0", 0);
+					av_opt_set(encCtx->priv_data, "delay", "0", 0);
 				}
 				else if (codecName == QStringLiteral("h264_amf") || codecName == QStringLiteral("h264_mf"))
 				{
-					// AMF 不接受 x264 preset/tune 文本，保持默认参数避免选项解析失败。
+					av_opt_set(encCtx->priv_data, "usage", "ultralowlatency", 0);
+					av_opt_set(encCtx->priv_data, "quality", "speed", 0);
+					av_opt_set(encCtx->priv_data, "rc", "cbr", 0);
 				}
 				else if (c.codec->id == AV_CODEC_ID_H264)
 				{
-					av_opt_set(encCtx->priv_data, "preset", "superfast", 0);
+					av_opt_set(encCtx->priv_data, "preset", "ultrafast", 0);
 					av_opt_set(encCtx->priv_data, "tune", "zerolatency", 0);
 				}
 			}
@@ -2689,10 +2690,29 @@ void fplayer::StreamFFmpeg::transcodeFileLoop(const QString& outputUrl, const QS
 		encCtx->rc_buffer_size = encCtx->bit_rate * 2;
 		encCtx->gop_size = outFps * 2;
 		encCtx->max_b_frames = 0;
-		if (enc->id == AV_CODEC_ID_H264 && encCtx->priv_data)
+		if (encCtx->priv_data)
 		{
-			av_opt_set(encCtx->priv_data, "preset", "superfast", 0);
-			av_opt_set(encCtx->priv_data, "tune", "zerolatency", 0);
+			const QString codecName = QString::fromLatin1(enc->name ? enc->name : "").toLower();
+			if (codecName == QStringLiteral("h264_nvenc"))
+			{
+				av_opt_set(encCtx->priv_data, "preset", "p1", 0);
+				av_opt_set(encCtx->priv_data, "tune", "ll", 0);
+				av_opt_set(encCtx->priv_data, "rc", "cbr", 0);
+				av_opt_set(encCtx->priv_data, "zerolatency", "1", 0);
+				av_opt_set(encCtx->priv_data, "rc-lookahead", "0", 0);
+				av_opt_set(encCtx->priv_data, "delay", "0", 0);
+			}
+			else if (codecName == QStringLiteral("h264_amf") || codecName == QStringLiteral("h264_mf"))
+			{
+				av_opt_set(encCtx->priv_data, "usage", "ultralowlatency", 0);
+				av_opt_set(encCtx->priv_data, "quality", "speed", 0);
+				av_opt_set(encCtx->priv_data, "rc", "cbr", 0);
+			}
+			else if (enc->id == AV_CODEC_ID_H264)
+			{
+				av_opt_set(encCtx->priv_data, "preset", "superfast", 0);
+				av_opt_set(encCtx->priv_data, "tune", "zerolatency", 0);
+			}
 		}
 		appendLogLine(QStringLiteral("[文件转码] 输入=%1 输出=%2x%3 FPS=%4 码率=%5kbps")
 		              .arg(params.source)
@@ -3309,10 +3329,14 @@ audio_init_done:
 					av_opt_set(encCtx->priv_data, "tune", "ll", 0);
 					av_opt_set(encCtx->priv_data, "rc", "cbr", 0);
 					av_opt_set(encCtx->priv_data, "zerolatency", "1", 0);
+					av_opt_set(encCtx->priv_data, "rc-lookahead", "0", 0);
+					av_opt_set(encCtx->priv_data, "delay", "0", 0);
 				}
 				else if (codecName == QStringLiteral("h264_amf") || codecName == QStringLiteral("h264_mf"))
 				{
-					// AMF 不接受 x264 preset/tune 文本，保持默认参数避免选项解析失败。
+						av_opt_set(encCtx->priv_data, "usage", "ultralowlatency", 0);
+						av_opt_set(encCtx->priv_data, "quality", "speed", 0);
+						av_opt_set(encCtx->priv_data, "rc", "cbr", 0);
 				}
 				else if (enc->id == AV_CODEC_ID_H264)
 				{
@@ -4374,10 +4398,14 @@ audio_preview_init_done:
 					av_opt_set(encCtx->priv_data, "tune", "ll", 0);
 					av_opt_set(encCtx->priv_data, "rc", "cbr", 0);
 					av_opt_set(encCtx->priv_data, "zerolatency", "1", 0);
+					av_opt_set(encCtx->priv_data, "rc-lookahead", "0", 0);
+					av_opt_set(encCtx->priv_data, "delay", "0", 0);
 				}
 				else if (codecName == QStringLiteral("h264_amf") || codecName == QStringLiteral("h264_mf"))
 				{
-					// AMF 不接受 x264 preset/tune 文本，保持默认参数避免选项解析失败。
+						av_opt_set(encCtx->priv_data, "usage", "ultralowlatency", 0);
+						av_opt_set(encCtx->priv_data, "quality", "speed", 0);
+						av_opt_set(encCtx->priv_data, "rc", "cbr", 0);
 				}
 				else if (enc->id == AV_CODEC_ID_H264)
 				{
@@ -5818,14 +5846,18 @@ void fplayer::StreamFFmpeg::pushCameraPreviewLoop(const QString& outputUrl, cons
 					av_opt_set(encCtx->priv_data, "tune", "ll", 0);
 					av_opt_set(encCtx->priv_data, "rc", "cbr", 0);
 					av_opt_set(encCtx->priv_data, "zerolatency", "1", 0);
+					av_opt_set(encCtx->priv_data, "rc-lookahead", "0", 0);
+					av_opt_set(encCtx->priv_data, "delay", "0", 0);
 				}
 				else if (codecName == QStringLiteral("h264_amf") || codecName == QStringLiteral("h264_mf"))
 				{
-					// AMF 不接受 x264 preset/tune 文本，保持默认参数避免选项解析失败。
+						av_opt_set(encCtx->priv_data, "usage", "ultralowlatency", 0);
+						av_opt_set(encCtx->priv_data, "quality", "speed", 0);
+						av_opt_set(encCtx->priv_data, "rc", "cbr", 0);
 				}
 				else if (enc->id == AV_CODEC_ID_H264)
 				{
-					av_opt_set(encCtx->priv_data, "preset", "superfast", 0);
+					av_opt_set(encCtx->priv_data, "preset", "ultrafast", 0);
 					av_opt_set(encCtx->priv_data, "tune", "zerolatency", 0);
 				}
 			}
@@ -6910,10 +6942,29 @@ void fplayer::StreamFFmpeg::pushCameraLoop(const QString& outputUrl, const QStri
 		{
 			encCtx->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
 		}
-		if (enc->id == AV_CODEC_ID_H264 && encCtx->priv_data)
+		if (encCtx->priv_data)
 		{
-			av_opt_set(encCtx->priv_data, "preset", "superfast", 0);
-			av_opt_set(encCtx->priv_data, "tune", "zerolatency", 0);
+			const QString codecName = QString::fromLatin1(enc->name ? enc->name : "").toLower();
+			if (codecName == QStringLiteral("h264_nvenc"))
+			{
+				av_opt_set(encCtx->priv_data, "preset", "p1", 0);
+				av_opt_set(encCtx->priv_data, "tune", "ll", 0);
+				av_opt_set(encCtx->priv_data, "rc", "cbr", 0);
+				av_opt_set(encCtx->priv_data, "zerolatency", "1", 0);
+				av_opt_set(encCtx->priv_data, "rc-lookahead", "0", 0);
+				av_opt_set(encCtx->priv_data, "delay", "0", 0);
+			}
+			else if (codecName == QStringLiteral("h264_amf") || codecName == QStringLiteral("h264_mf"))
+			{
+				av_opt_set(encCtx->priv_data, "usage", "ultralowlatency", 0);
+				av_opt_set(encCtx->priv_data, "quality", "speed", 0);
+				av_opt_set(encCtx->priv_data, "rc", "cbr", 0);
+			}
+			else if (enc->id == AV_CODEC_ID_H264)
+			{
+				av_opt_set(encCtx->priv_data, "preset", "ultrafast", 0);
+				av_opt_set(encCtx->priv_data, "tune", "zerolatency", 0);
+			}
 		}
 		appendLogLine(QStringLiteral("[摄像头采集推流] 设备=%1 输入=%2x%3 输出=%4x%5 FPS=%6 码率=%7kbps")
 		              .arg(params.device)

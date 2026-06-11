@@ -89,6 +89,7 @@ bool fplayer::SystemSettingsRepository::load(fplayer::SystemSettings& data) cons
 		data.screenCaptureBackend = loadString("screen_capture_backend", data.screenCaptureBackend);
 		data.filePlaybackBackend = loadString("file_playback_backend", data.filePlaybackBackend);
 		data.closeToTrayOnClose = YamlTool::YamlTool::getDef<int>(root, "close_to_tray_on_close", data.closeToTrayOnClose ? 1 : 0) != 0;
+			data.composeDragUseRubberBand = YamlTool::YamlTool::getDef<int>(root, "compose_drag_use_rubber_band", data.composeDragUseRubberBand ? 1 : 0) != 0;
 		data.aiEndpoint = loadString("ai_endpoint", data.aiEndpoint);
 		data.aiApiKey = loadString("ai_api_key", data.aiApiKey);
 		data.aiModel = loadString("ai_model", data.aiModel);
@@ -152,6 +153,7 @@ bool fplayer::SystemSettingsRepository::save(const fplayer::SystemSettings& data
 	YamlTool::YamlTool::set<std::string>(root, "screen_capture_backend", data.screenCaptureBackend.toStdString());
 	YamlTool::YamlTool::set<std::string>(root, "file_playback_backend", data.filePlaybackBackend.toStdString());
 	YamlTool::YamlTool::set<int>(root, "close_to_tray_on_close", data.closeToTrayOnClose ? 1 : 0);
+		YamlTool::YamlTool::set<int>(root, "compose_drag_use_rubber_band", data.composeDragUseRubberBand ? 1 : 0);
 	YamlTool::YamlTool::set<std::string>(root, "ai_endpoint", data.aiEndpoint.toStdString());
 	YamlTool::YamlTool::set<std::string>(root, "ai_api_key", data.aiApiKey.toStdString());
 	YamlTool::YamlTool::set<std::string>(root, "ai_model", data.aiModel.toStdString());

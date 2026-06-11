@@ -274,9 +274,9 @@ void fplayer::ScreenCaptureFFmpeg::dispatchFrameToView(const QByteArray& yData, 
 	{
 		return;
 	}
-	const QByteArray yCopy(yData.constData(), yData.size());
-	const QByteArray uCopy(uData.constData(), uData.size());
-	const QByteArray vCopy(vData.constData(), vData.size());
+	const QByteArray yCopy = yData;
+	const QByteArray uCopy = uData;
+	const QByteArray vCopy = vData;
 	QPointer<FGLWidget> target = m_glWidget;
 	QMetaObject::invokeMethod(m_glWidget, [target, yCopy, uCopy, vCopy, width, height, yStride, uStride, vStride]() {
 		if (!target)

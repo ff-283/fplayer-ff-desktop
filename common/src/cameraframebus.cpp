@@ -19,9 +19,9 @@ void fplayer::CameraFrameBus::publish(const QByteArray& y, const QByteArray& u, 
 		it = m_channels.insert(sid, Channel{});
 	}
 	Channel& ch = it.value();
-	ch.frame.y = QByteArray(y.constData(), y.size());
-	ch.frame.u = QByteArray(u.constData(), u.size());
-	ch.frame.v = QByteArray(v.constData(), v.size());
+	ch.frame.y = y;
+	ch.frame.u = u;
+	ch.frame.v = v;
 	ch.frame.width = width;
 	ch.frame.height = height;
 	ch.frame.yStride = yStride;

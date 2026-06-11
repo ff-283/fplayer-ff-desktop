@@ -721,6 +721,8 @@ public:
 	{
 		m_aspectResizeEnabled = enabled;
 	}
+	static void setUseRubberBandDrag(bool on) { s_useRubberBandDrag = on; }
+	static bool useRubberBandDrag() { return s_useRubberBandDrag; }
 
 	bool isDragging() const
 	{
@@ -774,10 +776,6 @@ protected:
 		{
 			if (auto* sub = subWindow())
 			{
-				if (!m_dragRubberBand)
-				{
-					m_dragRubberBand = new QRubberBand(QRubberBand::Rectangle, sub->parentWidget());
-				}
 				if (!m_vGuideBand)
 				{
 					m_vGuideBand = new QRubberBand(QRubberBand::Rectangle, sub->parentWidget());
@@ -790,8 +788,15 @@ protected:
 				}
 				m_vGuideBand->hide();
 				m_hGuideBand->hide();
-				m_dragRubberBand->setGeometry(sub->geometry());
-				m_dragRubberBand->show();
+				if (s_useRubberBandDrag)
+				{
+					if (!m_dragRubberBand)
+					{
+						m_dragRubberBand = new QRubberBand(QRubberBand::Rectangle, sub->parentWidget());
+					}
+					m_dragRubberBand->setGeometry(sub->geometry());
+					m_dragRubberBand->show();
+				}
 			}
 		}
 		event->accept();
@@ -933,19 +938,26 @@ protected:
 		}
 		applyMoveSnapAndGuides(g);
 		m_previewGeometry = g;
-		if (m_dragRubberBand && m_dragRubberBand->isVisible())
+		if (s_useRubberBandDrag && m_dragRubberBand && m_dragRubberBand->isVisible())
 		{
 			m_dragRubberBand->setGeometry(g);
 			m_dragChanged = true;
 		}
 		else if (auto* sub = subWindow())
 		{
+			sub->setUpdatesEnabled(false);
 			sub->setGeometry(g);
+			sub->setUpdatesEnabled(true);
 			m_dragChanged = true;
 		}
-		QToolTip::showText(event->globalPosition().toPoint(),
-		                   QStringLiteral("%1 x %2").arg(g.width()).arg(g.height()),
-		                   this);
+		static qint64 lastTooltipMs = 0;
+		const qint64 now = QDateTime::currentMSecsSinceEpoch();
+		if (now - lastTooltipMs >= 180) {
+			QToolTip::showText(event->globalPosition().toPoint(),
+			                   QStringLiteral("%1 x %2").arg(g.width()).arg(g.height()),
+			                   this);
+			lastTooltipMs = now;
+		}
 		event->accept();
 	}
 
@@ -953,25 +965,28 @@ protected:
 	{
 		const bool shouldFinishCrop = m_cropMode && m_dragChanged;
 		const bool shouldNotifyDragFinished = m_dragChanged;
-		if (m_dragRubberBand && m_dragRubberBand->isVisible())
+		if (s_useRubberBandDrag && m_dragRubberBand && m_dragRubberBand->isVisible())
 		{
 			if (auto* sub = subWindow())
 			{
 				sub->setGeometry(m_dragRubberBand->geometry());
-				// 拉伸后强制刷新内部控件尺寸，避免视频渲染区域与窗口尺寸不一致导致内容不显示。
-				resize(sub->contentsRect().size());
-				if (layout())
-				{
-					layout()->update();
-					layout()->activate();
-				}
-				if (m_view)
-				{
-					m_view->update();
-					m_view->repaint();
-				}
 			}
 			m_dragRubberBand->hide();
+		}
+		if (auto* sub = subWindow())
+		{
+			// 拉伸后强制刷新内部控件尺寸
+			resize(sub->contentsRect().size());
+			if (layout())
+			{
+				layout()->update();
+				layout()->activate();
+			}
+			if (m_view)
+			{
+				m_view->update();
+				m_view->repaint();
+			}
 		}
 		if (m_vGuideBand)
 		{
@@ -1252,11 +1267,13 @@ private:
 	QPoint m_dragOriginGlobal;
 	bool m_dragChanged = false;
 	QRubberBand* m_dragRubberBand = nullptr;
-	QRubberBand* m_vGuideBand = nullptr;
+		QRubberBand* m_vGuideBand = nullptr;
 	QRubberBand* m_hGuideBand = nullptr;
 	bool m_aspectResizeEnabled = false;
+		static bool s_useRubberBandDrag;
 	bool m_dragInProgress = false;
 };
+bool ComposeSourceWidget::s_useRubberBandDrag = false;
 
 const char* screenBackendName(const fplayer::MediaBackendType backend)
 {
@@ -3593,6 +3610,8 @@ void CaptureWindow::loadCapturePreferences()
 	if (!data.pushAudioOutput.trimmed().isEmpty()) m_pushAudioOutput = data.pushAudioOutput;
 	m_pushKeepAspect = data.pushKeepAspect;
 	m_closeToTrayOnClose = data.closeToTrayOnClose;
+	m_composeDragUseRubberBand = data.composeDragUseRubberBand;
+	ComposeSourceWidget::setUseRubberBandDrag(m_composeDragUseRubberBand);
 	if (!data.composeOutputSize.trimmed().isEmpty()) m_composeOutputSize = data.composeOutputSize;
 	if (!data.aiEndpoint.trimmed().isEmpty()) m_aiEndpoint = data.aiEndpoint;
 	if (!data.aiApiKey.trimmed().isEmpty()) m_aiApiKey = data.aiApiKey;
@@ -3664,6 +3683,7 @@ void CaptureWindow::saveCapturePreferences() const
 	data.pushAudioOutput = m_pushAudioOutput;
 	data.pushKeepAspect = m_pushKeepAspect;
 	data.closeToTrayOnClose = m_closeToTrayOnClose;
+	data.composeDragUseRubberBand = m_composeDragUseRubberBand;
 	data.composeOutputSize = m_composeOutputSize;
 	data.aiEndpoint = m_aiEndpoint;
 	data.aiApiKey = m_aiApiKey;
@@ -3777,6 +3797,8 @@ void CaptureWindow::openCaptureSettingsDialog(QWidget* parent)
 	auto* recBrowse = new QPushButton(tr("浏览..."), &dlg);
 	auto* chkCloseToTray = new QCheckBox(tr("关闭主窗口时最小化到托盘（不退出程序）"), &dlg);
 	chkCloseToTray->setChecked(m_closeToTrayOnClose);
+	auto* chkComposeDragRubber = new QCheckBox(tr("组合模式下拖拽素材时显示虚框花纹"), &dlg);
+	chkComposeDragRubber->setChecked(m_composeDragUseRubberBand);
 	auto* cmbScreenBackend = new QComboBox(&dlg);
 #if defined(_WIN32) && defined(FPLAYER_WITH_SCREEN_DXGI)
 	cmbScreenBackend->addItem(tr("DXGI（默认）"), QStringLiteral("dxgi"));
@@ -3806,6 +3828,7 @@ void CaptureWindow::openCaptureSettingsDialog(QWidget* parent)
 	layout->addRow(tr("截图保存目录"), shotRow);
 	layout->addRow(tr("录制保存目录"), recRow);
 	layout->addRow(tr("关闭行为"), chkCloseToTray);
+	layout->addRow(tr("组合模式拖拽"), chkComposeDragRubber);
 	layout->addRow(tr("屏幕采集后端"), cmbScreenBackend);
 	layout->addRow(lblHdrHint);
 
@@ -4058,7 +4081,7 @@ void CaptureWindow::openCaptureSettingsDialog(QWidget* parent)
 			recPath->setText(QDir::toNativeSeparators(dir));
 		}
 	});
-	connect(buttons, &QDialogButtonBox::accepted, &dlg, [&dlg, shotPath, recPath, chkCloseToTray, cmbScreenBackend, cmbFileBackend, aiEndpointEdit, aiApiKeyEdit, aiModelEdit, userColorLabel, aiColorLabel, bgColorLabel, textColorLabel, userTextColorLabel, sysBubbleColorLabel, sysTextColorLabel, senderColorLabel, 	sysSenderColorLabel, accentColorLabel, fontCombo, fontSizeSpin, themeCombo, this]() {
+	connect(buttons, &QDialogButtonBox::accepted, &dlg, [&dlg, shotPath, recPath, chkCloseToTray, chkComposeDragRubber, cmbScreenBackend, cmbFileBackend, aiEndpointEdit, aiApiKeyEdit, aiModelEdit, userColorLabel, aiColorLabel, bgColorLabel, textColorLabel, userTextColorLabel, sysBubbleColorLabel, sysTextColorLabel, senderColorLabel, 	sysSenderColorLabel, accentColorLabel, fontCombo, fontSizeSpin, themeCombo, this]() {
 		const QString shot = shotPath->text().trimmed();
 		const QString rec = recPath->text().trimmed();
 		if (shot.isEmpty() || rec.isEmpty())
@@ -4077,6 +4100,7 @@ void CaptureWindow::openCaptureSettingsDialog(QWidget* parent)
 		m_screenshotSaveDir = shotDir.absolutePath();
 		m_recordSaveDir = recDir.absolutePath();
 		m_closeToTrayOnClose = chkCloseToTray->isChecked();
+		m_composeDragUseRubberBand = chkComposeDragRubber->isChecked();
 		const QString backend = cmbScreenBackend->currentData().toString().trimmed().toLower();
 		fplayer::MediaBackendType selectedBackend = fplayer::MediaBackendType::FFmpeg;
 #if defined(_WIN32) && defined(FPLAYER_WITH_SCREEN_DXGI)
@@ -4931,6 +4955,66 @@ void CaptureWindow::ensureComposeWorkspace()
 		updateComposeSelectionHighlight();
 		syncComposeControlPanel();
 	});
+	connect(m_composeSourceList, &QListWidget::itemChanged, this, [this](QListWidgetItem* item) {
+		if (!item || !m_composeSourceList) return;
+		const int row = m_composeSourceList->row(item);
+		if (row < 0 || row >= m_composeSources.size()) return;
+		auto& src = m_composeSources[row];
+		const bool checked = (item->checkState() == Qt::Checked);
+		if (checked == src.visible) return;
+		src.visible = checked;
+		if (!checked) {
+			src.lastGeometry = src.subWindow ? src.subWindow->geometry() : QRect();
+			if (src.subWindow) src.subWindow->hide();
+			if (src.kind == ComposeSourceItem::SourceKind::File && src.service) src.service->playerPause();
+			else if (src.kind == ComposeSourceItem::SourceKind::Camera && src.service) src.service->cameraPause();
+			else if (src.kind == ComposeSourceItem::SourceKind::Screen && src.service) src.service->screenSetActive(false);
+		} else {
+			if (src.subWindow) {
+				if (src.lastGeometry.isValid()) src.subWindow->setGeometry(src.lastGeometry);
+				src.subWindow->show();
+			}
+			if (src.kind == ComposeSourceItem::SourceKind::File && src.service) src.service->playerResume();
+			else if (src.kind == ComposeSourceItem::SourceKind::Camera && src.service) src.service->cameraResume();
+			else if (src.kind == ComposeSourceItem::SourceKind::Screen && src.service) src.service->screenSetActive(true);
+		}
+		forceRefreshComposePreview();
+	});
+	connect(this, &CaptureWindow::composeSourceRemoved, this, [this]() {
+		for (auto& src : m_composeSources) {
+			if (!src.service) continue;
+			if (src.kind == ComposeSourceItem::SourceKind::Camera && !src.service->cameraIsPlaying()) {
+				bool occ = false;
+				for (const auto& o : m_composeSources)
+					if (&o != &src && o.kind == ComposeSourceItem::SourceKind::Camera && o.deviceIndex == src.deviceIndex)
+						{ occ = true; break; }
+				if (!occ) {
+					src.service->selectCamera(src.deviceIndex);
+					src.service->selectCameraFormat(src.formatIndex);
+					src.service->cameraResume();
+					const auto cl = src.service->getCameraList();
+					src.subWindow->setWindowTitle(tr("摄像头：%1").arg(cl.value(src.deviceIndex)));
+					src.subWindow->setStyleSheet(QString());
+					src.title = src.subWindow->windowTitle();
+					refreshComposeSourceListItems();
+				}
+			} else if (src.kind == ComposeSourceItem::SourceKind::Screen && !src.service->screenIsActive()) {
+				bool occ = false;
+				for (const auto& o : m_composeSources)
+					if (&o != &src && o.kind == ComposeSourceItem::SourceKind::Screen && o.deviceIndex == src.deviceIndex)
+						{ occ = true; break; }
+				if (!occ) {
+					src.service->selectScreen(src.deviceIndex);
+					src.service->screenSetActive(true);
+					const auto sl = src.service->getScreenList();
+					src.subWindow->setWindowTitle(tr("屏幕：%1").arg(sl.value(src.deviceIndex)));
+					src.subWindow->setStyleSheet(QString());
+					src.title = src.subWindow->windowTitle();
+					refreshComposeSourceListItems();
+				}
+			}
+		}
+	});
 }
 
 void CaptureWindow::suspendComposeSourcesForBackground()
@@ -5200,7 +5284,7 @@ void CaptureWindow::addComposeFileSource()
 		forceRefreshComposePreview();
 	};
 	m_composeSources.push_back(item);
-	m_composeSourceList->addItem(item.title);
+	refreshComposeSourceListItems();
 	m_composeSelectedIndex = m_composeSources.size() - 1;
 	refreshComposeSourceListSelection();
 	updateComposeSelectionHighlight();
@@ -5228,16 +5312,38 @@ void CaptureWindow::addComposeCameraSource()
 		QMessageBox::warning(this, tr("追加失败"), tr("未检测到可用摄像头。"));
 		return;
 	}
-	svc->selectCamera(0);
-	const auto fmts = svc->getCameraFormats(0);
-	if (!fmts.isEmpty())
+	// 检测同设备冲突：若摄像头已被占用，新素材跳过打开设备，直接标记为暂停
+	bool occupied = false;
+	for (const auto& existing : m_composeSources)
 	{
-		svc->selectCameraFormat(0);
+		if (existing.kind == ComposeSourceItem::SourceKind::Camera && existing.deviceIndex == 0)
+		{
+			occupied = true;
+			break;
+		}
+	}
+	if (!occupied)
+	{
+		svc->selectCamera(0);
+		const auto fmts = svc->getCameraFormats(0);
+		if (!fmts.isEmpty())
+		{
+			svc->selectCameraFormat(0);
+		}
 	}
 	auto* sub = m_composeMdiArea->addSubWindow(container, Qt::FramelessWindowHint);
 	sub->setFocusPolicy(Qt::NoFocus);
 	sub->setAttribute(Qt::WA_ShowWithoutActivating, true);
-	sub->setWindowTitle(tr("摄像头：%1").arg(cameras.first()));
+	const QString camName = cameras.first();
+	if (occupied)
+	{
+		sub->setWindowTitle(tr("[被占用] 摄像头：%1").arg(camName));
+		sub->setStyleSheet(QStringLiteral("background:black;"));
+	}
+	else
+	{
+		sub->setWindowTitle(tr("摄像头：%1").arg(camName));
+	}
 	sub->resize(480, 270);
 	sub->show();
 	sub->move(0, 0);
@@ -5294,7 +5400,7 @@ void CaptureWindow::addComposeCameraSource()
 		forceRefreshComposePreview();
 	};
 	m_composeSources.push_back(item);
-	m_composeSourceList->addItem(item.title);
+	refreshComposeSourceListItems();
 	m_composeSelectedIndex = m_composeSources.size() - 1;
 	refreshComposeSourceListSelection();
 	updateComposeSelectionHighlight();
@@ -5336,29 +5442,51 @@ void CaptureWindow::addComposeScreenSource()
 		QMessageBox::warning(this, tr("追加失败"), tr("未检测到可用屏幕。"));
 		return;
 	}
-	if (!svc->selectScreen(0))
+	// 检测同设备冲突：若屏幕已被占用，新素材跳过初始化采集
+	bool occupied = false;
+	for (const auto& existing : m_composeSources)
 	{
-		if (m_screenBackendType == fplayer::MediaBackendType::Dxgi)
+		if (existing.kind == ComposeSourceItem::SourceKind::Screen && existing.deviceIndex == 0)
 		{
-			svc->initScreenCapture(fplayer::MediaBackendType::FFmpeg);
-			m_screenBackendType = fplayer::MediaBackendType::FFmpeg;
-			view->setBackendType(m_screenBackendType);
-			svc->bindScreenPreview(view);
-			screens = svc->getScreenList();
-		}
-		if (screens.isEmpty() || !svc->selectScreen(0))
-		{
-			delete svc;
-			delete container;
-			QMessageBox::warning(this, tr("追加失败"), tr("屏幕采集初始化失败。"));
-			return;
+			occupied = true;
+			break;
 		}
 	}
-	svc->screenSetActive(true);
+	if (!occupied)
+	{
+		if (!svc->selectScreen(0))
+		{
+			if (m_screenBackendType == fplayer::MediaBackendType::Dxgi)
+			{
+				svc->initScreenCapture(fplayer::MediaBackendType::FFmpeg);
+				m_screenBackendType = fplayer::MediaBackendType::FFmpeg;
+				view->setBackendType(m_screenBackendType);
+				svc->bindScreenPreview(view);
+				screens = svc->getScreenList();
+			}
+			if (screens.isEmpty() || !svc->selectScreen(0))
+			{
+				delete svc;
+				delete container;
+				QMessageBox::warning(this, tr("追加失败"), tr("屏幕采集初始化失败。"));
+				return;
+			}
+		}
+		svc->screenSetActive(true);
+	}
 	auto* sub = m_composeMdiArea->addSubWindow(container, Qt::FramelessWindowHint);
 	sub->setFocusPolicy(Qt::NoFocus);
 	sub->setAttribute(Qt::WA_ShowWithoutActivating, true);
-	sub->setWindowTitle(tr("屏幕：%1").arg(screens.first()));
+	const QString scrName = screens.first();
+	if (occupied)
+	{
+		sub->setWindowTitle(tr("[被占用] 屏幕：%1").arg(scrName));
+		sub->setStyleSheet(QStringLiteral("background:black;"));
+	}
+	else
+	{
+		sub->setWindowTitle(tr("屏幕：%1").arg(scrName));
+	}
 	sub->resize(640, 360);
 	sub->show();
 	sub->move(0, 0);
@@ -5410,19 +5538,12 @@ void CaptureWindow::addComposeScreenSource()
 			setComposeCropMode(idx, false);
 		}
 	};
-	container->onDragFinished = [this, sub]() {
-		const int idx = std::distance(m_composeSources.begin(), std::find_if(m_composeSources.begin(), m_composeSources.end(),
-		                                                                      [sub](const ComposeSourceItem& i) {
-			                                                                      return i.subWindow == sub;
-		                                                                      }));
-		if (idx >= 0 && idx < m_composeSources.size())
-		{
-			Q_UNUSED(sub);
-		}
+	container->onDragFinished = [this]() {
+		syncComposeControlPanel();
 		forceRefreshComposePreview();
 	};
 	m_composeSources.push_back(item);
-	m_composeSourceList->addItem(item.title);
+	refreshComposeSourceListItems();
 	m_composeSelectedIndex = m_composeSources.size() - 1;
 	refreshComposeSourceListSelection();
 	updateComposeSelectionHighlight();
@@ -5430,6 +5551,7 @@ void CaptureWindow::addComposeScreenSource()
 	refreshComposeScreenCaptureState(m_composeSelectedIndex);
 	updateComposePlaybackIcons();
 }
+
 
 void CaptureWindow::removeComposeSourceAt(const int index)
 {
@@ -5465,6 +5587,8 @@ void CaptureWindow::removeComposeSourceAt(const int index)
 	updateComposeSelectionHighlight();
 	syncComposeControlPanel();
 	refreshComposeScreenCaptureState(m_composeSelectedIndex);
+	// 通知其他素材检查是否可恢复
+	emit composeSourceRemoved();
 }
 
 void CaptureWindow::refreshComposeSourceListSelection()
@@ -5494,7 +5618,10 @@ void CaptureWindow::refreshComposeSourceListItems()
 		{
 			displayTitle += QStringLiteral(" [%1]").arg(sid.left(8));
 		}
-		m_composeSourceList->addItem(displayTitle);
+		auto* item = new QListWidgetItem(displayTitle);
+		item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
+		item->setCheckState(src.visible ? Qt::Checked : Qt::Unchecked);
+		m_composeSourceList->addItem(item);
 	}
 	m_composeSourceList->setCurrentRow(m_composeSelectedIndex);
 	m_composeSourceList->blockSignals(false);
@@ -5823,9 +5950,17 @@ void CaptureWindow::updateComposePlaybackIcons()
 	}
 	if (m_composeSelectedIndex < 0 || m_composeSelectedIndex >= m_composeSources.size())
 	{
+		ui->btnPlay->setVisible(false);
 		return;
 	}
-	const bool playing = composeSourceIsPlaying(m_composeSelectedIndex);
+	const auto& src = m_composeSources.at(m_composeSelectedIndex);
+	if (src.kind != ComposeSourceItem::SourceKind::File)
+	{
+		ui->btnPlay->setVisible(false);
+		return;
+	}
+	ui->btnPlay->setVisible(true);
+	const bool playing = src.service ? src.service->playerIsPlaying() : false;
 	ui->btnPlay->setIcon(QIcon(fplayer::tokens::themedIconPath(static_cast<fplayer::tokens::Theme>(m_theme),
 		playing ? QStringLiteral("pause") : QStringLiteral("play"))));
 }
@@ -5841,40 +5976,17 @@ void CaptureWindow::toggleComposeSourcePlayPauseAt(const int index)
 	{
 		return;
 	}
-	switch (src.kind)
+	if (src.kind != ComposeSourceItem::SourceKind::File)
 	{
-	case ComposeSourceItem::SourceKind::File:
-		if (src.service->playerIsPlaying())
-		{
-			src.service->playerPause();
-		}
-		else
-		{
-			src.service->playerResume();
-		}
-		break;
-	case ComposeSourceItem::SourceKind::Camera:
-		if (src.service->cameraIsPlaying())
-		{
-			src.service->cameraPause();
-		}
-		else
-		{
-			src.service->cameraResume();
-		}
-		break;
-	case ComposeSourceItem::SourceKind::Screen:
-		if (src.service->screenIsActive())
-		{
-			src.service->screenSetActive(false);
-			// 必须排除本行，否则 refresh 仍会把「当前选中屏幕」重新激活。
-			refreshComposeScreenCaptureState(m_composeSelectedIndex, -1, index);
-		}
-		else
-		{
-			refreshComposeScreenCaptureState(m_composeSelectedIndex, index);
-		}
-		break;
+		return;
+	}
+	if (src.service->playerIsPlaying())
+	{
+		src.service->playerPause();
+	}
+	else
+	{
+		src.service->playerResume();
 	}
 	updateComposePlaybackIcons();
 }
@@ -5942,7 +6054,6 @@ void CaptureWindow::forceRefreshComposePreview()
 	{
 		return;
 	}
-	// 原生视频渲染控件在 MDI 内频繁几何变化后，偶发残影；拖拽结束时强制刷新一次画布和子项。
 	m_composeMdiArea->update();
 	if (QWidget* vp = m_composeMdiArea->viewport())
 	{
@@ -5952,13 +6063,46 @@ void CaptureWindow::forceRefreshComposePreview()
 	const auto windows = m_composeMdiArea->subWindowList(QMdiArea::StackingOrder);
 	for (QMdiSubWindow* sub : windows)
 	{
-		if (!sub)
-		{
-			continue;
-		}
+		if (!sub) continue;
 		sub->update();
 		sub->repaint();
 	}
+	// 先处理待处理的 resize/layout 事件，确保控件几何已稳定
+	QApplication::sendPostedEvents(nullptr, QEvent::Resize);
+	QApplication::sendPostedEvents(nullptr, QEvent::LayoutRequest);
+	// 遍历 composeSources，显式触发 GL 控件 paintGL，防止窗口拉伸/最大化恢复后冻结
+	for (const auto& src : m_composeSources)
+	{
+		if (auto* container = static_cast<ComposeSourceWidget*>(src.container))
+		{
+			container->update();
+			container->repaint();
+			if (auto* view = src.view)
+			{
+				view->update();
+				view->repaint();
+				if (auto* glw = view->findChild<fplayer::FGLWidget*>())
+				{
+					glw->repaint();
+				}
+			}
+		}
+	}
+	// 延迟二次刷新：几何变化和 GL 上下文完全稳定后再渲染一次
+	QTimer::singleShot(100, this, [this]() {
+		if (!m_composeMdiArea || !m_isComposeMode) return;
+		for (const auto& src : m_composeSources)
+		{
+			if (auto* view = src.view)
+			{
+				view->repaint();
+				if (auto* glw = view->findChild<fplayer::FGLWidget*>())
+				{
+					glw->repaint();
+				}
+			}
+		}
+	});
 }
 
 void CaptureWindow::requestComposeSourceContextMenu(const QPoint& globalPos, const int index)

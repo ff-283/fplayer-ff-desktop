@@ -274,10 +274,10 @@ void fplayer::ScreenCaptureDxgi::dispatchFrameToView(const QByteArray& yData, co
 	{
 		return;
 	}
-	// 采集线程反复写入 m_previewY/U/V；lambda 排队时若只浅拷贝 QByteArray，会与采集线程共享同一块缓冲区导致数据竞争。
-	const QByteArray yCopy(yData.constData(), yData.size());
-	const QByteArray uCopy(uData.constData(), uData.size());
-	const QByteArray vCopy(vData.constData(), vData.size());
+	// COW 隐式共享：浅拷贝仅增加引用计数；下一帧 resize() 时 Qt 自动 detach，旧缓冲区保持有效。
+	const QByteArray yCopy = yData;
+	const QByteArray uCopy = uData;
+	const QByteArray vCopy = vData;
 	QPointer<FGLWidget> target = m_glWidget;
 	QMetaObject::invokeMethod(m_glWidget, [target, yCopy, uCopy, vCopy, width, height, yStride, uStride, vStride]() {
 		if (!target)
@@ -689,121 +689,74 @@ bool fplayer::ScreenCaptureDxgi::captureOneFrame()
 	const uint8_t* srcSlice[4] = {reinterpret_cast<const uint8_t*>(m_bgraFrame.constData()), nullptr, nullptr, nullptr};
 	int srcStrideArr[4] = {tw * bytesPerPixel, 0, 0, 0};
 
-	// 预览链路固定使用屏幕尺寸；YUV420P 目的尺寸需为偶数，奇数时做 1px 裁剪避免 U/V 错位。
-	const int previewW = qMax(2, tw) & ~1;
-	const int previewH = qMax(2, th) & ~1;
-	SwsContext* swsPreview = static_cast<SwsContext*>(m_swsPreview);
-	if (!swsPreview || m_previewW != previewW || m_previewH != previewH)
-	{
-		sws_freeContext(swsPreview);
-		swsPreview = sws_getContext(tw, th, srcPixFmt, previewW, previewH, AV_PIX_FMT_YUV420P, SWS_BILINEAR, nullptr, nullptr,
-		                            nullptr);
-		m_swsPreview = swsPreview;
-		m_previewW = previewW;
-		m_previewH = previewH;
-	}
-	if (!swsPreview)
-	{
-		return false;
-	}
-	const int previewYStride = previewW;
-	const int previewUStride = previewW / 2;
-	const int previewVStride = previewW / 2;
-	const int previewYBytes = previewYStride * previewH;
-	const int previewUvHeight = previewH / 2;
-	const int previewUBytes = previewUStride * previewUvHeight;
-	const int previewVBytes = previewVStride * previewUvHeight;
-	if (m_previewY.size() != previewYBytes)
-	{
-		m_previewY.resize(previewYBytes);
-	}
-	if (m_previewU.size() != previewUBytes)
-	{
-		m_previewU.resize(previewUBytes);
-	}
-	if (m_previewV.size() != previewVBytes)
-	{
-		m_previewV.resize(previewVBytes);
-	}
-	uint8_t* previewYuv[4] = {
-		reinterpret_cast<uint8_t*>(m_previewY.data()),
-		reinterpret_cast<uint8_t*>(m_previewU.data()),
-		reinterpret_cast<uint8_t*>(m_previewV.data()),
-		nullptr
-	};
-	int previewStride[4] = {previewYStride, previewUStride, previewVStride, 0};
-	sws_scale(swsPreview, srcSlice, srcStrideArr, 0, th, previewYuv, previewStride);
-	dispatchFrameToView(m_previewY, m_previewU, m_previewV, previewW, previewH, previewStride[0], previewStride[1], previewStride[2]);
-
-	// 推流链路按目标尺寸独立缩放并发布到总线。
+	// 确定输出尺寸：有推流目标尺寸时优先用推流尺寸（OpenGL 会自动缩放预览），
+	// 否则用屏幕原尺寸。合并为单次 sws_scale，消除双路转换的 CPU 开销。
 	int targetW = 0;
 	int targetH = 0;
 	fplayer::ScreenFrameBus::instance().publishTargetSize(targetW, targetH, m_frameBusSourceId);
 	const bool pushRequested = (targetW > 0 && targetH > 0);
-	if (targetW <= 0 || targetH <= 0)
-	{
-		targetW = tw;
-		targetH = th;
-	}
-	targetW = qMax(2, targetW) & ~1;
-	targetH = qMax(2, targetH) & ~1;
 
-	// 未下发推流尺寸时，先发布预览同尺寸帧，保证推流启动阶段能拿到首帧。
-	if (!pushRequested)
-	{
-		fplayer::ScreenFrameBus::instance().publish(m_previewY, m_previewU, m_previewV, previewW, previewH, previewStride[0], previewStride[1],
-		                                            previewStride[2], m_frameBusSourceId);
-		return true;
-	}
+	const int nativeW = qMax(2, tw) & ~1;
+	const int nativeH = qMax(2, th) & ~1;
 
-	// 推流尺寸与预览尺寸一致时，只做一次 BGRA->YUV 转换并复用结果。
-	if (targetW == previewW && targetH == previewH)
+	int outW = nativeW;
+	int outH = nativeH;
+	if (pushRequested)
 	{
-		fplayer::ScreenFrameBus::instance().publish(m_previewY, m_previewU, m_previewV, previewW, previewH, previewStride[0], previewStride[1],
-		                                            previewStride[2], m_frameBusSourceId);
-		return true;
+		if (targetW > 0 && targetH > 0)
+		{
+			outW = qMax(2, targetW) & ~1;
+			outH = qMax(2, targetH) & ~1;
+		}
 	}
 
-	SwsContext* swsPush = static_cast<SwsContext*>(m_swsPush);
-	if (!swsPush || m_pushW != targetW || m_pushH != targetH)
+	// 选择或创建 sws 上下文（缓存复用，尺寸变化时重建）
+	void*& swsCtxRef = (pushRequested && (outW != nativeW || outH != nativeH)) ? m_swsPush : m_swsPreview;
+	int& cachedW = (pushRequested && (outW != nativeW || outH != nativeH)) ? m_pushW : m_previewW;
+	int& cachedH = (pushRequested && (outW != nativeW || outH != nativeH)) ? m_pushH : m_previewH;
+
+	SwsContext* swsCtx = static_cast<SwsContext*>(swsCtxRef);
+	if (!swsCtx || cachedW != outW || cachedH != outH)
 	{
-		sws_freeContext(swsPush);
-		swsPush = sws_getContext(tw, th, srcPixFmt, targetW, targetH, AV_PIX_FMT_YUV420P, SWS_BILINEAR, nullptr, nullptr, nullptr);
-		m_swsPush = swsPush;
-		m_pushW = targetW;
-		m_pushH = targetH;
+		sws_freeContext(swsCtx);
+		swsCtx = sws_getContext(tw, th, srcPixFmt, outW, outH, AV_PIX_FMT_YUV420P, SWS_FAST_BILINEAR, nullptr, nullptr, nullptr);
+		swsCtxRef = swsCtx;
+		cachedW = outW;
+		cachedH = outH;
 	}
-	if (!swsPush)
+	if (!swsCtx)
 	{
 		return false;
 	}
-	const int pushYStride = targetW;
-	const int pushUStride = targetW / 2;
-	const int pushVStride = targetW / 2;
-	const int pushYBytes = pushYStride * targetH;
-	const int pushUBytes = pushUStride * (targetH / 2);
-	const int pushVBytes = pushVStride * (targetH / 2);
-	if (m_pushY.size() != pushYBytes)
-	{
-		m_pushY.resize(pushYBytes);
-	}
-	if (m_pushU.size() != pushUBytes)
-	{
-		m_pushU.resize(pushUBytes);
-	}
-	if (m_pushV.size() != pushVBytes)
-	{
-		m_pushV.resize(pushVBytes);
-	}
-	uint8_t* pushYuv[4] = {
-		reinterpret_cast<uint8_t*>(m_pushY.data()),
-		reinterpret_cast<uint8_t*>(m_pushU.data()),
-		reinterpret_cast<uint8_t*>(m_pushV.data()),
+
+	// 选择输出缓冲区：推流路径异于预览尺寸时用 push 缓冲区，否则复用 preview 缓冲区
+	QByteArray& outY = (pushRequested && (outW != nativeW || outH != nativeH)) ? m_pushY : m_previewY;
+	QByteArray& outU = (pushRequested && (outW != nativeW || outH != nativeH)) ? m_pushU : m_previewU;
+	QByteArray& outV = (pushRequested && (outW != nativeW || outH != nativeH)) ? m_pushV : m_previewV;
+
+	const int outYStride = outW;
+	const int outUStride = outW / 2;
+	const int outVStride = outW / 2;
+	const int outYBytes = outYStride * outH;
+	const int outUvHeight = outH / 2;
+	const int outUBytes = outUStride * outUvHeight;
+	const int outVBytes = outVStride * outUvHeight;
+	if (outY.size() != outYBytes) outY.resize(outYBytes);
+	if (outU.size() != outUBytes) outU.resize(outUBytes);
+	if (outV.size() != outVBytes) outV.resize(outVBytes);
+
+	uint8_t* outYuv[4] = {
+		reinterpret_cast<uint8_t*>(outY.data()),
+		reinterpret_cast<uint8_t*>(outU.data()),
+		reinterpret_cast<uint8_t*>(outV.data()),
 		nullptr
 	};
-	int pushStride[4] = {pushYStride, pushUStride, pushVStride, 0};
-	sws_scale(swsPush, srcSlice, srcStrideArr, 0, th, pushYuv, pushStride);
-	fplayer::ScreenFrameBus::instance().publish(m_pushY, m_pushU, m_pushV, targetW, targetH, pushStride[0], pushStride[1], pushStride[2],
+	int outStride[4] = {outYStride, outUStride, outVStride, 0};
+	sws_scale(swsCtx, srcSlice, srcStrideArr, 0, th, outYuv, outStride);
+
+	// 单次转换结果同时用于预览显示和推流发布
+	dispatchFrameToView(outY, outU, outV, outW, outH, outStride[0], outStride[1], outStride[2]);
+	fplayer::ScreenFrameBus::instance().publish(outY, outU, outV, outW, outH, outStride[0], outStride[1], outStride[2],
 	                                            m_frameBusSourceId);
 	return true;
 }

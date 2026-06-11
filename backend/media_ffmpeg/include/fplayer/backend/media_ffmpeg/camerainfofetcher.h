@@ -24,9 +24,9 @@ namespace fplayer
 			int fps;
 		};
 
-		// TODO：后面有可能/建议在线程中调用这个单例类及相关方法
 	public:
 		static QList<CameraDescription> getDescriptions();
+		static void forceRefresh();
 
 	private:
 		CameraDescriptionFetcher(const CameraDescriptionFetcher&) = delete;
@@ -36,9 +36,13 @@ namespace fplayer
 		~CameraDescriptionFetcher() = default;
 
 		static CameraDescriptionFetcher& instance();
+		QList<CameraDescription> enumerateDescriptions();
 
 	private:
-		static QVector<QList<FCameraFormat>> m_cameraFormats;// 用于存储各个摄像头的相对原始格式信息
+		static QVector<QList<FCameraFormat>> m_cameraFormats;
+		qint64 m_lastEnumerateMs = 0;
+		QList<CameraDescription> m_cachedDescriptions;
+		static constexpr qint64 kCacheTtlMs = 30000;
 	};
 }
 
