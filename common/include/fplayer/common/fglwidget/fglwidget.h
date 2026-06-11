@@ -78,6 +78,10 @@ namespace fplayer
 
 		GLfloat m_vertices[16];
 		YUVData m_yuvData;
+		QByteArray m_yTightBuf;
+		QByteArray m_uTightBuf;
+		QByteArray m_vTightBuf;
+		void repackPlaneTightBuf(QByteArray& dst, const QByteArray& src, int width, int height, int stride);
 		QMutex m_mutex;
 		bool m_initialized = false;
 		bool m_isBT709 = false;

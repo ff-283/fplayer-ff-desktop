@@ -290,49 +290,49 @@ namespace fplayer
 		const bool uTight = (uStrideEffective == uvWidth);
 		const bool vTight = (vStrideEffective == uvWidth);
 
-		if (canUseUnpackRowLength() && !yTight)
+		if (yTight)
 		{
-			m_texY->bind();
-			glPixelStorei(GL_UNPACK_ROW_LENGTH, yStrideEffective);
-			glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, yWidth, yHeight, GL_RED, GL_UNSIGNED_BYTE, src.yBuffer.constData());
-			glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+			uploadViaPBO(m_pboY, m_pboIndex, m_pboYSize, m_texY, src.yBuffer.constData(), yWidth, yHeight);
 		}
 		else
 		{
-			const void* yData = yTight ? src.yBuffer.constData()
-			                           : repackPlaneTight(src.yBuffer, yWidth, yHeight, yStrideEffective).constData();
-			if (yTight) { uploadViaPBO(m_pboY, m_pboIndex, m_pboYSize, m_texY, yData, yWidth, yHeight); }
-			else { m_texY->bind(); glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, yWidth, yHeight, GL_RED, GL_UNSIGNED_BYTE, yData); }
+			repackPlaneTightBuf(m_yTightBuf, src.yBuffer, yWidth, yHeight, yStrideEffective);
+			uploadViaPBO(m_pboY, m_pboIndex, m_pboYSize, m_texY, m_yTightBuf.constData(), yWidth, yHeight);
 		}
 
-		if (canUseUnpackRowLength() && !uTight)
+		if (uTight)
 		{
-			m_texU->bind();
-			glPixelStorei(GL_UNPACK_ROW_LENGTH, uStrideEffective);
-			glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, uvWidth, uvHeight, GL_RED, GL_UNSIGNED_BYTE, src.uBuffer.constData());
-			glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+			uploadViaPBO(m_pboU, m_pboIndex, m_pboUSize, m_texU, src.uBuffer.constData(), uvWidth, uvHeight);
 		}
 		else
 		{
-			const void* uData = uTight ? src.uBuffer.constData()
-			                           : repackPlaneTight(src.uBuffer, uvWidth, uvHeight, uStrideEffective).constData();
-			if (uTight) { uploadViaPBO(m_pboU, m_pboIndex, m_pboUSize, m_texU, uData, uvWidth, uvHeight); }
-			else { m_texU->bind(); glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, uvWidth, uvHeight, GL_RED, GL_UNSIGNED_BYTE, uData); }
+			repackPlaneTightBuf(m_uTightBuf, src.uBuffer, uvWidth, uvHeight, uStrideEffective);
+			uploadViaPBO(m_pboU, m_pboIndex, m_pboUSize, m_texU, m_uTightBuf.constData(), uvWidth, uvHeight);
 		}
 
-		if (canUseUnpackRowLength() && !vTight)
+		if (vTight)
 		{
-			m_texV->bind();
-			glPixelStorei(GL_UNPACK_ROW_LENGTH, vStrideEffective);
-			glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, uvWidth, uvHeight, GL_RED, GL_UNSIGNED_BYTE, src.vBuffer.constData());
-			glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+			uploadViaPBO(m_pboV, m_pboIndex, m_pboVSize, m_texV, src.vBuffer.constData(), uvWidth, uvHeight);
 		}
 		else
 		{
-			const void* vData = vTight ? src.vBuffer.constData()
-			                           : repackPlaneTight(src.vBuffer, uvWidth, uvHeight, vStrideEffective).constData();
-			if (vTight) { uploadViaPBO(m_pboV, m_pboIndex, m_pboVSize, m_texV, vData, uvWidth, uvHeight); }
-			else { m_texV->bind(); glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, uvWidth, uvHeight, GL_RED, GL_UNSIGNED_BYTE, vData); }
+			repackPlaneTightBuf(m_vTightBuf, src.vBuffer, uvWidth, uvHeight, vStrideEffective);
+			uploadViaPBO(m_pboV, m_pboIndex, m_pboVSize, m_texV, m_vTightBuf.constData(), uvWidth, uvHeight);
+		}
+	}
+
+	void FGLWidget::repackPlaneTightBuf(QByteArray& dst, const QByteArray& src, int width, int height, int stride)
+	{
+		const int bytes = width * height;
+		if (dst.size() != bytes)
+		{
+			dst.resize(bytes);
+		}
+		const char* s = src.constData();
+		char* d = dst.data();
+		for (int row = 0; row < height; ++row)
+		{
+			std::memcpy(d + row * width, s + row * stride, static_cast<size_t>(width));
 		}
 	}
 
