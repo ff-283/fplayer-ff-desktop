@@ -70,7 +70,6 @@ public:
 	explicit CaptureWindow(QWidget* parent = nullptr, fplayer::MediaBackendType backendType = fplayer::MediaBackendType::Qt6);
 
 	~CaptureWindow() override;
-	void performDeferredInit();
 
 	// private:
 	// 	void refreshCameras();

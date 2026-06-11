@@ -1513,7 +1513,34 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		this->ui->btnFullscreen->setIcon(QIcon(fplayer::tokens::themedIconPath(static_cast<fplayer::tokens::Theme>(m_theme), QStringLiteral("fullScreen"))));
 	};
 
-	// 延迟初始化：摄像头、播放器、屏幕采集、推拉流、托盘等将在 performDeferredInit 中完成
+	// 1) 初始化后端服务
+	m_service->initCamera(backendType);
+	m_service->initPlayer(m_filePlaybackBackend);
+#if !(defined(_WIN32) && defined(FPLAYER_WITH_SCREEN_DXGI))
+	if (m_screenBackendType == fplayer::MediaBackendType::Dxgi)
+	{
+		m_screenBackendType = fplayer::MediaBackendType::FFmpeg;
+	}
+#endif
+	m_service->initScreenCapture(m_screenBackendType);
+	m_service->initStream(fplayer::MediaBackendType::FFmpeg);
+	setupTrayIcon();
+
+	// 2) 绑定预览窗口（默认摄像头模式）
+	this->ui->wgtView->setBackendType(backendType);
+	m_service->bindCameraPreview(this->ui->wgtView);
+
+	// 3) 获取摄像头列表并选中第一个
+	this->refreshCameraDeviceUi();
+	if (this->ui->cmbDevices->count() > 0)
+	{
+		this->ui->cmbDevices->setCurrentIndex(0);
+		const auto formats = this->m_service->getCameraFormats(0);
+		this->ui->cmbFormats->clear();
+		this->ui->cmbFormats->addItems(formats);
+		this->ui->cmbFormats->setCurrentIndex(0);
+	}
+
 	// 4) 连接信号槽
 	// 摄像头变更
 	connect(this->ui->cmbDevices, &QComboBox::currentIndexChanged, [this](int index) {
@@ -3633,33 +3660,6 @@ void CaptureWindow::loadCapturePreferences()
 	}
 }
 
-void CaptureWindow::performDeferredInit()
-{
-	// 1) 初始化后端服务
-	m_service->initCamera(m_cameraBackendType);
-	m_service->initPlayer(m_filePlaybackBackend);
-#if !(defined(_WIN32) && defined(FPLAYER_WITH_SCREEN_DXGI))
-	if (m_screenBackendType == fplayer::MediaBackendType::Dxgi)
-	{
-		m_screenBackendType = fplayer::MediaBackendType::FFmpeg;
-	}
-#endif
-	m_service->initScreenCapture(m_screenBackendType);
-	m_service->initStream(fplayer::MediaBackendType::FFmpeg);
-	setupTrayIcon();
-
-	// 2) 绑定预览窗口
-	this->ui->wgtView->setBackendType(m_filePlaybackBackend);
-	m_service->bindPlayerPreview(this->ui->wgtView);
-	this->ui->wgtView->setBackendType(m_screenBackendType);
-	m_service->bindScreenPreview(this->ui->wgtView);
-	this->ui->wgtView->setBackendType(m_cameraBackendType);
-	m_service->bindCameraPreview(this->ui->wgtView);
-
-	// 3) 获取摄像头列表
-	this->refreshCameraDeviceUi();
-	this->refreshScreenDeviceUi();
-}
 
 void CaptureWindow::saveCapturePreferences() const
 {

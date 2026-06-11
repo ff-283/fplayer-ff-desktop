@@ -6,7 +6,6 @@
 #include <QPainter>
 #include <QSplashScreen>
 #include <QSurfaceFormat>
-#include <QTimer>
 #include <exception>
 
 #ifdef Q_OS_WIN
@@ -124,12 +123,7 @@ int main(int argc, char* argv[])
 
 		CaptureWindow main(nullptr, backendType);
 		main.show();
-
-		// 延迟初始化非必要模块，加速首帧显示
-		QTimer::singleShot(0, &main, [&main, &splash]() {
-			main.performDeferredInit();
-			splash.finish(&main);
-		});
+		splash.finish(&main);
 
 		app.exec();
 		return 0;
