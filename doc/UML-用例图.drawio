@@ -1,0 +1,380 @@
+<mxfile host="app.diagrams.net" modified="2026-06-12T00:00:00.000Z" agent="claude" version="24.0.0">
+  <diagram name="FPlayer 用例图" id="fplayer-usecase">
+    <mxGraphModel dx="1500" dy="1000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1700" pageHeight="1050" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- 系统边界 -->
+        <mxCell id="sys-boundary" value="FPlayer 桌面端系统" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;fontSize=16;verticalAlign=top;align=left;spacingLeft=14;spacingTop=8;dashed=1;dashPattern=8 4;" vertex="1" parent="1">
+          <mxGeometry x="280" y="60" width="1100" height="640" as="geometry" />
+        </mxCell>
+
+        <!-- ===== 参与者 ===== -->
+        <mxCell id="actor-desktop" value="桌面用户" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontStyle=1;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="60" y="280" width="40" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="actor-ai" value="AI 多模态服务&#xa;(OpenAI 兼容)" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontStyle=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="60" y="530" width="50" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="actor-mobile" value="安卓用户" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontStyle=1;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="1480" y="280" width="40" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="actor-service" value="FPlayer-Service&#xa;(服务端)" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontStyle=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1480" y="530" width="40" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- ===== 用例 ===== -->
+
+        <!-- 第1行：媒体采集 y=110 -->
+        <mxCell id="uc-play-local" value="播放本地视频" style="ellipse;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="370" y="110" width="150" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="uc-capture-camera" value="采集摄像头画面&#xa;(含虚拟摄像头)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="600" y="110" width="150" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="uc-screen-share" value="屏幕共享/捕获" style="ellipse;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="830" y="110" width="150" height="55" as="geometry" />
+        </mxCell>
+
+        <!-- 第2行：推拉流核心 y=230 -->
+        <mxCell id="uc-push-stream" value="局域网推流&#xa;(P2P 直连模式)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="460" y="230" width="170" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="uc-pull-stream" value="局域网拉流&#xa;(监视+预览窗口联动)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="720" y="230" width="170" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- 第3行：扩展功能 y=350 -->
+        <mxCell id="uc-composite-push" value="组合模式推流&#xa;(多源画布+YUV合成)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="440" y="350" width="170" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="uc-record" value="拉流录制" style="ellipse;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="670" y="355" width="130" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="uc-mobile-pull" value="安卓端拉流播放" style="ellipse;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="1070" y="350" width="150" height="55" as="geometry" />
+        </mxCell>
+
+        <!-- 第4行：AI与图池 y=460 -->
+        <mxCell id="uc-ai-pool" value="AI 图池分析&#xa;(截图浏览/排序/大图预览)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="630" y="460" width="180" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="uc-ai-chat" value="AI 图像识别对话&#xa;(SSE 流式逐字输出)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="370" y="465" width="170" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- 第5行：配置与设置 y=570 -->
+        <mxCell id="uc-theme-settings" value="主题与个性化设置&#xa;(深色/浅色/主题色/字体)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="360" y="570" width="180" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="uc-stream-settings" value="推拉流参数配置&#xa;(编码器/码率/分辨率调优)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="600" y="570" width="180" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="uc-service-mode" value="接入 Service 编排模式&#xa;(Gateway 流地址/端口编排)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="840" y="570" width="200" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="uc-manage-output" value="管理输出与分发&#xa;(流地址解析/统一分发)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="1090" y="570" width="170" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- ===== 关联线：主干+分支，颜色区分来源 ===== -->
+
+        <!-- 桌面用户 蓝色 #4472C4 -->
+        <mxCell id="trunk-desktop" value="" style="endArrow=none;html=1;strokeWidth=3;strokeColor=#4472C4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="160" y="320" as="sourcePoint" />
+            <mxPoint x="160" y="600" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="trunk-desktop-top" value="" style="endArrow=none;html=1;strokeWidth=3;strokeColor=#4472C4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="160" y="320" as="sourcePoint" />
+            <mxPoint x="160" y="137" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="edge-d-trunk" style="endArrow=none;html=1;strokeWidth=3;strokeColor=#4472C4;" edge="1" parent="1" source="actor-desktop">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="160" y="320" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- R1分支 y=137 -->
+        <mxCell id="edge-d-play" style="endArrow=none;html=1;strokeWidth=1.5;strokeColor=#4472C4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="160" y="137" as="sourcePoint" /><mxPoint x="370" y="137" as="targetPoint" /></mxGeometry>
+        </mxCell>
+        <mxCell id="edge-d-camera" style="endArrow=none;html=1;strokeWidth=1.5;strokeColor=#4472C4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="160" y="137" as="sourcePoint" /><mxPoint x="675" y="137" as="targetPoint" /></mxGeometry>
+        </mxCell>
+        <mxCell id="edge-d-screen" style="endArrow=none;html=1;strokeWidth=1.5;strokeColor=#4472C4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="160" y="137" as="sourcePoint" /><mxPoint x="905" y="137" as="targetPoint" /></mxGeometry>
+        </mxCell>
+
+        <!-- R2分支 y=260 -->
+        <mxCell id="edge-d-push" style="endArrow=none;html=1;strokeWidth=1.5;strokeColor=#4472C4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="160" y="260" as="sourcePoint" /><mxPoint x="460" y="260" as="targetPoint" /></mxGeometry>
+        </mxCell>
+        <mxCell id="edge-d-pull" style="endArrow=none;html=1;strokeWidth=1.5;strokeColor=#4472C4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="160" y="260" as="sourcePoint" /><mxPoint x="805" y="260" as="targetPoint" /></mxGeometry>
+        </mxCell>
+
+        <!-- R3分支 y=380 -->
+        <mxCell id="edge-d-composite" style="endArrow=none;html=1;strokeWidth=1.5;strokeColor=#4472C4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="160" y="380" as="sourcePoint" /><mxPoint x="440" y="380" as="targetPoint" /></mxGeometry>
+        </mxCell>
+        <mxCell id="edge-d-record" style="endArrow=none;html=1;strokeWidth=1.5;strokeColor=#4472C4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="160" y="380" as="sourcePoint" /><mxPoint x="735" y="380" as="targetPoint" /></mxGeometry>
+        </mxCell>
+
+        <!-- R4分支 y=495 -->
+        <mxCell id="edge-d-ai-chat" style="endArrow=none;html=1;strokeWidth=1.5;strokeColor=#4472C4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="160" y="495" as="sourcePoint" /><mxPoint x="370" y="495" as="targetPoint" /></mxGeometry>
+        </mxCell>
+        <mxCell id="edge-d-ai-pool" style="endArrow=none;html=1;strokeWidth=1.5;strokeColor=#4472C4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="160" y="495" as="sourcePoint" /><mxPoint x="720" y="495" as="targetPoint" /></mxGeometry>
+        </mxCell>
+
+        <!-- R5分支 y=600 -->
+        <mxCell id="edge-d-theme" style="endArrow=none;html=1;strokeWidth=1.5;strokeColor=#4472C4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="160" y="600" as="sourcePoint" /><mxPoint x="360" y="600" as="targetPoint" /></mxGeometry>
+        </mxCell>
+        <mxCell id="edge-d-config" style="endArrow=none;html=1;strokeWidth=1.5;strokeColor=#4472C4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="160" y="600" as="sourcePoint" /><mxPoint x="690" y="600" as="targetPoint" /></mxGeometry>
+        </mxCell>
+        <mxCell id="edge-d-svc-mode" style="endArrow=none;html=1;strokeWidth=1.5;strokeColor=#4472C4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="160" y="600" as="sourcePoint" /><mxPoint x="940" y="600" as="targetPoint" /></mxGeometry>
+        </mxCell>
+
+        <!-- AI 服务关联 绿色 #70AD47 -->
+        <mxCell id="trunk-ai" value="" style="endArrow=none;html=1;strokeWidth=3;strokeColor=#70AD47;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="160" y="570" as="sourcePoint" />
+            <mxPoint x="160" y="495" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="edge-ai-trunk" style="endArrow=none;html=1;strokeWidth=2;strokeColor=#70AD47;" edge="1" parent="1" source="actor-ai">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="160" y="570" as="targetPoint" /></mxGeometry>
+        </mxCell>
+        <mxCell id="edge-ai-chat-line" style="endArrow=none;html=1;strokeWidth=1.5;strokeColor=#70AD47;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="160" y="495" as="sourcePoint" /><mxPoint x="370" y="495" as="targetPoint" /></mxGeometry>
+        </mxCell>
+        <mxCell id="edge-ai-pool-line" style="endArrow=none;html=1;strokeWidth=1.5;strokeColor=#70AD47;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="160" y="495" as="sourcePoint" /><mxPoint x="720" y="495" as="targetPoint" /></mxGeometry>
+        </mxCell>
+
+        <!-- 安卓用户关联 橙色 #ED7D31 -->
+        <mxCell id="trunk-mobile" value="" style="endArrow=none;html=1;strokeWidth=3;strokeColor=#ED7D31;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1420" y="320" as="sourcePoint" />
+            <mxPoint x="1420" y="377" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="edge-m-trunk" style="endArrow=none;html=1;strokeWidth=2;strokeColor=#ED7D31;" edge="1" parent="1" source="actor-mobile" target="uc-mobile-pull">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="1420" y="320" /><mxPoint x="1420" y="377" /></Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Service 关联 紫色 #7030A0 -->
+        <mxCell id="trunk-service" value="" style="endArrow=none;html=1;strokeWidth=3;strokeColor=#7030A0;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1420" y="570" as="sourcePoint" />
+            <mxPoint x="1420" y="600" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="edge-s-trunk" style="endArrow=none;html=1;strokeWidth=2;strokeColor=#7030A0;" edge="1" parent="1" source="actor-service">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="1420" y="570" as="targetPoint" /></mxGeometry>
+        </mxCell>
+        <mxCell id="edge-s-mode-line" style="endArrow=none;html=1;strokeWidth=1.5;strokeColor=#7030A0;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="1420" y="600" as="sourcePoint" /><mxPoint x="940" y="600" as="targetPoint" /></mxGeometry>
+        </mxCell>
+        <mxCell id="edge-s-manage-line" style="endArrow=none;html=1;strokeWidth=1.5;strokeColor=#7030A0;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="1420" y="600" as="sourcePoint" /><mxPoint x="1175" y="600" as="targetPoint" /></mxGeometry>
+        </mxCell>
+
+        <!-- ===== 用例间关系 灰色虚线 #888 ===== -->
+
+        <mxCell id="inc-play" style="edgeStyle=orthogonalEdgeStyle;endArrow=open;endSize=12;dashed=1;html=1;strokeWidth=1.2;strokeColor=#888888;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="1" source="uc-push-stream" target="uc-play-local">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="545" y="190" /><mxPoint x="445" y="190" /></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lbl-inc-play" value="«include»" style="edgeLabel;html=1;align=center;verticalAlign=middle;fontSize=10;fontColor=#888;" vertex="1" connectable="0" parent="inc-play">
+          <mxGeometry x="-0.2" relative="1" as="geometry"><mxPoint y="-9" as="offset" /></mxGeometry>
+        </mxCell>
+
+        <mxCell id="inc-cam" style="edgeStyle=orthogonalEdgeStyle;endArrow=open;endSize=12;dashed=1;html=1;strokeWidth=1.2;strokeColor=#888888;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="1" source="uc-push-stream" target="uc-capture-camera">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="545" y="190" /><mxPoint x="675" y="190" /></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lbl-inc-cam" value="«include»" style="edgeLabel;html=1;align=center;verticalAlign=middle;fontSize=10;fontColor=#888;" vertex="1" connectable="0" parent="inc-cam">
+          <mxGeometry x="-0.2" relative="1" as="geometry"><mxPoint y="-9" as="offset" /></mxGeometry>
+        </mxCell>
+
+        <mxCell id="inc-screen" style="edgeStyle=orthogonalEdgeStyle;endArrow=open;endSize=12;dashed=1;html=1;strokeWidth=1.2;strokeColor=#888888;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="1" source="uc-push-stream" target="uc-screen-share">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="545" y="190" /><mxPoint x="905" y="190" /></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lbl-inc-screen" value="«include»" style="edgeLabel;html=1;align=center;verticalAlign=middle;fontSize=10;fontColor=#888;" vertex="1" connectable="0" parent="inc-screen">
+          <mxGeometry x="-0.2" relative="1" as="geometry"><mxPoint y="-9" as="offset" /></mxGeometry>
+        </mxCell>
+
+        <mxCell id="ext-comp" style="edgeStyle=orthogonalEdgeStyle;endArrow=open;endSize=12;dashed=1;html=1;strokeWidth=1.2;strokeColor=#888888;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="1" source="uc-composite-push" target="uc-push-stream">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="525" y="310" /><mxPoint x="545" y="310" /></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lbl-ext-comp" value="«extend»" style="edgeLabel;html=1;align=center;verticalAlign=middle;fontSize=10;fontColor=#888;" vertex="1" connectable="0" parent="ext-comp">
+          <mxGeometry x="-0.2" relative="1" as="geometry"><mxPoint y="-9" as="offset" /></mxGeometry>
+        </mxCell>
+
+        <mxCell id="ext-rec" style="edgeStyle=orthogonalEdgeStyle;endArrow=open;endSize=12;dashed=1;html=1;strokeWidth=1.2;strokeColor=#888888;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="1" source="uc-record" target="uc-pull-stream">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="735" y="310" /><mxPoint x="805" y="310" /></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lbl-ext-rec" value="«extend»" style="edgeLabel;html=1;align=center;verticalAlign=middle;fontSize=10;fontColor=#888;" vertex="1" connectable="0" parent="ext-rec">
+          <mxGeometry x="-0.2" relative="1" as="geometry"><mxPoint y="-9" as="offset" /></mxGeometry>
+        </mxCell>
+
+        <mxCell id="ext-ai" style="edgeStyle=orthogonalEdgeStyle;endArrow=open;endSize=12;dashed=1;html=1;strokeWidth=1.2;strokeColor=#888888;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="uc-ai-chat" target="uc-ai-pool">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="lbl-ext-ai" value="«extend»" style="edgeLabel;html=1;align=center;verticalAlign=middle;fontSize=10;fontColor=#888;" vertex="1" connectable="0" parent="ext-ai">
+          <mxGeometry x="-0.2" relative="1" as="geometry"><mxPoint y="-9" as="offset" /></mxGeometry>
+        </mxCell>
+
+        <mxCell id="ext-svc" style="edgeStyle=orthogonalEdgeStyle;endArrow=open;endSize=12;dashed=1;html=1;strokeWidth=1.2;strokeColor=#888888;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="uc-service-mode" target="uc-manage-output">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="lbl-ext-svc" value="«extend»" style="edgeLabel;html=1;align=center;verticalAlign=middle;fontSize=10;fontColor=#888;" vertex="1" connectable="0" parent="ext-svc">
+          <mxGeometry x="-0.2" relative="1" as="geometry"><mxPoint y="-9" as="offset" /></mxGeometry>
+        </mxCell>
+
+        <!-- ===== 图例 ===== -->
+        <mxCell id="legend-box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#bbb;" vertex="1" parent="1">
+          <mxGeometry x="30" y="740" width="720" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="legend-title" value="图例" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;fontStyle=1;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="44" y="746" width="40" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="lg-actor" value="" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="52" y="778" width="12" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="lg-actor-t" value="参与者" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="70" y="780" width="48" height="18" as="geometry" />
+        </mxCell>
+
+        <mxCell id="lg-uc" value="" style="ellipse;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="140" y="784" width="14" height="10" as="geometry" />
+        </mxCell>
+        <mxCell id="lg-uc-t" value="用例" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="160" y="780" width="36" height="18" as="geometry" />
+        </mxCell>
+
+        <mxCell id="lg-sys" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="216" y="782" width="20" height="12" as="geometry" />
+        </mxCell>
+        <mxCell id="lg-sys-t" value="系统边界" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="242" y="780" width="60" height="18" as="geometry" />
+        </mxCell>
+
+        <mxCell id="lg-dash" value="" style="endArrow=open;endSize=8;dashed=1;html=1;strokeWidth=1.2;strokeColor=#888888;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="312" y="788" as="sourcePoint" />
+            <mxPoint x="334" y="788" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lg-dash-t" value="«include» / «extend»" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="340" y="780" width="120" height="18" as="geometry" />
+        </mxCell>
+
+        <mxCell id="lg-assoc" value="" style="endArrow=none;html=1;strokeWidth=2;strokeColor=#4472C4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="470" y="788" as="sourcePoint" />
+            <mxPoint x="492" y="788" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lg-assoc-t" value="关联线" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="498" y="780" width="48" height="18" as="geometry" />
+        </mxCell>
+
+        <!-- 颜色说明 -->
+        <mxCell id="lg-c0" value="" style="endArrow=none;html=1;strokeWidth=2;strokeColor=#4472C4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="52" y="818" as="sourcePoint" />
+            <mxPoint x="76" y="818" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lg-c0-t" value="桌面用户关联" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="82" y="810" width="90" height="18" as="geometry" />
+        </mxCell>
+
+        <mxCell id="lg-c1" value="" style="endArrow=none;html=1;strokeWidth=2;strokeColor=#70AD47;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="185" y="818" as="sourcePoint" />
+            <mxPoint x="209" y="818" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lg-c1-t" value="AI 服务关联" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="215" y="810" width="80" height="18" as="geometry" />
+        </mxCell>
+
+        <mxCell id="lg-c2" value="" style="endArrow=none;html=1;strokeWidth=2;strokeColor=#ED7D31;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="310" y="818" as="sourcePoint" />
+            <mxPoint x="334" y="818" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lg-c2-t" value="安卓用户关联" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="340" y="810" width="90" height="18" as="geometry" />
+        </mxCell>
+
+        <mxCell id="lg-c3" value="" style="endArrow=none;html=1;strokeWidth=2;strokeColor=#7030A0;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="445" y="818" as="sourcePoint" />
+            <mxPoint x="469" y="818" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lg-c3-t" value="Service 关联" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="475" y="810" width="85" height="18" as="geometry" />
+        </mxCell>
+
+        <mxCell id="lg-uc1" value="" style="ellipse;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="52" y="850" width="14" height="10" as="geometry" />
+        </mxCell>
+        <mxCell id="lg-uc1-t" value="媒体采集 / 设置" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="72" y="846" width="100" height="18" as="geometry" />
+        </mxCell>
+
+        <mxCell id="lg-uc2" value="" style="ellipse;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="190" y="850" width="14" height="10" as="geometry" />
+        </mxCell>
+        <mxCell id="lg-uc2-t" value="推拉流" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="210" y="846" width="48" height="18" as="geometry" />
+        </mxCell>
+
+        <mxCell id="lg-uc3" value="" style="ellipse;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry x="278" y="850" width="14" height="10" as="geometry" />
+        </mxCell>
+        <mxCell id="lg-uc3-t" value="AI / 高级功能" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="298" y="846" width="95" height="18" as="geometry" />
+        </mxCell>
+
+        <mxCell id="lg-uc4" value="" style="ellipse;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="410" y="850" width="14" height="10" as="geometry" />
+        </mxCell>
+        <mxCell id="lg-uc4-t" value="外部系统交互" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="430" y="846" width="85" height="18" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
