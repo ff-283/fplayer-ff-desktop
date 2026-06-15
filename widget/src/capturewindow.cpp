@@ -3288,7 +3288,7 @@ auto* cmbOutput = new QComboBox(&dlg);
 					QFileInfo outInfo(outputPath);
 					if (outInfo.suffix().trimmed().isEmpty())
 					{
-						outputPath += QStringLiteral(".mp4");
+						outputPath += QStringLiteral(".mkv");
 						outInfo = QFileInfo(outputPath);
 					}
 					outputPath = outInfo.absoluteFilePath();
@@ -4333,7 +4333,7 @@ QString CaptureWindow::makeScreenshotFilePath(const QString& prefix) const
 
 QString CaptureWindow::makeRecordingFilePath(const QString& prefix) const
 {
-	const QString fileName = QStringLiteral("%1_%2.mp4")
+	const QString fileName = QStringLiteral("%1_%2.mkv")
 	                         .arg(prefix)
 	                         .arg(QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd_HHmmss")));
 	return QDir(m_recordSaveDir).filePath(fileName);
@@ -4612,7 +4612,7 @@ void CaptureWindow::handleMainCaptureRecordToggle()
 			}
 			this->ui->btnPlay->setIcon(QIcon(fplayer::tokens::themedIconPath(static_cast<fplayer::tokens::Theme>(m_theme), QStringLiteral("pause"))));
 		}
-		showNonBlockingHint(this, tr("录制已停止"));
+		showNonBlockingHint(this, tr("录制已停止，文件已保存：%1").arg(QDir::toNativeSeparators(m_mainRecordOutputPath)));
 		return;
 	}
 	if (m_service->streamIsRunning())
@@ -4665,6 +4665,7 @@ void CaptureWindow::handleMainCaptureRecordToggle()
 		return;
 	}
 	m_mainRecording = true;
+	m_mainRecordOutputPath = outputPath;
 	m_mainRecordStartMs = QDateTime::currentMSecsSinceEpoch();
 	if (m_mainRecordTimer)
 	{

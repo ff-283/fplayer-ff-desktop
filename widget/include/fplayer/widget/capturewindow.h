@@ -243,6 +243,7 @@ private:
 	QString m_pullRecordOutputPath;
 	QTimer* m_mainRecordTimer = nullptr;
 	QTimer* m_pullRecordTimer = nullptr;
+	QString m_mainRecordOutputPath;
 	qint64 m_mainRecordStartMs = 0;
 	qint64 m_pullRecordStartMs = 0;
 	qint64 m_pullSessionStartMs = 0;

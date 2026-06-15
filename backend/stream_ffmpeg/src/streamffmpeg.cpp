@@ -450,6 +450,7 @@ void fplayer::StreamFFmpeg::remuxLoop(const QString& inputUrl, const QString& ou
 	AVFormatContext* ifmt = nullptr;
 	AVFormatContext* ofmt = nullptr;
 	AVFormatContext* recOfmt = nullptr;
+	std::vector<int> recStreamMap;
 	AVPacket* pkt = nullptr;
 	AVCodecContext* previewDecCtx = nullptr;
 	SwsContext* previewSws = nullptr;
@@ -575,7 +576,7 @@ void fplayer::StreamFFmpeg::remuxLoop(const QString& inputUrl, const QString& ou
 		closePullRecordOutput();
 		const QByteArray recOutUtf8 = recordPath.toUtf8();
 		const char* recOutPath = recOutUtf8.constData();
-		int rr = avformat_alloc_output_context2(&recOfmt, nullptr, nullptr, recOutPath);
+		int rr = avformat_alloc_output_context2(&recOfmt, nullptr, "matroska", recOutPath);
 		if (rr < 0 || !recOfmt)
 		{
 			char errbuf[AV_ERROR_MAX_STRING_SIZE];
@@ -585,9 +586,22 @@ void fplayer::StreamFFmpeg::remuxLoop(const QString& inputUrl, const QString& ou
 		}
 		recOfmt->interrupt_callback.callback = &StreamFFmpeg::interruptCallback;
 		recOfmt->interrupt_callback.opaque = &m_stopRequest;
+		int copiedStreams = 0;
+		recStreamMap.assign(ifmt->nb_streams, -1);
 		for (unsigned i = 0; i < ifmt->nb_streams; ++i)
 		{
 			AVStream* inStr = ifmt->streams[i];
+			if (!inStr || !inStr->codecpar)
+			{
+				appendLogLine(QStringLiteral("[拉流录制] 跳过无效输入流 %1").arg(i));
+				continue;
+			}
+			const AVMediaType codecType = inStr->codecpar->codec_type;
+			if (codecType != AVMEDIA_TYPE_VIDEO && codecType != AVMEDIA_TYPE_AUDIO)
+			{
+				appendLogLine(QStringLiteral("[拉流录制] 跳过非音视频流 %1 type=%2").arg(i).arg(static_cast<int>(codecType)));
+				continue;
+			}
 			AVStream* outStr = avformat_new_stream(recOfmt, nullptr);
 			if (!outStr)
 			{
@@ -605,6 +619,38 @@ void fplayer::StreamFFmpeg::remuxLoop(const QString& inputUrl, const QString& ou
 				return false;
 			}
 			outStr->codecpar->codec_tag = 0;
+			recStreamMap[i] = copiedStreams;
+			++copiedStreams;
+		}
+		if (copiedStreams == 0)
+		{
+			appendLogLine(QStringLiteral("[拉流录制] 输入流中无有效音视频轨道可录制"));
+			closePullRecordOutput();
+			return false;
+		}
+		// 诊断输出流参数；校正 MP4 兼容性缺失字段
+		for (unsigned i = 0; i < recOfmt->nb_streams; ++i)
+		{
+			AVStream* outStr = recOfmt->streams[i];
+			AVCodecParameters* par = outStr->codecpar;
+			if (!outStr->time_base.num || !outStr->time_base.den) {
+				AVRational inTb = ifmt->streams[i]->time_base;
+				outStr->time_base = (inTb.num > 0 && inTb.den > 0) ? inTb : av_make_q(1, 90000);
+			}
+			if (!outStr->sample_aspect_ratio.num || !outStr->sample_aspect_ratio.den)
+				outStr->sample_aspect_ratio = av_make_q(1, 1);
+			if (par->codec_type == AVMEDIA_TYPE_AUDIO && par->bits_per_coded_sample == 0)
+				par->bits_per_coded_sample = 16;
+			appendLogLine(QStringLiteral("[拉流录制] 输出流 %1: type=%2 codec_id=%3 tag=%4 tb=%5/%6 %7x%8 bitrate=%9 extradata=%10bytes bps=%11")
+			              .arg(i)
+			              .arg(static_cast<int>(par->codec_type))
+			              .arg(static_cast<int>(par->codec_id))
+			              .arg(par->codec_tag)
+			              .arg(outStr->time_base.num).arg(outStr->time_base.den)
+			              .arg(par->width).arg(par->height)
+			              .arg(par->bit_rate)
+			              .arg(par->extradata_size)
+			              .arg(par->bits_per_coded_sample));
 		}
 		if (!(recOfmt->oformat->flags & AVFMT_NOFILE))
 		{
@@ -629,7 +675,7 @@ void fplayer::StreamFFmpeg::remuxLoop(const QString& inputUrl, const QString& ou
 		}
 		recWroteHeader = true;
 		m_pullRecordActive.store(true, std::memory_order_relaxed);
-		appendLogLine(QStringLiteral("[拉流录制] 已开始保存: %1").arg(recordPath));
+		appendLogLine(QStringLiteral("[拉流录制] 已开始保存(MKV): %1").arg(recordPath));
 		return true;
 	};
 
@@ -871,7 +917,15 @@ void fplayer::StreamFFmpeg::remuxLoop(const QString& inputUrl, const QString& ou
 		{
 			if (!recOfmt)
 			{
-				openPullRecordOutput(desiredRecordPath);
+				if (!openPullRecordOutput(desiredRecordPath))
+				{
+					appendLogLine(QStringLiteral("[拉流录制] 无法创建录制输出，停止尝试: %1").arg(desiredRecordPath));
+					m_pullRecordDesired.store(false, std::memory_order_relaxed);
+					{
+						QMutexLocker lock(&m_pullRecordMutex);
+						m_pullRecordPath.clear();
+					}
+				}
 			}
 		}
 		else if (recOfmt)
@@ -1118,19 +1172,38 @@ void fplayer::StreamFFmpeg::remuxLoop(const QString& inputUrl, const QString& ou
 			setLastError(QStringLiteral("写入数据包失败: %1").arg(QString::fromUtf8(errbuf)));
 			break;
 		}
-		if (recOfmt && recPkt && recPkt->stream_index < static_cast<int>(recOfmt->nb_streams))
+		if (recOfmt && recPkt)
 		{
-			AVStream* recOutStr = recOfmt->streams[recPkt->stream_index];
-			av_packet_rescale_ts(recPkt, inStr->time_base, recOutStr->time_base);
-			recPkt->pos = -1;
-			const int rw = av_interleaved_write_frame(recOfmt, recPkt);
-			if (rw < 0)
+			const int srcIdx = recPkt->stream_index;
+			const int recIdx = (srcIdx >= 0 && srcIdx < static_cast<int>(recStreamMap.size()))
+			                    ? recStreamMap[srcIdx]
+			                    : -1;
+			if (recIdx >= 0 && recIdx < static_cast<int>(recOfmt->nb_streams))
 			{
-				char errbuf[AV_ERROR_MAX_STRING_SIZE];
-				av_strerror(rw, errbuf, sizeof(errbuf));
-				appendLogLine(QStringLiteral("[拉流录制] 写入数据包失败，停止录制: %1").arg(QString::fromUtf8(errbuf)));
-				m_pullRecordDesired.store(false, std::memory_order_relaxed);
-				closePullRecordOutput();
+				AVStream* recOutStr = recOfmt->streams[recIdx];
+				recPkt->stream_index = recIdx;
+				if (recPkt->pts == AV_NOPTS_VALUE) recPkt->pts = 0;
+				if (recPkt->dts == AV_NOPTS_VALUE) recPkt->dts = recPkt->pts;
+				av_packet_rescale_ts(recPkt, inStr->time_base, recOutStr->time_base);
+				recPkt->pos = -1;
+				const int rw = av_interleaved_write_frame(recOfmt, recPkt);
+				if (rw < 0)
+				{
+					char errbuf[AV_ERROR_MAX_STRING_SIZE];
+					av_strerror(rw, errbuf, sizeof(errbuf));
+					appendLogLine(QStringLiteral("[拉流录制] 写入数据包失败，停止录制: %1 srcIdx=%2 recIdx=%3 pts=%4 dts=%5 size=%6 flags=%7 tb=%8/%9")
+					              .arg(QString::fromUtf8(errbuf))
+					              .arg(srcIdx)
+					              .arg(recIdx)
+					              .arg(recPkt->pts)
+					              .arg(recPkt->dts)
+					              .arg(recPkt->size)
+					              .arg(recPkt->flags)
+					              .arg(recOutStr->time_base.num)
+					              .arg(recOutStr->time_base.den));
+					m_pullRecordDesired.store(false, std::memory_order_relaxed);
+					closePullRecordOutput();
+				}
 			}
 		}
 		if (recPkt)
@@ -1483,7 +1556,7 @@ void fplayer::StreamFFmpeg::pushComposeSceneLoop(const QString& outputUrl, const
 
 	outUtf8 = outputUrl.toUtf8();
 	outPath = outUtf8.constData();
-	ret = avformat_alloc_output_context2(&ofmt, nullptr, "flv", outPath);
+	ret = avformat_alloc_output_context2(&ofmt, nullptr, outputUrl.contains(QStringLiteral("://")) ? "flv" : nullptr, outPath);
 	if (ret < 0 || !ofmt)
 	{
 		exitCode = ret < 0 ? ret : AVERROR_UNKNOWN;
@@ -2662,7 +2735,7 @@ void fplayer::StreamFFmpeg::transcodeFileLoop(const QString& outputUrl, const QS
 			goto cleanup;
 		}
 	}
-	ret = avformat_alloc_output_context2(&ofmt, nullptr, "flv", outPath);
+	ret = avformat_alloc_output_context2(&ofmt, nullptr, outputUrl.contains(QStringLiteral("://")) ? "flv" : nullptr, outPath);
 	if (ret < 0 || !ofmt)
 	{
 		exitCode = ret ? ret : AVERROR_UNKNOWN;
@@ -3265,7 +3338,7 @@ audio_init_done:
 		}
 	}
 
-	ret = avformat_alloc_output_context2(&ofmt, nullptr, "flv", outPath);
+	ret = avformat_alloc_output_context2(&ofmt, nullptr, outputUrl.contains(QStringLiteral("://")) ? "flv" : nullptr, outPath);
 	if (ret < 0 || !ofmt)
 	{
 		exitCode = ret ? ret : AVERROR_UNKNOWN;
@@ -4309,7 +4382,7 @@ audio_preview_init_done:
 		goto cleanup;
 	}
 
-	ret = avformat_alloc_output_context2(&ofmt, nullptr, "flv", outPath);
+	ret = avformat_alloc_output_context2(&ofmt, nullptr, outputUrl.contains(QStringLiteral("://")) ? "flv" : nullptr, outPath);
 	if (ret < 0 || !ofmt)
 	{
 		exitCode = ret ? ret : AVERROR_UNKNOWN;
@@ -5767,7 +5840,7 @@ void fplayer::StreamFFmpeg::pushCameraPreviewLoop(const QString& outputUrl, cons
 		goto cleanup;
 	}
 
-	ret = avformat_alloc_output_context2(&ofmt, nullptr, "flv", outPath);
+	ret = avformat_alloc_output_context2(&ofmt, nullptr, outputUrl.contains(QStringLiteral("://")) ? "flv" : nullptr, outPath);
 	if (ret < 0 || !ofmt)
 	{
 		exitCode = ret ? ret : AVERROR_UNKNOWN;
@@ -6902,7 +6975,7 @@ void fplayer::StreamFFmpeg::pushCameraLoop(const QString& outputUrl, const QStri
 		}
 	}
 
-	ret = avformat_alloc_output_context2(&ofmt, nullptr, "flv", outPath);
+	ret = avformat_alloc_output_context2(&ofmt, nullptr, outputUrl.contains(QStringLiteral("://")) ? "flv" : nullptr, outPath);
 	if (ret < 0 || !ofmt)
 	{
 		exitCode = ret ? ret : AVERROR_UNKNOWN;
