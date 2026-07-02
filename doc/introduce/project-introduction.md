@@ -39,7 +39,6 @@
 fplayer-ff-desktop/
 ├── CMakeLists.txt              # 根构建文件，编排所有子模块
 ├── README.md                   # 项目概述、构建说明、架构图
-├── DESIGN.md                   # 设计系统文档：颜色、字体、组件、暗色主题
 ├── cmake/                      # CMake 辅助脚本
 │   ├── 3rd.cmake               # 第三方依赖管理 (Logger, yaml-tool, FFmpeg)
 │   ├── utils.cmake             # 宏定义：config_project, add_standard_module, qt_deploy
@@ -100,7 +99,7 @@ fplayer-ff-desktop/
 │   ├── media_qt6/              # Qt6 媒体后端：CameraQt6, ScreenCaptureQt6
 │   ├── stream_ffmpeg/          # FFmpeg 流媒体后端：StreamFFmpeg (推流/拉流/录制)
 │   ├── desktopcapture_dxgi/    # Windows DXGI：ScreenCaptureDxgi (Desktop Duplication)
-│   ├── net_qt6/                # Qt6 网络后端：StreamQt6
+│   ├── net_qt6/                # Qt6 网络后端：StreamQt6 (空桩，默认 OFF)
 │   └── rtc_webrtc/             # WebRTC (桩代码，当前为空)
 ├── common/                     # 公共层 — 共享工具
 │   ├── CMakeLists.txt
@@ -110,7 +109,6 @@ fplayer-ff-desktop/
 │   │   ├── cameraframebus/     # CameraFrameBus: YUV 帧发布订阅
 │   │   ├── fglwidget/          # OpenGL YUV 渲染控件
 │   │   ├── imagepool/          # ImageMeta 数据结构
-│   │   ├── maplist/            # mapList 工具函数
 │   │   ├── qtloggeradapter/    # Qt -> Logger 桥接
 │   │   └── programframebus/    # (桩代码/空)
 │   └── src/                    # 实现 (4 个 .cpp 文件)
@@ -172,7 +170,7 @@ common/       ── 公共工具层 (DesignTokens, FrameBus, FGLWidget, ImagePo
 | `media_qt6/`            | Qt6::Multimedia 替代方案 (CameraQt6, ScreenCaptureQt6)       |
 | `stream_ffmpeg/`        | FFmpeg 推拉流 (StreamFFmpeg: RTMP/RTSP 推流, HTTP-FLV 拉流, 侧录) |
 | `desktopcapture_dxgi/`  | Windows DXGI Desktop Duplication API (高性能, 光标采集, HDR 检测) |
-| `net_qt6/`              | Qt6 网络 (StreamQt6)                                         |
+| `net_qt6/`              | Qt6 网络 StreamQt6 (空桩，默认 OFF)                       |
 | `rtc_webrtc/`           | WebRTC (桩代码，当前为空)                                    |
 
 ### 5.5 帧总线系统 (`ScreenFrameBus` / `CameraFrameBus`)
@@ -348,7 +346,7 @@ Desktop → GET  /api/v1/streams/resolve → 获取播放地址     → FFmpeg �
 | `FPlayer_Backend_Media_FFmpeg`              | 动态库         |
 | `FPlayer_Backend_Desktop_Capture_Dxgi`      | 动态库         |
 | `FPlayer_Backend_Stream_FFmpeg`             | 动态库         |
-| `FPlayer_Backend_Net_Qt6`                   | 动态库         |
+| `FPlayer_Backend_Net_Qt6`                   | 动态库 (OFF by default) |
 | `FPlayer_Runtime`                           | 动态库         |
 | `FPlayer_Service`                           | 动态库         |
 | `FPlayer_Widget`                            | 动态库         |
@@ -363,7 +361,7 @@ Desktop → GET  /api/v1/streams/resolve → 获取播放地址     → FFmpeg �
 -DFPLAYER_BUILD_STREAM_FFMPEG:BOOL=ON   # 启用 FFmpeg 推流后端
 -DFPLAYER_BUILD_MEDIA_QT6:BOOL=ON       # 启用 Qt6 媒体后端 (默认 ON)
 -DFPLAYER_BUILD_MEDIA_DXGI:BOOL=ON      # 启用 DXGI 屏幕采集 (Windows)
--DFPLAYER_BUILD_NET_QT6:BOOL=ON         # 启用 Qt6 网络后端
+-DFPLAYER_BUILD_NET_QT6:BOOL=OFF        # Qt6 网络后端 (默认 OFF，空桩)
 -DFPLAYER_BUILD_RTC_WEBRTC:BOOL=OFF     # WebRTC (默认关闭)
 ```
 

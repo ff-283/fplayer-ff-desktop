@@ -49,7 +49,7 @@ FPlayer-desktop/
       src/
       CMakeLists.txt
 
-    net_qt6/                    # 控制面 + 局域网发现 + HTTP/WS 等（QtNetwork）
+    net_qt6/                    # 控制面 + 局域网发现 (空桩，默认关闭)
       include/fplayer/backend_net_qt6/
       src/
       CMakeLists.txt

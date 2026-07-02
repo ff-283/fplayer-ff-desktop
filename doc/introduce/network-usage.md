@@ -31,7 +31,7 @@ backend/stream_ffmpeg/        FFmpeg 推拉流实现（~6500 行核心代码）
   ├── audio_pipeline.cpp       音频 FIFO 混音与重采样管线
   └── platform/                平台音频采集（WASAPI loopback / Linux ALSA）
        │
-backend/net_qt6/              Qt6 网络后端（当前为空桩代码）
+backend/net_qt6/              Qt6 网络后端（空桩代码，默认 OFF）
        │
 backend/rtc_webrtc/           WebRTC 桩（当前为空，默认不构建）
 ```
@@ -427,7 +427,7 @@ StreamFFmpeg 提供了丰富的诊断信息：
 | [backend/stream_ffmpeg/src/audio_pipeline.cpp](../backend/stream_ffmpeg/src/audio_pipeline.cpp) | 音频混音与 FIFO 管线 |
 | [backend/stream_ffmpeg/src/platform/windows/wasapiloopbackcapture.cpp](../backend/stream_ffmpeg/src/platform/windows/wasapiloopbackcapture.cpp) | WASAPI 系统声音回环捕获 |
 | [backend/stream_ffmpeg/src/platform/audioinputprobe.cpp](../backend/stream_ffmpeg/src/platform/audioinputprobe.cpp) | FFmpeg 音频设备探测 |
-| [backend/net_qt6/src/streamqt6.cpp](../backend/net_qt6/src/streamqt6.cpp) | Qt6 网络后端（空桩） |
+| [backend/net_qt6/src/streamqt6.cpp](../backend/net_qt6/src/streamqt6.cpp) | Qt6 网络后端（空桩，默认不构建） |
 | [service/src/service.cpp](../service/src/service.cpp) | Service 层推拉流编排（streamStartPushByScene 等） |
 | [widget/src/capturewindow.cpp](../widget/src/capturewindow.cpp) | 推拉流 UI + service 网关 HTTP 请求（requestServiceStreamStart / requestServiceStreamStatus） |
 | [service/src/aiservice.cpp](../service/src/aiservice.cpp) | AI 聊天 SSE 流式通信 |
