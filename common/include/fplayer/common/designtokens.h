@@ -51,9 +51,9 @@ inline ThemeColors darkColors()
 inline ThemeColors lightColors()
 {
     return {
-        "#cc785c",                    // primary (warm coral, per DESIGN.md)
+        "#cc785c",                    // primary (warm coral)
         "#a9583e",                    // primaryFocus (coral active)
-        "#faf9f5",                    // canvas (warm cream, per DESIGN.md)
+        "#faf9f5",                    // canvas (warm cream)
         "#f5f0e8",                    // canvasElevated (surface-soft)
         "#efe9de",                    // surfaceTile1 (surface-card)
         "#e8e0d2",                    // surfaceTile2 (surface-cream-strong)

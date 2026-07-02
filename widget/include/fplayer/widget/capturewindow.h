@@ -140,6 +140,7 @@ private:
 	void loadCapturePreferences();
 	void saveCapturePreferences() const;
 	void applyTheme();
+	void saveAndApplyTheme() { saveCapturePreferences(); applyTheme(); } // ponytail: paired 7 places
 	void refreshThemeIcons();
 	void openCaptureSettingsDialog(QWidget* parent = nullptr);
 	QString makeScreenshotFilePath(const QString& prefix = QStringLiteral("capture")) const;

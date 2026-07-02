@@ -33,7 +33,6 @@ namespace fplayer
 		void* backend_hint = nullptr;
 
 		// 扩展字段（例如：是否保持宽高比、渲染模式等）
-		// uint32_t flags = 0;
 	};
 }
 #endif //FPLAYER_DESKETOP_PREVIEWTARGET_H

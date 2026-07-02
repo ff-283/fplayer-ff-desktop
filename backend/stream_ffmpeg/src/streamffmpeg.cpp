@@ -227,8 +227,9 @@ bool fplayer::StreamFFmpeg::startPushWorkerByRoute(const PushInputRoute& route, 
 		}
 		else if (route.kind == PushInputKind::FilePreview)
 		{
+			// ponytail: no dedicated file preview loop yet, remux does the job
 			m_worker = std::make_unique<std::thread>([this, outputUrl, route]() {
-				pushScreenPreviewLoop(outputUrl, route.spec);
+				remuxLoop(route.spec, outputUrl, "flv");
 			});
 		}
 		else

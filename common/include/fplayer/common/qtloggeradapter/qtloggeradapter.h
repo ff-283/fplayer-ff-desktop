@@ -13,7 +13,7 @@
 namespace fplayer
 {
     // 防止递归：如果 spdlog 的 sink/formatter 间接触发 Qt 日志，会无限递归
-    static thread_local bool g_inQtHandler = false;
+    extern thread_local bool g_inQtHandler;
 
     void FPLAYER_COMMON_EXPORT qtToLoggerHandler(QtMsgType type,
                                                  const QMessageLogContext& ctx,

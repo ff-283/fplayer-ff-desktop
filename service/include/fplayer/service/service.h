@@ -5,8 +5,8 @@
   * Date：2026/2/28
   * Update：
   * ************************************************/
-#ifndef FPLAYER_DESKETOP_SERVICE_H
-#define FPLAYER_DESKETOP_SERVICE_H
+#ifndef FPLAYER_DESKTOP_SERVICE_H
+#define FPLAYER_DESKTOP_SERVICE_H
 #include <fplayer/api/media/ifvideoview.h>
 #include <QString>
 #include <QtTypes>
@@ -149,4 +149,4 @@ namespace fplayer
 	};
 }
 
-#endif //FPLAYER_DESKETOP_SERVICE_H
+#endif //FPLAYER_DESKTOP_SERVICE_H

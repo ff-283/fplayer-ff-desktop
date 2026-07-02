@@ -48,7 +48,6 @@
 #include <QPushButton>
 #include <QMessageBox>
 #include <QSystemTrayIcon>
-#include <QTextEdit>
 #include <QSpinBox>
 #include <QFontComboBox>
 #include <QFontDatabase>
@@ -92,7 +91,6 @@
 #include <QStandardPaths>
 #include <QCloseEvent>
 #include <QWindowStateChangeEvent>
-#include <QApplication>
 #include <QThread>
 #include <functional>
 #include <thread>
@@ -106,6 +104,9 @@
 
 namespace
 {
+// ponytail: shared FPS candidate list, was duplicated in syncComposeControlPanel + refreshScreenFpsUi
+static const QList<int> kFpsCandidates{15, 24, 25, 30, 45, 50, 60, 75, 90, 100, 120, 144, 165, 180, 200, 240};
+
 class PullPreviewDialog final : public QDialog
 {
 public:
@@ -246,10 +247,7 @@ void showNonBlockingHint(QWidget* anchor, const QString& text, int durationMs = 
 	QTimer::singleShot(durationMs, toast, &QWidget::close);
 }
 
-inline int clampRgb(const int v)
-{
-	return v < 0 ? 0 : (v > 255 ? 255 : v);
-}
+// ponytail: qBound(0, v, 255) covers this
 
 QImage i420ToImage(const QByteArray& yPlane,
                    const QByteArray& uPlane,
@@ -294,9 +292,9 @@ QImage i420ToImage(const QByteArray& yPlane,
 			const int r = (298 * c + 409 * e + 128) >> 8;
 			const int g = (298 * c - 100 * d - 208 * e + 128) >> 8;
 			const int b = (298 * c + 516 * d + 128) >> 8;
-			rgb[xx * 3 + 0] = static_cast<uchar>(clampRgb(r));
-			rgb[xx * 3 + 1] = static_cast<uchar>(clampRgb(g));
-			rgb[xx * 3 + 2] = static_cast<uchar>(clampRgb(b));
+			rgb[xx * 3 + 0] = static_cast<uchar>(qBound(0, r, 255));
+			rgb[xx * 3 + 1] = static_cast<uchar>(qBound(0, g, 255));
+			rgb[xx * 3 + 2] = static_cast<uchar>(qBound(0, b, 255));
 		}
 	}
 	return image;
@@ -1077,19 +1075,19 @@ private:
 		}
 		if (left)
 		{
-			return m_cropMode ? DragMode::ResizeLeft : DragMode::ResizeLeft;
+			return DragMode::ResizeLeft;
 		}
 		if (right)
 		{
-			return m_cropMode ? DragMode::ResizeRight : DragMode::ResizeRight;
+			return DragMode::ResizeRight;
 		}
 		if (top)
 		{
-			return m_cropMode ? DragMode::ResizeTop : DragMode::ResizeTop;
+			return DragMode::ResizeTop;
 		}
 		if (bottom)
 		{
-			return m_cropMode ? DragMode::ResizeBottom : DragMode::ResizeBottom;
+			return DragMode::ResizeBottom;
 		}
 		return DragMode::Move;
 	}
@@ -1509,7 +1507,6 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 	m_debugStatsTimer->setInterval(500);
 	connect(m_debugStatsTimer, &QTimer::timeout, this, &CaptureWindow::updateDebugStatsUi);
 	auto refreshFullscreenButton = [this]() {
-		Q_UNUSED(this);
 		this->ui->btnFullscreen->setIcon(QIcon(fplayer::tokens::themedIconPath(static_cast<fplayer::tokens::Theme>(m_theme), QStringLiteral("fullScreen"))));
 	};
 
@@ -1940,8 +1937,7 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		layout->setRowWrapPolicy(QFormLayout::WrapLongRows);
 		auto addRecent = [this](QStringList& list, const QString& value) {
 			fplayer::Service::addRecentSetting(list, value, 8);
-			saveCapturePreferences();
-		applyTheme();
+			saveAndApplyTheme();
 		};
 		auto* cmbProtocol = new QComboBox(&dlg);
 		cmbProtocol->addItem(tr("RTMP"), QStringLiteral("rtmp://127.0.0.1:1935/live/stream"));
@@ -2444,8 +2440,7 @@ auto* cmbOutput = new QComboBox(&dlg);
 			m_pushAudioInput = cmbAudioInput->currentData().toString();
 			m_pushAudioOutput = cmbAudioOutput->currentData().toString();
 			m_pushKeepAspect = chkKeepAspect->isChecked();
-			saveCapturePreferences();
-		applyTheme();
+			saveAndApplyTheme();
 			if (viaService)
 			{
 				QString publishRtmp;
@@ -2602,8 +2597,7 @@ auto* cmbOutput = new QComboBox(&dlg);
 		}
 		auto addRecent = [this](QStringList& list, const QString& value) {
 			fplayer::Service::addRecentSetting(list, value, 8);
-			saveCapturePreferences();
-		applyTheme();
+			saveAndApplyTheme();
 		};
 		auto* dlg = new QDialog(nullptr);
 		dlg->setAttribute(Qt::WA_DeleteOnClose, true);
@@ -2909,8 +2903,7 @@ auto* cmbOutput = new QComboBox(&dlg);
 			m_pullGateway = edtPullGateway->text().trimmed();
 			m_pullServiceApp = edtPullServiceApp->text().trimmed();
 			m_pullServiceStream = edtPullServiceStream->text().trimmed();
-			saveCapturePreferences();
-		applyTheme();
+			saveAndApplyTheme();
 			QString resolvedHttpFlv;
 			QString resolvedRtmp;
 			if (viaService)
@@ -4140,8 +4133,7 @@ void CaptureWindow::openCaptureSettingsDialog(QWidget* parent)
 			}
 		}
 		m_screenBackendType = selectedBackend;
-		saveCapturePreferences();
-		applyTheme();
+		saveAndApplyTheme();
 		if (backendChanged && m_service)
 		{
 			// 热切换：先停采集，再切后端，最后恢复原先状态。
@@ -4254,8 +4246,7 @@ void CaptureWindow::openCaptureSettingsDialog(QWidget* parent)
 				{
 					if (src.kind == ComposeSourceItem::SourceKind::File && src.service && src.service != m_service)
 					{
-						const QString srcFilePath = src.service->playerDebugStats(); // doesn't store path, skip reinit
-						Q_UNUSED(srcFilePath);
+						src.service->playerDebugStats();
 						if (src.view)
 						{
 							src.view->setBackendType(m_filePlaybackBackend);
@@ -4281,8 +4272,7 @@ void CaptureWindow::openCaptureSettingsDialog(QWidget* parent)
 		m_aiFontSize = fontSizeSpin->value();
 		m_theme = themeCombo->currentData().toInt();
 		m_accentColor = accentColorLabel->text();
-		saveCapturePreferences();
-		applyTheme();
+		saveAndApplyTheme();
 		m_imagePoolSidebar->setScreenshotDir(m_screenshotSaveDir);
 		const auto dialogs = findChildren<AiChatDialog*>();
 		for (auto* dlg : dialogs)
@@ -4890,8 +4880,7 @@ void CaptureWindow::ensureComposeWorkspace()
 			return;
 		}
 		m_composeOutputSize = m_composeSizeCombo->itemData(index).toString();
-		saveCapturePreferences();
-		applyTheme();
+		saveAndApplyTheme();
 	});
 	refreshComposeOutputSizeOptions();
 	connect(m_composeMdiArea, &QMdiArea::subWindowActivated, this, [this](QMdiSubWindow*) {
@@ -5807,7 +5796,7 @@ void CaptureWindow::syncComposeControlPanel()
 		{
 			refreshRate = screens.at(src.deviceIndex)->refreshRate();
 		}
-		const QList<int> fpsCandidates{15, 24, 25, 30, 45, 50, 60, 75, 90, 100, 120, 144, 165, 180, 200, 240};
+		const auto& fpsCandidates = kFpsCandidates;
 		for (const int fps : fpsCandidates)
 		{
 			if (fps <= static_cast<int>(refreshRate + 0.5))
@@ -6518,7 +6507,7 @@ void CaptureWindow::refreshScreenFpsUi(int screenIndex)
 	{
 		refreshRate = screens.at(screenIndex)->refreshRate();
 	}
-	const QList<int> baseFps{15, 24, 25, 30, 45, 50, 60, 75, 90, 100, 120, 144, 165, 180, 200, 240};
+	const auto& baseFps = kFpsCandidates;
 	QList<int> candidates;
 	for (const int fps : baseFps)
 	{

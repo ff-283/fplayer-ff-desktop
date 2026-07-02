@@ -334,7 +334,7 @@ void AiChatDialog::appendBubble(ChatBubbleWidget::SenderType type,
 
 void AiChatDialog::setInputEnabled(bool enabled)
 {
-	m_input->setEnabled(true);           // always allow typing
+	m_input->setEnabled(enabled);
 	m_btnSend->setEnabled(enabled);
 	m_btnSend->setText(enabled ? tr("发送") : tr("..."));
 }

@@ -65,7 +65,6 @@ namespace fplayer
 		QHash<QString, QPixmap> m_thumbnailCache;
 		QStringList m_lruList;
 		static constexpr int kMaxThumbnailCache = 200;
-		static constexpr int kThumbnailLoadBatchSize = 20;
 	};
 }
 

@@ -1,5 +1,4 @@
 #include <fplayer/service/aiservice.h>
-#include <QFile>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonArray>

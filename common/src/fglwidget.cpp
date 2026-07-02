@@ -32,30 +32,6 @@ namespace fplayer
 			return packed;
 		}
 
-		static bool canUseUnpackRowLength()
-		{
-#ifdef Q_OS_WIN
-			// 经验上 Windows + 部分驱动对 GL_UNPACK_ROW_LENGTH 的实现不稳定，可能导致行错位/扭曲；
-			// 统一走逐行重打包路径，优先保证屏幕捕获预览稳定性。
-			return false;
-#else
-			const QOpenGLContext* ctx = QOpenGLContext::currentContext();
-			if (!ctx)
-			{
-				return false;
-			}
-			if (!ctx->isOpenGLES())
-			{
-				return true;
-			}
-			const QSurfaceFormat fmt = ctx->format();
-			if (fmt.majorVersion() >= 3)
-			{
-				return true;
-			}
-			return ctx->hasExtension(QByteArrayLiteral("GL_EXT_unpack_subimage"));
-#endif
-		}
 	}
 
 	// YUV 渲染着色器 — 支持 BT.601 / BT.709 色彩矩阵 + limited/full range
@@ -382,12 +358,6 @@ namespace fplayer
 		}
 
 		QMutexLocker locker(&m_mutex);
-		const bool formatChanged = (m_yuvData.width != width) ||
-		                           (m_yuvData.height != height) ||
-		                           (m_yuvData.yStride != yStride) ||
-		                           (m_yuvData.uStride != uStride) ||
-		                           (m_yuvData.vStride != vStride);
-		const bool firstFrame = !m_yuvData.hasData;
 
 		m_yuvData.width = width;
 		m_yuvData.height = height;
@@ -399,18 +369,6 @@ namespace fplayer
 		m_yuvData.uBuffer = uData;
 		m_yuvData.vBuffer = vData;
 		m_yuvData.hasData = true;
-		// 仅在首帧、格式变化、低频心跳时打印，避免逐帧日志拖慢 UI 线程（排障时可临时打开）。
-#if 0
-		static int heartbeatCounter = 0;
-		if (firstFrame || formatChanged || (++heartbeatCounter % 300 == 0))
-		{
-			qDebug() << "[FGLWidget::updateYUVFrame] Frame:" << width << "x" << height
-			         << "Y stride:" << yStride << "U stride:" << uStride << "V stride:" << vStride;
-		}
-#else
-		(void)firstFrame;
-		(void)formatChanged;
-#endif
 
 		update();
 	}

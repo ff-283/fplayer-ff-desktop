@@ -3,7 +3,7 @@ project(FPlayer_Desketop)
 option(FPLAYER_BUILD_MEDIA_QT6    "Build Qt6 media backend" ON)
 option(FPLAYER_BUILD_MEDIA_FFMPEG "Build FFmpeg media backend" ON)
 option(FPLAYER_BUILD_MEDIA_DXGI   "Build DXGI desktop capture (Windows)" ON)
-option(FPLAYER_BUILD_NET_QT6      "Build Qt6 network backend" ON)
+option(FPLAYER_BUILD_NET_QT6      "Build Qt6 network backend (empty stub, unimplemented)" OFF)
 option(FPLAYER_BUILD_STREAM_FFMPEG "Build FFmpeg stream backend" ON)
 option(FPLAYER_BUILD_RTC_WEBRTC   "Build WebRTC backend" OFF)
 

@@ -1,5 +1,5 @@
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/CPM.cmake)
-set(SPDLOG_BUILD_SHARED ON CACHE BOOL "spdlog Build Shared Lib" FORCE) # 覆盖spdlog的Option，生成静态库
+set(SPDLOG_BUILD_SHARED ON CACHE BOOL "spdlog Build Shared Lib" FORCE)
 # Logger
 set(FPLAYER_LOGGER_REPO "git@github.com:chunyujin295/Logger.git")
 if (UNIX AND NOT APPLE)

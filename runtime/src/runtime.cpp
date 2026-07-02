@@ -23,7 +23,7 @@ std::shared_ptr<fplayer::ICamera> fplayer::RunTime::createCamera(MediaBackendTyp
 		m_camera = std::make_shared<fplayer::CameraQt6>();
 		break;
 	case MediaBackendType::FFmpeg:
-		m_camera = std::make_unique<fplayer::CameraFFmpeg>();
+		m_camera = std::make_shared<fplayer::CameraFFmpeg>();
 		break;
 	case MediaBackendType::Dxgi:
 		break;

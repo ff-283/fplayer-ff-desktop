@@ -44,7 +44,6 @@ namespace fplayer
 		void setPreviewTarget(const PreviewTarget& target) override;
 
 	private:
-		struct Impl;
 		QList<QCameraDevice> m_devices;
 		QCamera* m_camera;
 		QMediaCaptureSession m_session;

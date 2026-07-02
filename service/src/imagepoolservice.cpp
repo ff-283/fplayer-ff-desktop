@@ -150,12 +150,7 @@ namespace fplayer
 			emit scanFinished();
 			return;
 		}
-		const QStringList exts = supportedExtensions();
-		QStringList nameFilters;
-		for (const auto& ext : exts)
-		{
-			nameFilters.append(ext);
-		}
+		const QStringList nameFilters = supportedExtensions();
 		const QFileInfoList entries = dir.entryInfoList(nameFilters, QDir::Files, QDir::Time);
 		m_imagePaths.reserve(entries.size());
 		for (const auto& info : entries)

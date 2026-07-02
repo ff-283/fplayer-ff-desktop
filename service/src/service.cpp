@@ -1,12 +1,10 @@
 #include <fplayer/service/service.h>
 
-#include <QtMultimediaWidgets/QVideoWidget>
 #include <QDateTime>
 #include <QRegularExpression>
-#include <fplayer/common/maplist/maplist.hpp>
+#include <QImage>
 #include <logger/logger.h>
 #include <QDir>
-#include <QStandardPaths>
 #include <QCoreApplication>
 
 namespace
@@ -127,7 +125,7 @@ bool fplayer::Service::openMediaFile(const QString& filePath)
 
 void fplayer::Service::selectCamera(int index)
 {
-	m_cameraIndex = -1;
+	// ponytail: only update on success, don't lose previous index on failure
 	if (m_camera->selectCamera(index))
 	{
 		m_cameraIndex = index;
@@ -153,9 +151,8 @@ QList<QString> fplayer::Service::getCameraList() const
 	}
 
 	const auto cameraDescriptions = this->m_camera->getDescriptions();
-	cameraList = mapList(cameraDescriptions, [](const CameraDescription& description) {
-		return description.description;
-	});
+	for (const auto& desc : cameraDescriptions)
+		cameraList.append(desc.description);
 
 	return cameraList;
 }

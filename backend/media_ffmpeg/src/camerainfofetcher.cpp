@@ -7,9 +7,8 @@ extern "C" {
 }
 
 #include <logger/logger.h>
+#include <fplayer/backend/media_ffmpeg/ffmpeg_logger.h>
 
-#include <mutex>
-#include <cstdlib>
 #include <QDateTime>
 #include <QSet>
 #include <QStringList>
@@ -19,58 +18,6 @@ extern "C" {
 #endif
 
 
-// 可选：为线程安全做准备
-static std::mutex log_mutex;
-
-static void loggerCallback(void* ptr, int level, const char* fmt, va_list vargs)
-{
-	// 过滤等级（关键）
-	if (level > av_log_get_level())
-	{
-		return;
-	}
-	static char message[2048];
-	std::lock_guard<std::mutex> lock(log_mutex);
-
-	vsnprintf(message, sizeof(message), fmt, vargs);
-
-	// 可选：过滤掉结尾的换行
-	std::string str(message);
-	if (!str.empty() && str.back() == '\n')
-	{
-		str.pop_back();
-	}
-
-	// 将 FFmpeg 的日志级别转换为 Logger 自己的日志级别
-	if (level <= AV_LOG_PANIC || level == AV_LOG_FATAL)
-	{
-		LOG_CRITI("[ffmpeg]", str);
-	}
-	else if (level <= AV_LOG_ERROR)
-	{
-		LOG_ERROR("[ffmpeg]", str);
-	}
-	else if (level <= AV_LOG_WARNING)
-	{
-		LOG_WARN("[ffmpeg]", str);
-	}
-	else if (level <= AV_LOG_INFO)
-	{
-		LOG_INFO("[ffmpeg]", str);
-	}
-	else if (level <= AV_LOG_VERBOSE)
-	{
-		LOG_DEBUG("[ffmpeg]", str);
-	}
-	else if (level <= AV_LOG_DEBUG)
-	{
-		LOG_DEBUG("[ffmpeg]", str);
-	}
-	else
-	{
-		LOG_TRACE("[ffmpeg]", str);
-	}
-}
 
 QVector<QList<fplayer::CameraDescriptionFetcher::FCameraFormat>> fplayer::CameraDescriptionFetcher::m_cameraFormats;
 
@@ -81,7 +28,7 @@ namespace
 fplayer::CameraDescriptionFetcher::CameraDescriptionFetcher()
 {
 	av_log_set_level(AV_LOG_FATAL);
-	av_log_set_callback(loggerCallback);// 指定ffmpeg日志输出到logger
+	av_log_set_callback(ffmpegLoggerCallback);// 指定ffmpeg日志输出到logger
 }
 
 fplayer::CameraDescriptionFetcher& fplayer::CameraDescriptionFetcher::instance()

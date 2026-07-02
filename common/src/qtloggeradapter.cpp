@@ -1,4 +1,7 @@
 #include <fplayer/common/qtloggeradapter/qtloggeradapter.h>
+
+thread_local bool fplayer::g_inQtHandler = false;
+
 #include <QCoreApplication>
 #include <QDateTime>
 #include <QMutex>
