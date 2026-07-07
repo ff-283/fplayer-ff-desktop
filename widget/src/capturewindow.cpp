@@ -1,6 +1,7 @@
 #include "ui_capturewindow.h"
 
 #include <fplayer/common/designtokens.h>
+#include <fplayer/common/version.h>
 #include <fplayer/widget/capturewindow.h>
 #include <fplayer/widget/imagepoolsidebar.h>
 #include <fplayer/widget/aichatdialog.h>
@@ -44,6 +45,7 @@
 #include <QSet>
 #include <QDialog>
 #include <QDialogButtonBox>
+#include <QScrollArea>
 #include <QFormLayout>
 #include <QPushButton>
 #include <QMessageBox>
@@ -1924,6 +1926,13 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 		dlg.setWindowTitle(tr("推流配置"));
 		dlg.setWindowFlag(Qt::WindowMinimizeButtonHint, true);
 		dlg.setWindowFlag(Qt::WindowSystemMenuHint, true);
+		auto* mainLayout = new QVBoxLayout(&dlg);
+		mainLayout->setContentsMargins(0, 0, 0, 0);
+		auto* scrollArea = new QScrollArea(&dlg);
+		scrollArea->setWidgetResizable(true);
+		scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+		scrollArea->setFrameShape(QFrame::NoFrame);
+		auto* scrollContent = new QWidget(scrollArea);
 		dlg.onWindowStateChanged = [this](const Qt::WindowStates oldState, const Qt::WindowStates newState) {
 			const bool wasMinimized = oldState.testFlag(Qt::WindowMinimized);
 			const bool isMinimized = newState.testFlag(Qt::WindowMinimized);
@@ -1932,7 +1941,7 @@ CaptureWindow::CaptureWindow(QWidget* parent, fplayer::MediaBackendType backendT
 				this->showMinimized();
 			}
 		};
-		auto* layout = new QFormLayout(&dlg);
+		auto* layout = new QFormLayout(scrollContent);
 		layout->setVerticalSpacing(10);
 		layout->setRowWrapPolicy(QFormLayout::WrapLongRows);
 		auto addRecent = [this](QStringList& list, const QString& value) {
@@ -2332,7 +2341,9 @@ auto* cmbOutput = new QComboBox(&dlg);
 		btnStart->setProperty("role", QStringLiteral("primary"));
 		buttons->addButton(btnStart, QDialogButtonBox::AcceptRole);
 		buttons->addButton(btnStop, QDialogButtonBox::ActionRole);
-		layout->addRow(buttons);
+		scrollArea->setWidget(scrollContent);
+		mainLayout->addWidget(scrollArea, 1);
+		mainLayout->addWidget(buttons, 0);
 		auto applyPushUiRunningState = [btnStart, btnStop, cmbPushRouteMode, cmbProtocol, cmbOutput, edtGateway, edtServiceApp,
 		                                edtServiceStream, cmbServiceMode, spFps, cmbSize, spBitrate, cmbEncoder, cmbAudioInput, cmbAudioOutput,
 		                                fileScene](const bool running) {
@@ -2585,6 +2596,11 @@ auto* cmbOutput = new QComboBox(&dlg);
 			applyPushUiRunningState(running);
 		});
 		refreshPushParams();
+		dlg.setMinimumSize(640, 400);
+		if (auto* screen = QGuiApplication::primaryScreen()) {
+			const QRect avail = screen->availableGeometry();
+			dlg.setMaximumSize(dlg.maximumWidth(), qMax(400, avail.height() - 60));
+		}
 		dlg.exec();
 	});
 	connect(actionPullStream, &QAction::triggered, this, [this]() {
@@ -2600,6 +2616,13 @@ auto* cmbOutput = new QComboBox(&dlg);
 			saveAndApplyTheme();
 		};
 		auto* dlg = new QDialog(nullptr);
+		auto* mainLayout = new QVBoxLayout(dlg);
+		mainLayout->setContentsMargins(0, 0, 0, 0);
+		auto* scrollArea = new QScrollArea(dlg);
+		scrollArea->setWidgetResizable(true);
+		scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+		scrollArea->setFrameShape(QFrame::NoFrame);
+		auto* scrollContent = new QWidget(scrollArea);
 		dlg->setAttribute(Qt::WA_DeleteOnClose, true);
 		dlg->setModal(false);
 		dlg->setWindowTitle(tr("拉流配置窗口"));
@@ -2610,7 +2633,7 @@ auto* cmbOutput = new QComboBox(&dlg);
 			m_pullStopButton = nullptr;
 			m_pullLogView = nullptr;
 		});
-		auto* layout = new QFormLayout(dlg);
+		auto* layout = new QFormLayout(scrollContent);
 		auto* cmbProtocol = new QComboBox(dlg);
 		const int reservedPort = choosePullListenPort(m_pullReservedPort > 0 ? m_pullReservedPort : 1935);
 		m_pullReservedPort = reservedPort;
@@ -3444,9 +3467,16 @@ auto* cmbOutput = new QComboBox(&dlg);
 		layout->addRow(tr("解析结果"), lblServiceResolvedUrl);
 		layout->addRow(lblStatus);
 		layout->addRow(txtLog);
-		layout->addRow(buttons);
+		scrollArea->setWidget(scrollContent);
+		mainLayout->addWidget(scrollArea, 1);
+		mainLayout->addWidget(buttons, 0);
 		refreshPullUrl();
 		refreshStreamKeyVisibility();
+		dlg->setMinimumSize(640, 400);
+		if (auto* screen = QGuiApplication::primaryScreen()) {
+			const QRect avail = screen->availableGeometry();
+			dlg->setMaximumSize(dlg->maximumWidth(), qMax(400, avail.height() - 60));
+		}
 		dlg->show();
 	});
 	connect(m_fileTitleButton, &QToolButton::clicked, this, [this, actionFileMode]() {
@@ -3782,8 +3812,14 @@ void CaptureWindow::openCaptureSettingsDialog(QWidget* parent)
 {
 	QDialog dlg(nullptr);
 	dlg.setWindowTitle(tr("系统设置"));
-	dlg.setMinimumSize(700, 460);
-	auto* layout = new QFormLayout(&dlg);
+	auto* mainLayout = new QVBoxLayout(&dlg);
+	mainLayout->setContentsMargins(0, 0, 0, 0);
+	auto* scrollArea = new QScrollArea(&dlg);
+	scrollArea->setWidgetResizable(true);
+	scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+	scrollArea->setFrameShape(QFrame::NoFrame);
+	auto* scrollContent = new QWidget(scrollArea);
+	auto* layout = new QFormLayout(scrollContent);
 	auto* shotPath = new QLineEdit(m_screenshotSaveDir, &dlg);
 	auto* recPath = new QLineEdit(m_recordSaveDir, &dlg);
 	auto* shotBrowse = new QPushButton(tr("浏览..."), &dlg);
@@ -4058,8 +4094,17 @@ void CaptureWindow::openCaptureSettingsDialog(QWidget* parent)
 	).arg(tr("官网地址"), tr("GitHub")));
 	layout->addRow(linkLabel);
 
+	auto* lblVersionSection = new QLabel(tr("── 版本信息 ──"), &dlg);
+	lblVersionSection->setStyleSheet(QStringLiteral("font-weight: bold; color: #6e6e73; margin-top: 8px;"));
+	layout->addRow(lblVersionSection);
+	auto* versionLabel = new QLabel(QStringLiteral("FPlayer Desktop v" FPLAYER_VERSION), &dlg);
+	versionLabel->setStyleSheet(QStringLiteral("color: #8e8e93;"));
+	layout->addRow(versionLabel);
+
 	auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
-	layout->addRow(buttons);
+	scrollArea->setWidget(scrollContent);
+	mainLayout->addWidget(scrollArea, 1);
+	mainLayout->addWidget(buttons, 0);
 	connect(shotBrowse, &QPushButton::clicked, &dlg, [shotPath, this]() {
 		const QString dir = QFileDialog::getExistingDirectory(this, tr("选择截图保存目录"), shotPath->text().trimmed());
 		if (!dir.isEmpty())
@@ -4297,18 +4342,11 @@ void CaptureWindow::openCaptureSettingsDialog(QWidget* parent)
 		dlg.accept();
 	});
 	connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
-	dlg.setAttribute(Qt::WA_DontShowOnScreen, true);
-	dlg.show();
-	dlg.hide();
-	dlg.setAttribute(Qt::WA_DontShowOnScreen, false);
-	QSize hint = layout->sizeHint();
-	QMargins margins = dlg.contentsMargins();
-	QSize totalSize = hint + QSize(margins.left() + margins.right(), margins.top() + margins.bottom());
-	totalSize.setWidth(qMax(totalSize.width(), 760));
-	totalSize.setHeight(qMax(totalSize.height(), 460));
-	dlg.resize(totalSize);
 	if (auto* screen = QGuiApplication::primaryScreen()) {
-		dlg.move(screen->geometry().center() - QRect(QPoint(0, 0), totalSize).center());
+		const QRect avail = screen->availableGeometry();
+		dlg.resize(qMin(760, avail.width() - 80), qMin(600, avail.height() - 80));
+		dlg.setMinimumSize(640, 400);
+		dlg.move(avail.center() - dlg.rect().center());
 	}
 	dlg.exec();
 }

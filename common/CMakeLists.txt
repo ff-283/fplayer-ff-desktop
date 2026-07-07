@@ -4,6 +4,9 @@ find_package(Qt6 COMPONENTS Core OpenGL OpenGLWidgets REQUIRED)
 
 add_standard_module(${PROJECT_NAME} include/fplayer/common ON ON)
 
+target_include_directories(${PROJECT_NAME} PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/generated>)
+
 target_link_libraries(${PROJECT_NAME} PRIVATE Qt6::Core Qt6::OpenGL Qt6::OpenGLWidgets)
 target_link_libraries(${PROJECT_NAME} PUBLIC Qt6::OpenGL Qt6::OpenGLWidgets)
 target_link_libraries(${PROJECT_NAME} PUBLIC Logger)

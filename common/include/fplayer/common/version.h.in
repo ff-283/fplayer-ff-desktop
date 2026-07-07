@@ -1,0 +1,2 @@
+#pragma once
+#define FPLAYER_VERSION "@FPLAYER_PACKAGE_VERSION@"

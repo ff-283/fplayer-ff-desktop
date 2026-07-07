@@ -5,6 +5,19 @@ set(CMAKE_CXX_STANDARD 17)
 include(GNUInstallDirs)
 set(FPLAYER_PACKAGE_VERSION "0.1.0" CACHE STRING "Package version for CPack")
 
+# ── 统一版本号：从 version.txt 读取，覆盖上面的默认值 ──
+set(_version_txt "${CMAKE_SOURCE_DIR}/version.txt")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_version_txt}")
+if(EXISTS "${_version_txt}")
+  file(READ "${_version_txt}" _version_raw)
+  string(STRIP "${_version_raw}" FPLAYER_PACKAGE_VERSION)
+endif()
+# 生成头文件，只有 include 它的源文件会重编译
+configure_file(
+  "${CMAKE_SOURCE_DIR}/common/include/fplayer/common/version.h.in"
+  "${CMAKE_BINARY_DIR}/generated/fplayer/common/version.h"
+)
+
 set(CMAKE_DEBUG_POSTFIX d)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)

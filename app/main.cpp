@@ -1,11 +1,14 @@
 #include <QApplication>
+#include <QComboBox>
 #include <QCommandLineParser>
 #include <QCoreApplication>
 #include <QDir>
+#include <QEvent>
 #include <QLibraryInfo>
 #include <QPainter>
 #include <QSplashScreen>
 #include <QSurfaceFormat>
+#include <QWheelEvent>
 #include <exception>
 
 #ifdef Q_OS_WIN
@@ -17,6 +20,19 @@
 #include <fplayer/widget/capturewindow.h>
 #include <fplayer/common/qtloggeradapter/qtloggeradapter.h>
 #include <fplayer/api/media/mediabackendtype.h>
+
+// 全局禁用 QComboBox 鼠标滚轮切换选项
+class ComboBoxWheelBlocker : public QObject
+{
+public:
+	using QObject::QObject;
+	bool eventFilter(QObject* obj, QEvent* event) override
+	{
+		if (event->type() == QEvent::Wheel && qobject_cast<QComboBox*>(obj))
+			return true;
+		return QObject::eventFilter(obj, event);
+	}
+};
 
 int main(int argc, char* argv[])
 {
@@ -41,6 +57,7 @@ int main(int argc, char* argv[])
 
 	// QApplication::setStyle("Fusion");
 	QApplication app(argc, argv);
+	app.installEventFilter(new ComboBoxWheelBlocker(&app));
 	auto logEnv = [](const char* key) {
 		const QByteArray val = qgetenv(key);
 		LOG_INFO("[startup-env]", key, "=", val.isEmpty() ? "<empty>" : val.constData());

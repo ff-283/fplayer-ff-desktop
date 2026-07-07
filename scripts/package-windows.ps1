@@ -211,6 +211,16 @@ try {
     }
 
     $projectRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
+
+    # 若未通过 -Version 显式指定，从 version.txt 读取（统一版本号源）
+    if ($Version -eq "") {
+        $versionTxt = Join-Path $projectRoot.Path "version.txt"
+        if (Test-Path $versionTxt) {
+            $Version = (Get-Content $versionTxt -Raw).Trim()
+            Write-Host "Read version from version.txt: $Version" -ForegroundColor Green
+        }
+    }
+
     $absBuildDir = Join-Path $projectRoot $BuildDir
     $absInstallDir = Join-Path $projectRoot $InstallDir
     $absOutputDir = Join-Path $projectRoot $OutputDir
