@@ -8,6 +8,8 @@
 #include <QPainter>
 #include <QSplashScreen>
 #include <QSurfaceFormat>
+#include <QAbstractScrollArea>
+#include <QAbstractSpinBox>
 #include <QWheelEvent>
 #include <exception>
 
@@ -21,15 +23,29 @@
 #include <fplayer/common/qtloggeradapter/qtloggeradapter.h>
 #include <fplayer/api/media/mediabackendtype.h>
 
-// 全局禁用 QComboBox 鼠标滚轮切换选项
+// 全局禁用 QComboBox / QAbstractSpinBox 鼠标滚轮切换，同时将滚轮事件转发到父级
+// QAbstractScrollArea 的 viewport，确保对话框/页面的滚动不受影响
 class ComboBoxWheelBlocker : public QObject
 {
 public:
 	using QObject::QObject;
 	bool eventFilter(QObject* obj, QEvent* event) override
 	{
-		if (event->type() == QEvent::Wheel && qobject_cast<QComboBox*>(obj))
+		if (event->type() == QEvent::Wheel &&
+		    (qobject_cast<QComboBox*>(obj) || qobject_cast<QAbstractSpinBox*>(obj)))
+		{
+			auto* w = static_cast<QWidget*>(obj);
+			// 向上查找最近的 QAbstractScrollArea，把滚轮事件转发给它的 viewport
+			for (QWidget* p = w->parentWidget(); p; p = p->parentWidget())
+			{
+				if (auto* sa = qobject_cast<QAbstractScrollArea*>(p))
+				{
+					QCoreApplication::sendEvent(sa->viewport(), event);
+					break;
+				}
+			}
 			return true;
+		}
 		return QObject::eventFilter(obj, event);
 	}
 };
