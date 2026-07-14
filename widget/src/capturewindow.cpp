@@ -4089,7 +4089,7 @@ void CaptureWindow::openCaptureSettingsDialog(QWidget* parent)
 	linkLabel->setTextFormat(Qt::RichText);
 	linkLabel->setOpenExternalLinks(true);
 	linkLabel->setText(QStringLiteral(
-		"%1: <a href=\"http://codis.fun:5003\">http://codis.fun:5003</a>&nbsp;&nbsp;|&nbsp;&nbsp;"
+		"%1: <a href=\"https://codis.fun/fplayer\">https://codis.fun/fplayer</a>&nbsp;&nbsp;|&nbsp;&nbsp;"
 		"%2: <a href=\"https://github.com/ff-283\">https://github.com/ff-283</a>"
 	).arg(tr("官网地址"), tr("GitHub")));
 	layout->addRow(linkLabel);
