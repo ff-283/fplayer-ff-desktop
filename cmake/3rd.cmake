@@ -9,7 +9,7 @@ endif ()
 CPMAddPackage(
         NAME Logger
         GIT_REPOSITORY ${FPLAYER_LOGGER_REPO}
-        GIT_TAG v1.1.4
+        GIT_TAG v1.1.5
 )
 
 # yaml-tool
@@ -21,7 +21,7 @@ endif ()
 CPMAddPackage(
         NAME yaml-tool
         GIT_REPOSITORY ${FPLAYER_YAML_TOOL_REPO}
-        GIT_TAG v1.0.2
+        GIT_TAG v1.1.1
         OPTIONS
         "YAML_TOOL_BUILD_SHARED_LIBS ON"
         "YAML_TOOL_INSTALL OFF"
