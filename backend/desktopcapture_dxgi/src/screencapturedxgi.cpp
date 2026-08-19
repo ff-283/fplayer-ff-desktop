@@ -772,10 +772,10 @@ void fplayer::ScreenCaptureDxgi::captureLoop()
 		return;
 	}
 #endif
-	const int frameMs = qMax(1, 1000 / qMax(1, m_fps));
 	while (m_capturing.load())
 	{
 		const qint64 t0 = QDateTime::currentMSecsSinceEpoch();
+		const int frameMs = qMax(1, 1000 / qMax(1, m_fps));
 #ifdef _WIN32
 		if (!m_duplication || !m_d3dDevice)
 		{
