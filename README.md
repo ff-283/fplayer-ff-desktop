@@ -159,7 +159,7 @@ version.txt  ──→  CMakeLists.txt 读取并设置 FPLAYER_PACKAGE_VERSION
 快速参考（也可用 `scripts/powershell脚本启动参数-new.txt` 中的参数）：
 
 ```powershell
-.\scripts\package-windows.ps1 -Qt6Dir "D:/Code/Qt6.10/6.10.2/msvc2022_64/lib/cmake/Qt6" -CMakePrefixPath "D:/Code/Qt6.10/6.10.2/msvc2022_64" -Version 0.2.3
+.\scripts\package-windows.ps1 -Qt6Dir "D:/Code/Qt6.10/6.10.2/msvc2022_64/lib/cmake/Qt6" -CMakePrefixPath "D:/Code/Qt6.10/6.10.2/msvc2022_64" -Version 1.0.3
 ```
 
 打包前需安装：
@@ -349,7 +349,7 @@ graph TD
 
 | 链接 | 说明 |
 |------|------|
-| [官网](http://codis.fun:5003) | 项目官网 |
+| [官网](https://codis.fun/fplayer) | 项目官网 |
 | [GitHub](https://github.com/ff-283) | 项目主页与源码 |
 | `doc/README.md` | 文档导航（用户手册/开发文档/打包说明等） |
 | `doc/man/用户手册.md` | 功能总览与快速上手 |

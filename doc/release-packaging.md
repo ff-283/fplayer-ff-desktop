@@ -107,7 +107,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\package-windows.ps1 -Qt6Dir "
 powershell -ExecutionPolicy Bypass -File .\scripts\package-windows.ps1 -Qt6Dir "D:/SoftWare/Qt/Qt6.10.2/6.10.2/msvc2022_64/lib/cmake/Qt6" -CMakePrefixPath "D:/SoftWare/Qt/Qt6.10.2/6.10.2/msvc2022_64" -CMakePath "D:/SoftWare/CMake/bin/cmake.exe" -CPackPath "D:/SoftWare/CMake/bin/cpack.exe"
 
 # 指定版本号
-powershell -ExecutionPolicy Bypass -File .\scripts\package-windows.ps1 -Qt6Dir "D:/SoftWare/Qt/Qt6.10.2/6.10.2/msvc2022_64/lib/cmake/Qt6" -CMakePrefixPath "D:/SoftWare/Qt/Qt6.10.2/6.10.2/msvc2022_64" -Version 0.2.3
+powershell -ExecutionPolicy Bypass -File .\scripts\package-windows.ps1 -Qt6Dir "D:/SoftWare/Qt/Qt6.10.2/6.10.2/msvc2022_64/lib/cmake/Qt6" -CMakePrefixPath "D:/SoftWare/Qt/Qt6.10.2/6.10.2/msvc2022_64" -Version 1.0.3
 ```
 
 ## 7. 产品图标配置约定

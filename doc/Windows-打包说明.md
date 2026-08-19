@@ -78,8 +78,8 @@
 # 自定义产物汇总目录
 .\scripts\package-windows.ps1 -OutputDir disk/release/windows
 
-# 指定安装包版本号（覆盖默认 0.1.0）
-.\scripts\package-windows.ps1 -Version 0.2.3
+# 指定安装包版本号（覆盖 version.txt 默认版本）
+.\scripts\package-windows.ps1 -Version 1.0.3
 ```
 
 ## 5. CPack 配置说明
@@ -131,7 +131,7 @@
   -Qt6Dir "D:/SoftWare/Qt/Qt6.10.2/6.10.2/msvc2022_64/lib/cmake/Qt6" `
   -CMakePrefixPath "D:/SoftWare/Qt/Qt6.10.2/6.10.2/msvc2022_64" `
   -BrandIconPng "doc/img/icons/icon.png" `
-  -Version 0.2.3
+  -Version 1.0.3
 ```
 
 建议检查：
