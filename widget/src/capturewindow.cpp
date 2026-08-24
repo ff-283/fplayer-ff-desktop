@@ -167,31 +167,12 @@ int choosePullListenPort(const int preferredPort)
 	return preferredPort;
 }
 
+QStringList collectLanIpv4List();
+
 QString selectLanHostForPublish()
 {
-	const QList<QHostAddress> all = QNetworkInterface::allAddresses();
-	for (const QHostAddress& addr : all)
-	{
-		if (addr.protocol() != QAbstractSocket::IPv4Protocol)
-		{
-			continue;
-		}
-		if (addr == QHostAddress::LocalHost)
-		{
-			continue;
-		}
-		if (addr.isNull())
-		{
-			continue;
-		}
-		const QString ip = addr.toString();
-		if (ip.startsWith(QStringLiteral("169.254.")))
-		{
-			continue;
-		}
-		return ip;
-	}
-	return QStringLiteral("127.0.0.1");
+	const QStringList ips = collectLanIpv4List();
+	return ips.isEmpty() ? QStringLiteral("127.0.0.1") : ips.first();
 }
 
 QStringList collectLanIpv4List()
@@ -303,69 +284,65 @@ QImage i420ToImage(const QByteArray& yPlane,
 }
 
 
-bool requestServiceStreamStart(const QString& gatewayBaseUrl,
-                               const QString& app,
-                               const QString& stream,
-                               const QString& serviceMode,
-                               const QJsonObject& publisherMeta,
-                               const QJsonObject& sourceMeta,
-                               QString& publishRtmp,
-                               QString& playHttpFlv,
-                               QString& streamId,
-                               QString& error)
+QString buildGatewayApiPath(const QString& basePath, const QString& apiSuffix)
 {
-	const QString base = gatewayBaseUrl.trimmed();
+	QString path = basePath.trimmed();
+	if (path.isEmpty())
+	{
+		path = QStringLiteral("/");
+	}
+	if (!path.startsWith(QLatin1Char('/')))
+	{
+		path.prepend(QLatin1Char('/'));
+	}
+	while (path.endsWith(QLatin1Char('/')))
+	{
+		path.chop(1);
+	}
+	const QString prefix = QStringLiteral("/api/v1");
+	if (path == prefix || path.endsWith(prefix))
+	{
+		return path + apiSuffix;
+	}
+	if (path == QStringLiteral("/"))
+	{
+		return prefix + apiSuffix;
+	}
+	return path + prefix + apiSuffix;
+}
+
+bool normalizeGatewayBaseUrl(const QString& raw, QUrl& out, QString& error)
+{
+	const QString base = raw.trimmed();
 	if (base.isEmpty())
 	{
 		error = QStringLiteral("服务地址为空");
 		return false;
 	}
-	QUrl requestUrl(base);
-	if (!requestUrl.isValid())
+	out = QUrl(base);
+	if (!out.isValid())
 	{
 		error = QStringLiteral("服务地址格式无效");
 		return false;
 	}
-	auto buildApiPath = [](const QString& basePath, const QString& apiSuffix) {
-		QString path = basePath.trimmed();
-		if (path.isEmpty())
-		{
-			path = QStringLiteral("/");
-		}
-		if (!path.startsWith(QLatin1Char('/')))
-		{
-			path.prepend(QLatin1Char('/'));
-		}
-		while (path.endsWith(QLatin1Char('/')))
-		{
-			path.chop(1);
-		}
-		const QString prefix = QStringLiteral("/api/v1");
-		if (path == prefix || path.endsWith(prefix))
-		{
-			return path + apiSuffix;
-		}
-		if (path == QStringLiteral("/"))
-		{
-			return prefix + apiSuffix;
-		}
-		return path + prefix + apiSuffix;
-	};
-	requestUrl.setPath(buildApiPath(requestUrl.path(), QStringLiteral("/streams/start")));
+	return true;
+}
 
-	QNetworkRequest req(requestUrl);
-	req.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
-
-	QJsonObject body{
-		{QStringLiteral("app"), app.trimmed().isEmpty() ? QStringLiteral("live") : app.trimmed()},
-		{QStringLiteral("stream"), stream.trimmed().isEmpty() ? QStringLiteral("stream001") : stream.trimmed()},
-		{QStringLiteral("serviceMode"), serviceMode.trimmed().isEmpty() ? QStringLiteral("httpflv") : serviceMode.trimmed()},
-		{QStringLiteral("publisherMeta"), publisherMeta},
-		{QStringLiteral("sourceMeta"), sourceMeta}
-	};
-
+bool sendGatewayRequest(const QUrl& url, const bool post, const QJsonObject& body, QJsonObject& result, QString& error)
+{
 	QNetworkAccessManager manager;
-	QNetworkReply* reply = manager.post(req, QJsonDocument(body).toJson(QJsonDocument::Compact));
+	QNetworkRequest req(url);
+	QNetworkReply* reply = nullptr;
+	if (post)
+	{
+		req.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
+		reply = manager.post(req, QJsonDocument(body).toJson(QJsonDocument::Compact));
+	}
+	else
+	{
+		reply = manager.get(req);
+	}
+
 	QEventLoop loop;
 	QTimer timeout;
 	timeout.setSingleShot(true);
@@ -397,9 +374,9 @@ bool requestServiceStreamStart(const QString& gatewayBaseUrl,
 		reply->deleteLater();
 		return false;
 	}
-
 	const QByteArray data = reply->readAll();
 	reply->deleteLater();
+
 	QJsonParseError parseError;
 	const QJsonDocument doc = QJsonDocument::fromJson(data, &parseError);
 	if (parseError.error != QJsonParseError::NoError || !doc.isObject())
@@ -407,7 +384,43 @@ bool requestServiceStreamStart(const QString& gatewayBaseUrl,
 		error = QStringLiteral("服务返回解析失败");
 		return false;
 	}
-	const QJsonObject obj = doc.object();
+	result = doc.object();
+	return true;
+}
+
+
+bool requestServiceStreamStart(const QString& gatewayBaseUrl,
+                               const QString& app,
+                               const QString& stream,
+                               const QString& serviceMode,
+                               const QJsonObject& publisherMeta,
+                               const QJsonObject& sourceMeta,
+                               QString& publishRtmp,
+                               QString& playHttpFlv,
+                               QString& streamId,
+                               QString& error)
+{
+	QUrl requestUrl;
+	if (!normalizeGatewayBaseUrl(gatewayBaseUrl, requestUrl, error))
+	{
+		return false;
+	}
+	requestUrl.setPath(buildGatewayApiPath(requestUrl.path(), QStringLiteral("/streams/start")));
+
+	const QJsonObject body{
+		{QStringLiteral("app"), app.trimmed().isEmpty() ? QStringLiteral("live") : app.trimmed()},
+		{QStringLiteral("stream"), stream.trimmed().isEmpty() ? QStringLiteral("stream001") : stream.trimmed()},
+		{QStringLiteral("serviceMode"), serviceMode.trimmed().isEmpty() ? QStringLiteral("httpflv") : serviceMode.trimmed()},
+		{QStringLiteral("publisherMeta"), publisherMeta},
+		{QStringLiteral("sourceMeta"), sourceMeta}
+	};
+
+	QJsonObject obj;
+	if (!sendGatewayRequest(requestUrl, true, body, obj, error))
+	{
+		return false;
+	}
+
 	publishRtmp = obj.value(QStringLiteral("publishRtmp")).toString().trimmed();
 	playHttpFlv = obj.value(QStringLiteral("playHttpFlv")).toString().trimmed();
 	streamId = obj.value(QStringLiteral("id")).toString().trimmed();
@@ -431,99 +444,30 @@ bool requestServiceStreamStatus(const QString& gatewayBaseUrl,
                                 QString& playRtmp,
                                 QString& error)
 {
-	const QString base = gatewayBaseUrl.trimmed();
-	const QString appName = app.trimmed();
-	const QString streamName = stream.trimmed();
-	if (base.isEmpty())
+	QUrl requestUrl;
+	if (!normalizeGatewayBaseUrl(gatewayBaseUrl, requestUrl, error))
 	{
-		error = QStringLiteral("服务地址为空");
 		return false;
 	}
+	const QString appName = app.trimmed();
+	const QString streamName = stream.trimmed();
 	if (appName.isEmpty() || streamName.isEmpty())
 	{
 		error = QStringLiteral("app 和 stream 不能为空");
 		return false;
 	}
-	QUrl requestUrl(base);
-	if (!requestUrl.isValid())
-	{
-		error = QStringLiteral("服务地址格式无效");
-		return false;
-	}
-	auto buildApiPath = [](const QString& basePath, const QString& apiSuffix) {
-		QString path = basePath.trimmed();
-		if (path.isEmpty())
-		{
-			path = QStringLiteral("/");
-		}
-		if (!path.startsWith(QLatin1Char('/')))
-		{
-			path.prepend(QLatin1Char('/'));
-		}
-		while (path.endsWith(QLatin1Char('/')))
-		{
-			path.chop(1);
-		}
-		const QString prefix = QStringLiteral("/api/v1");
-		if (path == prefix || path.endsWith(prefix))
-		{
-			return path + apiSuffix;
-		}
-		if (path == QStringLiteral("/"))
-		{
-			return prefix + apiSuffix;
-		}
-		return path + prefix + apiSuffix;
-	};
-	requestUrl.setPath(buildApiPath(requestUrl.path(), QStringLiteral("/streams/resolve")));
+	requestUrl.setPath(buildGatewayApiPath(requestUrl.path(), QStringLiteral("/streams/resolve")));
 	QUrlQuery query;
 	query.addQueryItem(QStringLiteral("app"), appName);
 	query.addQueryItem(QStringLiteral("stream"), streamName);
 	requestUrl.setQuery(query);
 
-	QNetworkAccessManager manager;
-	QNetworkReply* reply = manager.get(QNetworkRequest(requestUrl));
-	QEventLoop loop;
-	QTimer timeout;
-	timeout.setSingleShot(true);
-	timeout.setInterval(5000);
-	QObject::connect(&timeout, &QTimer::timeout, &loop, [&]() {
-		error = QStringLiteral("请求服务超时（5s）");
-		if (reply)
-		{
-			reply->abort();
-		}
-		loop.quit();
-	});
-	QObject::connect(reply, &QNetworkReply::finished, &loop, [&]() {
-		loop.quit();
-	});
-	timeout.start();
-	loop.exec();
+	QJsonObject obj;
+	if (!sendGatewayRequest(requestUrl, false, {}, obj, error))
+	{
+		return false;
+	}
 
-	if (!timeout.isActive())
-	{
-		reply->deleteLater();
-		return false;
-	}
-	timeout.stop();
-
-	if (reply->error() != QNetworkReply::NoError)
-	{
-		error = QStringLiteral("请求服务失败: %1").arg(reply->errorString());
-		reply->deleteLater();
-		return false;
-	}
-	const QByteArray data = reply->readAll();
-	reply->deleteLater();
-	QJsonParseError parseError;
-	const QJsonDocument doc = QJsonDocument::fromJson(data, &parseError);
-	if (parseError.error != QJsonParseError::NoError || !doc.isObject())
-	{
-		error = QStringLiteral("服务返回解析失败");
-		return false;
-	}
-	const QJsonObject obj = doc.object();
 	playHttpFlv = obj.value(QStringLiteral("playHttpFlv")).toString().trimmed();
 	playRtmp = obj.value(QStringLiteral("publishRtmp")).toString().trimmed();
 	if (obj.value(QStringLiteral("playUrls")).isObject())

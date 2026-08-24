@@ -25,3 +25,7 @@
 # Common local build folders
 /.vs/
 /.cache/
+
+# Logs / generated transient files
+*.log
+
